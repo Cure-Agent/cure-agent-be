@@ -16,3 +16,6 @@ coverage/
 .DS_Store
 .idea/
 *.log
+
+# SDD 하네스 스크래치 (implement.md Phase 2)
+.cure-implement/

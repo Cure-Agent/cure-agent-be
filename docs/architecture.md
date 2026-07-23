@@ -929,6 +929,8 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 수용 기준의 e2e 테스트는 **구현 전에 작성해 동결**하고, 구현은 동결된 테스트를 통과시키는 방식으로 진행한다. 구현 중 테스트 수정 금지 — 스펙 결함을 발견하면 spec을 먼저 고치고 테스트를 다시 동결한다.
 
+**교차 작성 원칙**: 수용 기준 테스트는 **구현 에이전트(Claude)와 분리된 작성자(Codex)** 가 스펙에서 독립 파생한다 — 같은 에이전트가 심판과 선수를 모두 만들면 스펙 오독이 테스트·구현 양쪽에 복제되는 것을 막는 교차 검증 장치다. Claude는 리뷰(커버리지·공허 통과·스펙 외 가정)와 동결만 담당하고 assertion을 직접 수정하지 않는다. Codex 불가 시 Claude 단독 폴백(동결 커밋에 명시). 절차 상세는 `.claude/commands/implement.md` Phase 2.
+
 핵심은 다음 경계를 지키는 것이다:
 
 ```
@@ -963,3 +965,4 @@ FE UI
 | 14 | Redis 도입: access 토큰 즉시 무효화 denylist(`fid` claim, fail-open) — refresh 원본 저장소는 PostgreSQL 유지, Redis는 denylist+캐시 용도 |
 | 15 | 계약 동기화 자동화: BE `openapi/**` push → FE repository_dispatch → 자동 동기화 PR, breaking은 동기화 PR typecheck 실패로 표면화 |
 | 16 | cron 폴백 제거 — push 단독 동기화로 확정, 토큰 부재·만료는 contract-notify hard-fail로 감지 |
+| 17 | SDD 테스트 교차 작성: 동결 테스트는 Codex가 스펙에서 독립 파생, Claude는 리뷰·동결·구현 담당 (8단계부터 적용, Codex 불가 시 Claude 폴백) |
