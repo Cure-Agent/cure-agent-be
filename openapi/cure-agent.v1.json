@@ -243,6 +243,245 @@
           "Auth"
         ]
       }
+    },
+    "/api/v1/guidelines": {
+      "get": {
+        "operationId": "GuidelineController_list",
+        "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "제목 부분일치 검색",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "SUPERSEDED"
+              ]
+            }
+          },
+          {
+            "name": "publisher",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/GuidelineSummaryResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "지침 검색·필터 목록 (커서 기반)",
+        "tags": [
+          "Guideline"
+        ]
+      }
+    },
+    "/api/v1/guidelines/{guidelineId}": {
+      "get": {
+        "operationId": "GuidelineController_detail",
+        "parameters": [
+          {
+            "name": "guidelineId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/GuidelineDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "지침 상세 (현재 버전 포함)",
+        "tags": [
+          "Guideline"
+        ]
+      }
+    },
+    "/api/v1/guidelines/{guidelineId}/evidence": {
+      "get": {
+        "operationId": "GuidelineController_listEvidence",
+        "parameters": [
+          {
+            "name": "guidelineId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/EvidenceSummaryResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "지침의 섹션·권고문(근거 청크) 목록",
+        "tags": [
+          "Guideline"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidenceId}": {
+      "get": {
+        "operationId": "EvidenceController_detail",
+        "parameters": [
+          {
+            "name": "evidenceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/EvidenceDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "인용 근거 원문 상세",
+        "tags": [
+          "Evidence"
+        ]
+      }
     }
   },
   "info": {
@@ -464,6 +703,212 @@
         },
         "required": [
           "available"
+        ]
+      },
+      "GuidelineSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "example": "요통 한의표준임상진료지침"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "한국한의약진흥원"
+          },
+          "currentVersion": {
+            "type": "string",
+            "example": "1.0"
+          },
+          "publishedAt": {
+            "type": "string",
+            "description": "현재 버전 발행일 (ISO 8601)"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUPERSEDED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "publisher",
+          "currentVersion",
+          "publishedAt",
+          "status"
+        ]
+      },
+      "GuidelineDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "example": "요통 한의표준임상진료지침"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "한국한의약진흥원"
+          },
+          "currentVersion": {
+            "type": "string",
+            "example": "1.0"
+          },
+          "publishedAt": {
+            "type": "string",
+            "description": "현재 버전 발행일 (ISO 8601)"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUPERSEDED"
+            ]
+          },
+          "sourceUrl": {
+            "type": "string",
+            "description": "NCKM 원문 링크 — PDF는 재배포하지 않는다 (§5.4)"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "publisher",
+          "currentVersion",
+          "publishedAt",
+          "status",
+          "sourceUrl"
+        ]
+      },
+      "RatingResponseDto": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string",
+            "example": "GRADE"
+          },
+          "code": {
+            "type": "string",
+            "example": "A"
+          },
+          "label": {
+            "type": "string",
+            "example": "강한 권고"
+          }
+        },
+        "required": [
+          "system",
+          "code",
+          "label"
+        ]
+      },
+      "EvidenceSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sectionPath": {
+            "example": [
+              "2",
+              "치료",
+              "침치료"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommendationNumber": {
+            "type": "string",
+            "example": "R1"
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "본문 발췌 (200자 축약)"
+          },
+          "recommendationGrade": {
+            "$ref": "#/components/schemas/RatingResponseDto"
+          },
+          "evidenceLevel": {
+            "$ref": "#/components/schemas/RatingResponseDto"
+          }
+        },
+        "required": [
+          "id",
+          "sectionPath",
+          "excerpt"
+        ]
+      },
+      "EvidenceDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "guidelineId": {
+            "type": "string"
+          },
+          "guidelineVersionId": {
+            "type": "string"
+          },
+          "guidelineTitle": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0"
+          },
+          "sectionPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommendationNumber": {
+            "type": "string"
+          },
+          "recommendationText": {
+            "type": "string",
+            "description": "권고문 원문 (권고 청크인 경우)"
+          },
+          "recommendationGrade": {
+            "$ref": "#/components/schemas/RatingResponseDto"
+          },
+          "evidenceLevel": {
+            "$ref": "#/components/schemas/RatingResponseDto"
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "본문 발췌 전문"
+          },
+          "pageStart": {
+            "type": "number"
+          },
+          "pageEnd": {
+            "type": "number"
+          },
+          "sourceUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "guidelineId",
+          "guidelineVersionId",
+          "guidelineTitle",
+          "version",
+          "sectionPath",
+          "excerpt",
+          "sourceUrl"
         ]
       }
     }
