@@ -482,6 +482,304 @@
           "Evidence"
         ]
       }
+    },
+    "/api/v1/conversations": {
+      "post": {
+        "operationId": "ConversationController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ConversationSummaryResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "대화 생성 (GUIDELINE_QA)",
+        "tags": [
+          "Conversation"
+        ]
+      },
+      "get": {
+        "operationId": "ConversationController_list",
+        "parameters": [
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GUIDELINE_QA",
+                "PATIENT_GUIDANCE"
+              ]
+            }
+          },
+          {
+            "name": "patientId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ConversationSummaryResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "내 대화 목록 (커서 기반)",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}": {
+      "get": {
+        "operationId": "ConversationController_detail",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ConversationDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "대화 상세",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages": {
+      "get": {
+        "operationId": "ConversationController_listMessages",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MessageResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "메시지 목록 (시간순, §8 복구 폴백)",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages/stream": {
+      "post": {
+        "description": "message.accepted → retrieval.started/completed → answer.delta(seq) → answer.completed | answer.abstained | error. 15초 heartbeat 주석 전송.",
+        "operationId": "ConversationController_streamMessage",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "질문 전송 + SSE 스트리밍 답변 (§8 — 봉투 미적용)",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/messages/{messageId}/feedback": {
+      "post": {
+        "operationId": "FeedbackController_submit",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitFeedbackRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "답변 평가 (재제출 시 갱신)",
+        "tags": [
+          "Feedback"
+        ]
+      }
     }
   },
   "info": {
@@ -909,6 +1207,262 @@
           "sectionPath",
           "excerpt",
           "sourceUrl"
+        ]
+      },
+      "ConversationSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "GUIDELINE_QA",
+              "PATIENT_GUIDANCE"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "lastMessagePreview": {
+            "type": "string",
+            "description": "마지막 메시지 미리보기 (80자)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "updatedAt"
+        ]
+      },
+      "CreateConversationRequestDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "GUIDELINE_QA",
+              "PATIENT_GUIDANCE"
+            ],
+            "description": "PATIENT_GUIDANCE는 9단계 활성화 예정"
+          },
+          "patientId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ConversationDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "GUIDELINE_QA",
+              "PATIENT_GUIDANCE"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "lastMessagePreview": {
+            "type": "string",
+            "description": "마지막 메시지 미리보기 (80자)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "updatedAt",
+          "createdAt"
+        ]
+      },
+      "AnswerCitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "marker": {
+            "type": "number",
+            "description": "답변 내 인용 마커 번호"
+          },
+          "evidenceId": {
+            "type": "string",
+            "description": "EvidenceChunk id — GET /evidence/{id}로 원문 조회"
+          },
+          "guidelineTitle": {
+            "type": "string"
+          },
+          "guidelineVersion": {
+            "type": "string"
+          },
+          "sectionPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quote": {
+            "type": "string",
+            "description": "인용 발췌"
+          },
+          "sourceUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker",
+          "evidenceId",
+          "guidelineTitle",
+          "guidelineVersion",
+          "sectionPath",
+          "quote",
+          "sourceUrl"
+        ]
+      },
+      "MessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "USER",
+              "ASSISTANT"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "STREAMING",
+              "COMPLETED",
+              "ABSTAINED",
+              "FAILED",
+              "CANCELLED"
+            ]
+          },
+          "answerKind": {
+            "type": "string",
+            "enum": [
+              "GUIDELINE_ANSWER",
+              "CLINICAL_GUIDANCE"
+            ]
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitationResponseDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "status",
+          "citations",
+          "createdAt"
+        ]
+      },
+      "GuidelineSearchFilterDto": {
+        "type": "object",
+        "properties": {
+          "guidelineIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommendationGrades": {
+            "description": "권고등급 code 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceLevels": {
+            "description": "근거수준 code 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SendMessageRequestDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "filters": {
+            "$ref": "#/components/schemas/GuidelineSearchFilterDto"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "description": "중복 생성 방지 키 — 재시도 시 같은 값 사용 (§8 복구 계약)"
+          }
+        },
+        "required": [
+          "content",
+          "clientRequestId"
+        ]
+      },
+      "SubmitFeedbackRequestDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": [
+              "HELPFUL",
+              "NOT_HELPFUL"
+            ]
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "rating"
         ]
       }
     }
