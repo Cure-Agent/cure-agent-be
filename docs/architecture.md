@@ -790,6 +790,7 @@ export const ErrorCodes = {
   // 공통
   BAD_REQUEST:                { status: 400, message: "적절하지 않은 요청입니다." },
   UNAUTHORIZED:               { status: 401, message: "인증이 필요합니다." },
+  FORBIDDEN:                  { status: 403, message: "권한이 없습니다." },
   NOT_FOUND:                  { status: 404, message: "대상을 찾을 수 없습니다." },
   VALIDATION_FAILED:          { status: 422, message: "입력값이 올바르지 않습니다." },
   INTERNAL_ERROR:             { status: 500, message: "서버 내부 오류가 발생했습니다." },
@@ -815,6 +816,7 @@ export type ErrorCode = keyof typeof ErrorCodes;
 - `ServiceException`은 `ErrorCode`만 받는다. **서비스 코드에 code 문자열 리터럴 등장 금지.**
 - `api-exception.filter.ts`는 레지스트리만 참조해 상태·봉투를 생성한다. ValidationPipe 오류는 `VALIDATION_FAILED`(422) + 필드 상세를 data에, 예상 밖 예외는 `INTERNAL_ERROR`(500)로 같은 봉투에 수렴시킨다.
 - 실패 응답의 보조 데이터는 data에 싣는다 (예: `PATIENT_VERSION_CONFLICT` → `{ currentVersion: 4 }`).
+- 성공 code/message도 `success-code.registry.ts`에서 같은 방식으로 관리한다(기본 `SUCCESS`, 화면 분기가 필요한 코드는 도메인 단계에서 추가).
 
 ### 10.3 traceId
 
