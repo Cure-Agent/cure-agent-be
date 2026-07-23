@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis';
 import cookieParser from 'cookie-parser';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -38,13 +39,18 @@ function signUpBody(email: string) {
 
 describe('Auth (Testcontainers)', () => {
   let container: StartedPostgreSqlContainer;
+  let redisContainer: StartedRedisContainer;
   let pool: Pool;
   let app: INestApplication;
   const alertSender = { send: jest.fn() };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('pgvector/pgvector:pg17').start();
+    [container, redisContainer] = await Promise.all([
+      new PostgreSqlContainer('pgvector/pgvector:pg17').start(),
+      new RedisContainer('redis:7-alpine').start(),
+    ]);
     process.env.DATABASE_URL = container.getConnectionUri();
+    process.env.REDIS_URL = redisContainer.getConnectionUrl();
 
     pool = new Pool({ connectionString: container.getConnectionUri() });
     await migrate(drizzle(pool), { migrationsFolder: 'drizzle/migrations' });
@@ -64,6 +70,7 @@ describe('Auth (Testcontainers)', () => {
     await app?.close();
     await pool?.end();
     await container?.stop();
+    await redisContainer?.stop();
   });
 
   beforeEach(() => {
@@ -215,6 +222,41 @@ describe('Auth (Testcontainers)', () => {
       .set('Cookie', `refresh_token=${r2.value}`)
       .expect(401);
     expect(revoked.body.code).toBe('AUTH_REFRESH_REUSED');
+
+    // 4) 같은 family의 최신 access 토큰도 denylist로 즉시 차단
+    const a2 = cookiesOf(refreshed).access_token;
+    await request(server())
+      .get('/api/v1/auth/me')
+      .set('Cookie', `access_token=${a2.value}`)
+      .expect(401);
+  });
+
+  it('logout: TTL이 남은 access 토큰도 즉시 무효화된다 (denylist §4.3)', async () => {
+    const signup = await request(server())
+      .post('/api/v1/auth/signup')
+      .set(CSRF)
+      .send(signUpBody('deny@clinic.kr'))
+      .expect(201);
+    const access = cookiesOf(signup).access_token;
+
+    // 로그아웃 전: 정상 인증
+    await request(server())
+      .get('/api/v1/auth/me')
+      .set('Cookie', `access_token=${access.value}`)
+      .expect(200);
+
+    await request(server())
+      .post('/api/v1/auth/logout')
+      .set(CSRF)
+      .set('Cookie', `access_token=${access.value}`)
+      .expect(200);
+
+    // 로그아웃 후: 같은 토큰(만료 전)이 즉시 거부
+    const denied = await request(server())
+      .get('/api/v1/auth/me')
+      .set('Cookie', `access_token=${access.value}`)
+      .expect(401);
+    expect(denied.body.code).toBe('UNAUTHORIZED');
   });
 
   it('logout: family 폐기 + 만료 쿠키, 이후 refresh 불가', async () => {

@@ -10,6 +10,7 @@ import { TraceContext } from '../../../global/context/trace-context.service';
 import { RealTimeAlertSender } from '../../../global/observability/real-time-alert.sender';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { PasswordHasher } from '../../../global/security/password-hasher';
+import { TokenDenylistService } from '../../../global/security/token-denylist.service';
 import { AesGcmUtil } from '../../../global/security/crypto/aes-gcm.util';
 import { toClinicianResponse } from '../../clinician/mapper/clinician.mapper';
 import { ClinicianRepository } from '../../clinician/repository/clinician.repository';
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly txManager: TransactionManager,
     private readonly jwtService: JwtService,
     private readonly passwordHasher: PasswordHasher,
+    private readonly tokenDenylist: TokenDenylistService,
     private readonly aesGcm: AesGcmUtil,
     private readonly alertSender: RealTimeAlertSender,
     private readonly traceContext: TraceContext,
@@ -79,9 +81,10 @@ export class AuthService {
   async refresh(refreshCookie: string | null): Promise<IssuedAuth> {
     const session = await this.resolveSession(refreshCookie);
 
-    // rotated·revoked 세션의 재사용 = 탈취 신호 → family 전체 폐기 + 알림
+    // rotated·revoked 세션의 재사용 = 탈취 신호 → family 전체 폐기 + access 즉시 차단 + 알림
     if (session.rotatedAt || session.revokedAt) {
       await this.sessionRepository.revokeFamily(session.familyId, new Date(), session.id);
+      await this.tokenDenylist.denyFamily(session.familyId, this.config.accessTtlSec);
       this.alertSender.send({
         title: 'AUTH_REFRESH_REUSED',
         detail: `refresh 토큰 재사용 감지 — family 전체 폐기 (clinician=${session.clinicianId})`,
@@ -100,14 +103,10 @@ export class AuthService {
     });
   }
 
-  async logout(refreshCookie: string | null): Promise<void> {
-    const parsed = this.parseRefreshCookie(refreshCookie);
-    if (!parsed) return; // 쿠키가 없어도 로그아웃은 성공 처리 (쿠키 만료는 컨트롤러가 수행)
-
-    const session = await this.sessionRepository.findById(parsed.sessionId);
-    if (session && this.refreshSecretMatches(parsed.secret, session)) {
-      await this.sessionRepository.revokeFamily(session.familyId, new Date());
-    }
+  /** family 폐기(DB) + 이미 발급된 access 토큰 즉시 무효화(denylist) */
+  async logout(principal: ClinicianPrincipal): Promise<void> {
+    await this.sessionRepository.revokeFamily(principal.familyId, new Date());
+    await this.tokenDenylist.denyFamily(principal.familyId, this.config.accessTtlSec);
   }
 
   async me(principal: ClinicianPrincipal): Promise<AuthSessionResponseDto['clinician']> {
@@ -127,6 +126,7 @@ export class AuthService {
     if (!found) throw new ServiceException('UNAUTHORIZED');
 
     const sessionId = ulid();
+    const family = familyId ?? ulid();
     const secret = randomBytes(32).toString('base64url');
     const refreshExpiresAt = new Date(
       Date.now() + this.config.refreshTtlDays * 24 * 60 * 60 * 1000,
@@ -135,7 +135,7 @@ export class AuthService {
     await this.sessionRepository.insert({
       id: sessionId,
       clinicianId,
-      familyId: familyId ?? ulid(),
+      familyId: family,
       refreshTokenHash: sha256(secret),
       expiresAt: refreshExpiresAt,
     });
@@ -145,6 +145,7 @@ export class AuthService {
       sub: clinicianId,
       clinicId: found.clinician.clinicId,
       sid: sessionId,
+      fid: family,
     });
 
     return {

@@ -42,6 +42,11 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     problems.push('AUTH_JWT_SECRET은 32자 이상이어야 합니다. 생성: openssl rand -base64 48');
   }
 
+  const redisUrl = config.REDIS_URL;
+  if (typeof redisUrl !== 'string' || redisUrl.length === 0) {
+    problems.push('REDIS_URL이 필요합니다. 예: redis://localhost:6379');
+  }
+
   if (problems.length > 0) {
     throw new Error(`환경변수 검증 실패:\n- ${problems.join('\n- ')}`);
   }

@@ -71,12 +71,12 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(200)
-  @ApiOperation({ summary: '로그아웃 — 세션 family 폐기 + 쿠키 만료' })
+  @ApiOperation({ summary: '로그아웃 — 세션 family 폐기 + access 즉시 무효화 + 쿠키 만료' })
   async logout(
-    @Req() req: Request,
+    @CurrentClinician() principal: ClinicianPrincipal,
     @Res({ passthrough: true }) res: Response,
   ): Promise<ApiResponseDto<null>> {
-    await this.authService.logout(this.tokenResolver.resolveRefresh(req));
+    await this.authService.logout(principal);
     this.applyCookie(res, this.cookieFactory.expireAccess());
     this.applyCookie(res, this.cookieFactory.expireRefresh());
     return ApiResponseDto.success(null);
