@@ -32,6 +32,16 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     problems.push('CRYPTO_HMAC_INDEX_KEY는 base64 32바이트 이상이어야 합니다.');
   }
 
+  const databaseUrl = config.DATABASE_URL;
+  if (typeof databaseUrl !== 'string' || databaseUrl.length === 0) {
+    problems.push('DATABASE_URL이 필요합니다. 예: postgres://user:pass@localhost:5432/cure_agent');
+  }
+
+  const jwtSecret = config.AUTH_JWT_SECRET;
+  if (typeof jwtSecret !== 'string' || jwtSecret.length < 32) {
+    problems.push('AUTH_JWT_SECRET은 32자 이상이어야 합니다. 생성: openssl rand -base64 48');
+  }
+
   if (problems.length > 0) {
     throw new Error(`환경변수 검증 실패:\n- ${problems.join('\n- ')}`);
   }

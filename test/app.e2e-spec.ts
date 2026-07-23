@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { RealTimeAlertSender } from '../src/global/observability/real-time-alert.sender';
@@ -19,6 +20,7 @@ describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1'); // main.ts와 동일 구성
+    app.use(cookieParser());
     await app.init();
   });
 
@@ -80,9 +82,18 @@ describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
     );
   });
 
+  it('CSRF: 상태 변경 요청에 커스텀 헤더가 없으면 403 CSRF_REJECTED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/test-errors/validate')
+      .send({ email: 'doc@clinic.kr' })
+      .expect(403);
+    expect(res.body.code).toBe('CSRF_REJECTED');
+  });
+
   it('검증 실패: VALIDATION_FAILED(422) + 필드 상세, 알림 없음', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/test-errors/validate')
+      .set('X-CSRF-Protection', '1')
       .send({ email: 'not-an-email' })
       .expect(422);
 
@@ -96,8 +107,17 @@ describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
   it('whitelist: 계약에 없는 필드는 제거된다', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/test-errors/validate')
+      .set('X-CSRF-Protection', '1')
       .send({ email: 'doc@clinic.kr', hack: 'x' })
       .expect(200);
     expect(res.body.data).toEqual({ email: 'doc@clinic.kr' });
+  });
+
+  it('보호 라우트: 토큰 없으면 401 UNAUTHORIZED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('X-CSRF-Protection', '1')
+      .expect(401);
+    expect(res.body.code).toBe('UNAUTHORIZED');
   });
 });

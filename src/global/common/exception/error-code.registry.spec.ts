@@ -4,7 +4,7 @@ describe('ErrorCodes 레지스트리', () => {
   const entries = Object.entries(ErrorCodes);
 
   it('status는 봉투 운영 규칙(§10.1)의 허용 집합에 속한다', () => {
-    const allowed = new Set([400, 401, 403, 404, 409, 422, 500, 503]);
+    const allowed = new Set([400, 401, 403, 404, 409, 422, 429, 500, 503]);
     for (const [code, def] of entries) {
       expect({ code, ok: allowed.has(def.status) }).toEqual({ code, ok: true });
     }

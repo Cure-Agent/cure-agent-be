@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Module, Post } from '@nestjs/common';
 import { IsEmail } from 'class-validator';
 import { ServiceException } from '../../src/global/common/exception/service.exception';
+import { Public } from '../../src/global/security/public.decorator';
 
 class ValidateRequestDto {
   @IsEmail()
@@ -8,6 +9,7 @@ class ValidateRequestDto {
 }
 
 /** e2e 전용: 예외 필터·검증 파이프 동작 검증용 라우트. 프로덕션 모듈에 포함되지 않는다. */
+@Public()
 @Controller('test-errors')
 class TestErrorsController {
   @Get('conflict')

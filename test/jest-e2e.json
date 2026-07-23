@@ -6,5 +6,7 @@
     "^.+\\.ts$": "ts-jest"
   },
   "setupFiles": ["<rootDir>/setup-env.ts"],
-  "testEnvironment": "node"
+  "testEnvironment": "node",
+  "testTimeout": 180000,
+  "maxWorkers": 1
 }

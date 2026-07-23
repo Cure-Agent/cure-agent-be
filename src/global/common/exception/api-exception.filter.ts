@@ -23,6 +23,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     403: 'FORBIDDEN',
     404: 'NOT_FOUND',
     422: 'VALIDATION_FAILED',
+    429: 'RATE_LIMITED',
   };
 
   constructor(

@@ -775,7 +775,7 @@ class PageMetaDto {
 
 운영 규칙:
 
-- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/404/409/422/500/503 사용.
+- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/403/404/409/422/429/500/503 사용.
 - code는 FE 분기용으로 안정적으로 유지, message는 사용자 표시용, traceId는 로그·응답 연결용.
 - 목록은 `data: T[]` + `page: PageMetaDto`. 생성 API는 HTTP 201 + envelope.
 - SSE·파일 다운로드에는 envelope 미적용.
@@ -791,8 +791,10 @@ export const ErrorCodes = {
   BAD_REQUEST:                { status: 400, message: "적절하지 않은 요청입니다." },
   UNAUTHORIZED:               { status: 401, message: "인증이 필요합니다." },
   FORBIDDEN:                  { status: 403, message: "권한이 없습니다." },
+  CSRF_REJECTED:              { status: 403, message: "요청 출처를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요." },
   NOT_FOUND:                  { status: 404, message: "대상을 찾을 수 없습니다." },
   VALIDATION_FAILED:          { status: 422, message: "입력값이 올바르지 않습니다." },
+  RATE_LIMITED:               { status: 429, message: "요청이 너무 잦습니다. 잠시 후 다시 시도해주세요." },
   INTERNAL_ERROR:             { status: 500, message: "서버 내부 오류가 발생했습니다." },
   // Auth
   AUTH_INVALID_CREDENTIALS:   { status: 401, message: "이메일 또는 비밀번호가 올바르지 않습니다." },

@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { ApiEnvelopeResponse } from '../global/common/response/api-envelope.decorator';
+import { Public } from '../global/security/public.decorator';
 
 export class HealthResponseDto {
   @ApiProperty({ example: 'ok' })
@@ -8,6 +9,7 @@ export class HealthResponseDto {
 }
 
 @ApiTags('Health')
+@Public()
 @Controller('health')
 export class HealthController {
   @Get()
