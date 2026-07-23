@@ -1,0 +1,29 @@
+name: Contract Notify
+
+# openapi/ 계약이 main에 반영되면 FE 레포에 동기화를 즉시 트리거한다 (architecture.md §1).
+# CONTRACT_SYNC_TOKEN(fine-grained PAT, cure-agent-fe Contents R/W) 미설정 시에는
+# FE의 일일 cron 폴백이 동기화를 담당한다.
+
+on:
+  push:
+    branches: [main]
+    paths: ['openapi/**']
+
+jobs:
+  notify-fe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: FE 레포에 contract-updated dispatch
+        env:
+          SYNC_TOKEN: ${{ secrets.CONTRACT_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::notice::CONTRACT_SYNC_TOKEN 미설정 — FE의 일일 cron 폴백이 동기화합니다"
+            exit 0
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $SYNC_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Cure-Agent/cure-agent-fe/dispatches \
+            -d "{\"event_type\":\"contract-updated\",\"client_payload\":{\"sha\":\"$GITHUB_SHA\"}}"
+          echo "FE contract-sync 트리거 완료"

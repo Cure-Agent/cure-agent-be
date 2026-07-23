@@ -45,7 +45,7 @@ NestJS Request/Response DTO + Controller decorator
 
 운영 규칙:
 
-- **두 레포 동기화**: BE CI가 `openapi/cure-agent.v1.json`을 export·커밋 → FE의 `scripts/generate-api.mjs`가 BE 레포 raw URL에서 fetch 후 codegen → FE CI는 사본 재생성 diff가 0인지 검사해 수동 편집을 기계적으로 차단.
+- **두 레포 동기화(자동)**: 계약 변경 시 개발자는 `pnpm openapi:export`로 스펙을 갱신·커밋한다(누락 시 contract 테스트가 CI에서 실패). BE main에 `openapi/**` 변경이 push되면 `contract-notify` 워크플로우가 FE에 `repository_dispatch(contract-updated)`를 발사하고, FE의 `contract-sync` 워크플로우가 `api:sync` 후 **동기화 PR(`chore/contract-sync`)을 자동 생성**한다. dispatch 토큰(`CONTRACT_SYNC_TOKEN`) 부재 시 FE의 일일 cron이 폴백으로 동기화한다. **breaking 변경은 동기화 PR의 typecheck 실패로 표면화**되며, FE 적응 커밋을 같은 PR에 쌓아 머지한다. FE CI는 커밋된 스펙 기준 재생성 diff=0을 검사해 수동 편집을 기계적으로 차단한다.
 - **생성 도구**: `openapi-typescript` + `openapi-fetch`. TanStack Query hook은 각 feature에서 정의. SSE는 별도 stream-client.
 - **enum 전방 호환**: OpenAPI enum에 값이 추가될 수 있음을 전제로, FE는 unknown variant를 안전하게 무시/기본 렌더링한다(exhaustive switch에 `default` 필수).
 - 주요 에러 코드는 `@ApiEnvelopeResponse`의 에러 응답 정의에 함께 문서화해 FE가 분기 케이스를 계약으로 받게 한다.
@@ -961,3 +961,4 @@ FE UI
 | 12 | codegen CI를 구현 순서 3단계로 전진, 1단계에 레지스트리·traceId·필터 포함 |
 | 13 | 구현 순서 4단계에 SDD 하네스(implement.md + docs/specs/) 도입, 5단계 이후 spec 선행·테스트 동결 규칙 명시 |
 | 14 | Redis 도입: access 토큰 즉시 무효화 denylist(`fid` claim, fail-open) — refresh 원본 저장소는 PostgreSQL 유지, Redis는 denylist+캐시 용도 |
+| 15 | 계약 동기화 자동화: BE `openapi/**` push → FE repository_dispatch → 자동 동기화 PR, 일일 cron 폴백, breaking은 동기화 PR typecheck 실패로 표면화 |
