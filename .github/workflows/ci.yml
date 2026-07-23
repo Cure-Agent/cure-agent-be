@@ -31,3 +31,29 @@ jobs:
         uses: docker://ghcr.io/gitleaks/gitleaks:latest
         with:
           args: detect --source=. --redact -v
+
+  # PR에서 OpenAPI breaking change 감지 (architecture.md §1, §13)
+  # 스펙 diff=0 검증은 test:e2e의 contract 스펙이 담당한다
+  openapi-breaking:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: base 스펙 추출
+        id: base
+        run: |
+          if git show "origin/${{ github.base_ref }}:openapi/cure-agent.v1.json" > /tmp/base.json 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "base 브랜치에 스펙이 없어 breaking 검사를 건너뜁니다"
+          fi
+      - name: oasdiff breaking
+        if: steps.base.outputs.exists == 'true'
+        run: |
+          docker run --rm \
+            -v /tmp/base.json:/base.json:ro \
+            -v "$PWD/openapi/cure-agent.v1.json:/rev.json:ro" \
+            tufin/oasdiff breaking --fail-on ERR /base.json /rev.json

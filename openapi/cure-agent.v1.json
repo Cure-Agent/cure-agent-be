@@ -1,0 +1,471 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "서버 상태 확인",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/v1/auth/signup": {
+      "post": {
+        "operationId": "AuthController_signUp",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignUpRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthSessionResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "의료인 가입 + 즉시 로그인 (쿠키 발급)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthSessionResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "이메일 로그인 (쿠키 발급)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthSessionResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "access 재발급 + refresh rotation",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "로그아웃 — 세션 family 폐기 + access 즉시 무효화 + 쿠키 만료",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ClinicianResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "현재 사용자 복구",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email-availability": {
+      "get": {
+        "operationId": "AuthController_emailAvailability",
+        "parameters": [
+          {
+            "name": "email",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "doctor@clinic.kr",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/EmailAvailabilityResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "이메일 중복 확인 (rate limit 적용)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Cure Agent API",
+    "description": "한의 임상 지침 기반 어시스턴트 API. 일반 JSON 응답은 공통 봉투(success/code/message/data/page/timestamp/traceId)를 사용하며, SSE 스트리밍에는 봉투를 적용하지 않는다. 인증은 HttpOnly 쿠키 기반이다.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "access_token"
+      }
+    },
+    "schemas": {
+      "PageMetaDto": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "number",
+            "description": "이번 페이지 항목 수"
+          },
+          "hasNext": {
+            "type": "boolean",
+            "description": "다음 페이지 존재 여부"
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "다음 페이지 커서(불투명 문자열)"
+          }
+        },
+        "required": [
+          "size",
+          "hasNext",
+          "nextCursor"
+        ]
+      },
+      "ApiResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "비즈니스 성공 여부"
+          },
+          "code": {
+            "type": "string",
+            "description": "코드 레지스트리 기반 식별자 (FE 분기용)"
+          },
+          "message": {
+            "type": "string",
+            "description": "사용자 표시용 메시지"
+          },
+          "page": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PageMetaDto"
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "응답 생성 시각 (ISO 8601)"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "요청 추적 ID (로그·알림과 연결)"
+          }
+        },
+        "required": [
+          "success",
+          "code",
+          "message",
+          "page",
+          "timestamp",
+          "traceId"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ClinicSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ClinicianResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "clinic": {
+            "$ref": "#/components/schemas/ClinicSummaryResponseDto"
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "VERIFIED",
+              "REJECTED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "displayName",
+          "clinic",
+          "verificationStatus"
+        ]
+      },
+      "AuthSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "clinician": {
+            "$ref": "#/components/schemas/ClinicianResponseDto"
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "access 토큰 만료 시각 (ISO 8601)"
+          }
+        },
+        "required": [
+          "clinician",
+          "expiresAt"
+        ]
+      },
+      "SignUpRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "doctor@clinic.kr"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10
+          },
+          "displayName": {
+            "type": "string",
+            "example": "김의사"
+          },
+          "clinicName": {
+            "type": "string",
+            "example": "서울한의원"
+          },
+          "licenseNumber": {
+            "type": "string",
+            "description": "면허번호 — 저장 시 암호화된다"
+          },
+          "termsAccepted": {
+            "type": "boolean",
+            "description": "true 필수"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "displayName",
+          "clinicName",
+          "licenseNumber",
+          "termsAccepted"
+        ]
+      },
+      "LoginRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "doctor@clinic.kr"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "EmailAvailabilityResponseDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ]
+      }
+    }
+  }
+}
