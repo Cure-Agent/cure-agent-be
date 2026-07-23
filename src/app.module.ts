@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './domain/auth/auth.module';
 import { ClinicianModule } from './domain/clinician/clinician.module';
 import { GuidelineModule } from './domain/guideline/guideline.module';
+import { LlmModule } from './infrastructure/llm/llm.module';
 import { ApiExceptionFilter } from './global/common/exception/api-exception.filter';
 import { buildGlobalValidationPipe } from './global/common/pipe/global-validation.pipe';
 import { ApiResponseInterceptor } from './global/common/response/api-response.interceptor';
@@ -43,6 +44,7 @@ import { HealthModule } from './health/health.module';
     ClinicianModule,
     AuthModule,
     GuidelineModule,
+    LlmModule,
   ],
   providers: [
     { provide: APP_PIPE, useFactory: buildGlobalValidationPipe },
