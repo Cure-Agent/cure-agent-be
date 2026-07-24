@@ -780,6 +780,267 @@
           "Feedback"
         ]
       }
+    },
+    "/api/v1/patients": {
+      "post": {
+        "operationId": "PatientController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePatientRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PatientDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "환자 프로필 등록 (민감 필드 암호화 저장 §4.5)",
+        "tags": [
+          "Patient"
+        ]
+      },
+      "get": {
+        "operationId": "PatientController_list",
+        "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "caseLabel 부분일치 검색",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "ARCHIVED"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PatientSummaryResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "환자 검색·목록 (caseLabel 부분일치, 커서 기반)",
+        "tags": [
+          "Patient"
+        ]
+      }
+    },
+    "/api/v1/patients/{patientId}": {
+      "get": {
+        "operationId": "PatientController_detail",
+        "parameters": [
+          {
+            "name": "patientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PatientDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "환자 상세",
+        "tags": [
+          "Patient"
+        ]
+      },
+      "patch": {
+        "operationId": "PatientController_update",
+        "parameters": [
+          {
+            "name": "patientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePatientRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PatientDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "환자 수정 (낙관적 잠금 — version 필수)",
+        "tags": [
+          "Patient"
+        ]
+      }
+    },
+    "/api/v1/patients/{patientId}/archive": {
+      "post": {
+        "operationId": "PatientController_archive",
+        "parameters": [
+          {
+            "name": "patientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "환자 보관",
+        "tags": [
+          "Patient"
+        ]
+      }
+    },
+    "/api/v1/patients/{patientId}/unarchive": {
+      "post": {
+        "operationId": "PatientController_unarchive",
+        "parameters": [
+          {
+            "name": "patientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "환자 보관 해제",
+        "tags": [
+          "Patient"
+        ]
+      }
     }
   },
   "info": {
@@ -804,7 +1065,7 @@
         "properties": {
           "size": {
             "type": "number",
-            "description": "이번 페이지 항목 수"
+            "description": "요청한 페이지 크기 에코 (§10.4 — 항목 수는 data.length)"
           },
           "hasNext": {
             "type": "boolean",
@@ -1464,6 +1725,253 @@
         "required": [
           "rating"
         ]
+      },
+      "PatientDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "caseLabel": {
+            "type": "string",
+            "example": "CASE-001"
+          },
+          "age": {
+            "type": "number",
+            "description": "birthYear 기준 만 나이 근사"
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "OTHER",
+              "UNKNOWN"
+            ]
+          },
+          "bmi": {
+            "type": "number",
+            "description": "소수 1자리"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "birthYear": {
+            "type": "number"
+          },
+          "heightCm": {
+            "type": "number"
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "waistCm": {
+            "type": "number"
+          },
+          "diagnoses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "medications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allergies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clinicalNotes": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "description": "낙관적 잠금 버전 (§6)"
+          }
+        },
+        "required": [
+          "id",
+          "caseLabel",
+          "status",
+          "updatedAt",
+          "diagnoses",
+          "medications",
+          "allergies",
+          "version"
+        ]
+      },
+      "CreatePatientRequestDto": {
+        "type": "object",
+        "properties": {
+          "caseLabel": {
+            "type": "string",
+            "example": "CASE-001",
+            "description": "비식별 케이스 라벨 (§4.5)"
+          },
+          "birthYear": {
+            "type": "number",
+            "example": 1980
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "OTHER",
+              "UNKNOWN"
+            ]
+          },
+          "heightCm": {
+            "type": "number"
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "waistCm": {
+            "type": "number"
+          },
+          "diagnoses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "medications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allergies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clinicalNotes": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "caseLabel",
+          "diagnoses",
+          "medications",
+          "allergies"
+        ]
+      },
+      "PatientSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "caseLabel": {
+            "type": "string",
+            "example": "CASE-001"
+          },
+          "age": {
+            "type": "number",
+            "description": "birthYear 기준 만 나이 근사"
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "OTHER",
+              "UNKNOWN"
+            ]
+          },
+          "bmi": {
+            "type": "number",
+            "description": "소수 1자리"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "id",
+          "caseLabel",
+          "status",
+          "updatedAt"
+        ]
+      },
+      "UpdatePatientRequestDto": {
+        "type": "object",
+        "properties": {
+          "caseLabel": {
+            "type": "string",
+            "example": "CASE-001",
+            "description": "비식별 케이스 라벨 (§4.5)"
+          },
+          "birthYear": {
+            "type": "number",
+            "example": 1980
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "OTHER",
+              "UNKNOWN"
+            ]
+          },
+          "heightCm": {
+            "type": "number"
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "waistCm": {
+            "type": "number"
+          },
+          "diagnoses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "medications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allergies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clinicalNotes": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        }
       }
     }
   }

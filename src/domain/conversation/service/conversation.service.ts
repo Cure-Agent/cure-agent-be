@@ -74,7 +74,7 @@ export class ConversationService {
     return PageResult.of(
       page.map((row) => toConversationSummary(row, latest.get(row.id))),
       {
-        size: page.length,
+        size,
         hasNext,
         nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].id }) : null,
       },
@@ -126,7 +126,7 @@ export class ConversationService {
     return PageResult.of(
       page.map((row) => toMessageDto(row, citationsByMessage.get(row.id) ?? [])),
       {
-        size: page.length,
+        size,
         hasNext,
         nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].id }) : null,
       },
