@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { LlmProvider, LlmStreamRequest } from './llm-provider.port';
 
 /**
- * 결정적 fake LLM (docs/specs/06 — 실 프로바이더 연동은 spec 07).
+ * 결정적 fake LLM (docs/specs/06 — 실 프로바이더 연동은 docs/specs/13).
  * 검색된 근거의 마커를 인용하는 답변을 생성해, 인용 파이프라인 전체를 키 없이 검증한다.
+ * API 키가 하나도 설정되지 않은 환경에서만 등록된다(docs/specs/13 등록 정책).
  */
 @Injectable()
 export class FakeLlmProvider implements LlmProvider {

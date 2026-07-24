@@ -9,6 +9,7 @@ import { TraceContext } from '../../../global/context/trace-context.service';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { LlmGateway } from '../../../infrastructure/llm/llm-gateway';
 import { LlmEvidenceContext } from '../../../infrastructure/llm/llm-provider.port';
+import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
 import {
   RETRIEVAL_POLICY_VERSION,
   RetrievalService,
@@ -27,7 +28,7 @@ import { MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
 import { SseStream } from '../sse/sse-stream';
 
-const PROMPT_VERSION = 'qa-v1';
+/** 프로바이더가 모델을 보고하지 않는 경우(fake·테스트 프로바이더)의 기록값 */
 const MODEL_LABEL = 'gateway-routed';
 const QUOTE_LIMIT = 120;
 const STREAM_TIMEOUT_MS = 120_000;
@@ -233,7 +234,7 @@ export class ConversationStreamService {
         id: ulid(),
         messageId: assistantMessageId,
         provider: outcome.provider,
-        model: MODEL_LABEL,
+        model: outcome.model ?? MODEL_LABEL,
         promptVersion: PROMPT_VERSION,
         retrievalPolicyVersion: RETRIEVAL_POLICY_VERSION,
         latencyMs: outcome.latencyMs,
