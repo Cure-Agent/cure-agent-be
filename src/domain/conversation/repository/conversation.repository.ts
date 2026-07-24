@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, lt } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import {
   GuidelineRow,
@@ -56,12 +56,21 @@ export class ConversationRepository {
 
   async list(
     scope: ConversationScope,
-    filter: { type?: ConversationRow['type']; patientId?: string; afterId?: string; limit: number },
+    filter: {
+      type?: ConversationRow['type'];
+      patientId?: string;
+      status?: ConversationRow['status'];
+      query?: string;
+      afterId?: string;
+      limit: number;
+    },
   ): Promise<ConversationRow[]> {
     const conditions = [
       eq(conversations.clinicianId, scope.clinicianId),
       filter.type ? eq(conversations.type, filter.type) : undefined,
       filter.patientId ? eq(conversations.patientId, filter.patientId) : undefined,
+      filter.status ? eq(conversations.status, filter.status) : undefined,
+      filter.query ? ilike(conversations.title, `%${filter.query}%`) : undefined,
       filter.afterId ? lt(conversations.id, filter.afterId) : undefined,
     ].filter((c) => c !== undefined);
 
@@ -71,6 +80,34 @@ export class ConversationRepository {
       .where(and(...conditions))
       .orderBy(desc(conversations.id))
       .limit(filter.limit);
+  }
+
+  /** 소유 스코프에서만 갱신 — 0행이면 미존재/타인 (docs/specs/11) */
+  async updateTitle(
+    scope: ConversationScope,
+    id: string,
+    title: string,
+  ): Promise<ConversationRow | null> {
+    const rows = await this.txManager.conn
+      .update(conversations)
+      .set({ title })
+      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .returning();
+    return rows[0] ?? null;
+  }
+
+  /** 멱등 — 이미 해당 상태여도 갱신으로 취급한다 (docs/specs/11 기준 2) */
+  async updateStatus(
+    scope: ConversationScope,
+    id: string,
+    status: ConversationRow['status'],
+  ): Promise<ConversationRow | null> {
+    const rows = await this.txManager.conn
+      .update(conversations)
+      .set({ status })
+      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .returning();
+    return rows[0] ?? null;
   }
 
   // ── messages ─────────────────────────────────────────

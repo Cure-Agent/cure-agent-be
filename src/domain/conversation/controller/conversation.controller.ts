@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
@@ -13,6 +13,7 @@ import { CreateConversationRequestDto } from '../dto/request/create-conversation
 import { ListConversationsQueryDto } from '../dto/request/list-conversations.query.dto';
 import { ListMessagesQueryDto } from '../dto/request/list-messages.query.dto';
 import { SendMessageRequestDto } from '../dto/request/send-message.request.dto';
+import { UpdateConversationRequestDto } from '../dto/request/update-conversation.request.dto';
 import { ConversationDetailResponseDto } from '../dto/response/conversation-detail.response.dto';
 import { ConversationSummaryResponseDto } from '../dto/response/conversation-summary.response.dto';
 import { MessageResponseDto } from '../dto/response/message.response.dto';
@@ -56,6 +57,37 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
   ): Promise<ConversationDetailResponseDto> {
     return this.conversationService.detail(principal, conversationId);
+  }
+
+  @Patch(':conversationId')
+  @ApiOperation({ summary: '대화명 변경 (§5.7)' })
+  @ApiEnvelopeResponse(ConversationSummaryResponseDto)
+  rename(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('conversationId') conversationId: string,
+    @Body() dto: UpdateConversationRequestDto,
+  ): Promise<ConversationSummaryResponseDto> {
+    return this.conversationService.rename(principal, conversationId, dto.title);
+  }
+
+  @Post(':conversationId/archive')
+  @HttpCode(200)
+  @ApiOperation({ summary: '대화 보관 (§5.7 — 멱등)' })
+  archive(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('conversationId') conversationId: string,
+  ): Promise<null> {
+    return this.conversationService.archive(principal, conversationId);
+  }
+
+  @Post(':conversationId/unarchive')
+  @HttpCode(200)
+  @ApiOperation({ summary: '대화 보관 해제 (§5.7 — 멱등)' })
+  unarchive(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('conversationId') conversationId: string,
+  ): Promise<null> {
+    return this.conversationService.unarchive(principal, conversationId);
   }
 
   @Get(':conversationId/messages')

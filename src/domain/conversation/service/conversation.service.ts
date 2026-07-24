@@ -74,7 +74,14 @@ export class ConversationService {
 
     const rows = await this.repository.list(
       { clinicianId: principal.clinicianId },
-      { type: query.type, patientId: query.patientId, afterId, limit: size + 1 },
+      {
+        type: query.type,
+        patientId: query.patientId,
+        status: query.status,
+        query: query.query,
+        afterId,
+        limit: size + 1,
+      },
     );
     const hasNext = rows.length > size;
     const page = rows.slice(0, size);
@@ -142,20 +149,39 @@ export class ConversationService {
     );
   }
 
-  rename(
-    _principal: ClinicianPrincipal,
-    _conversationId: string,
-    _title: string,
+  async rename(
+    principal: ClinicianPrincipal,
+    conversationId: string,
+    title: string,
   ): Promise<ConversationSummaryResponseDto> {
-    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+    const updated = await this.repository.updateTitle(
+      { clinicianId: principal.clinicianId },
+      conversationId,
+      title,
+    );
+    if (!updated) throw new ServiceException('NOT_FOUND');
+    const latest = await this.repository.latestMessages([updated.id]);
+    return toConversationSummary(updated, latest.get(updated.id));
   }
 
-  archive(_principal: ClinicianPrincipal, _conversationId: string): Promise<null> {
-    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+  async archive(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
+    const updated = await this.repository.updateStatus(
+      { clinicianId: principal.clinicianId },
+      conversationId,
+      'ARCHIVED',
+    );
+    if (!updated) throw new ServiceException('NOT_FOUND');
+    return null;
   }
 
-  unarchive(_principal: ClinicianPrincipal, _conversationId: string): Promise<null> {
-    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+  async unarchive(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
+    const updated = await this.repository.updateStatus(
+      { clinicianId: principal.clinicianId },
+      conversationId,
+      'ACTIVE',
+    );
+    if (!updated) throw new ServiceException('NOT_FOUND');
+    return null;
   }
 
   async submitFeedback(

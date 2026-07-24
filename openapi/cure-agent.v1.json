@@ -549,6 +549,28 @@
             }
           },
           {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "미지정 시 전체 (docs/specs/11)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "ARCHIVED"
+              ]
+            }
+          },
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "제목 부분일치 검색 (§6)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "cursor",
             "required": false,
             "in": "query",
@@ -640,6 +662,104 @@
           }
         },
         "summary": "대화 상세",
+        "tags": [
+          "Conversation"
+        ]
+      },
+      "patch": {
+        "operationId": "ConversationController_rename",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ConversationSummaryResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "대화명 변경 (§5.7)",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/archive": {
+      "post": {
+        "operationId": "ConversationController_archive",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "대화 보관 (§5.7 — 멱등)",
+        "tags": [
+          "Conversation"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/unarchive": {
+      "post": {
+        "operationId": "ConversationController_unarchive",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "대화 보관 해제 (§5.7 — 멱등)",
         "tags": [
           "Conversation"
         ]
@@ -1580,6 +1700,14 @@
           "title": {
             "type": "string"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "description": "보관 여부 (docs/specs/11 additive)"
+          },
           "lastMessagePreview": {
             "type": "string",
             "description": "마지막 메시지 미리보기 (80자)"
@@ -1593,6 +1721,7 @@
           "id",
           "type",
           "title",
+          "status",
           "updatedAt"
         ]
       },
@@ -1635,6 +1764,14 @@
           "title": {
             "type": "string"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "description": "보관 여부 (docs/specs/11 additive)"
+          },
           "lastMessagePreview": {
             "type": "string",
             "description": "마지막 메시지 미리보기 (80자)"
@@ -1652,8 +1789,22 @@
           "id",
           "type",
           "title",
+          "status",
           "updatedAt",
           "createdAt"
+        ]
+      },
+      "UpdateConversationRequestDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "title"
         ]
       },
       "AnswerCitationResponseDto": {
