@@ -12,6 +12,7 @@ import { AnswerCitationResponseDto } from '../dto/response/answer-citation.respo
 import { ConversationDetailResponseDto } from '../dto/response/conversation-detail.response.dto';
 import { ConversationSummaryResponseDto } from '../dto/response/conversation-summary.response.dto';
 import { MessageResponseDto } from '../dto/response/message.response.dto';
+import { PatientService } from '../../patient/service/patient.service';
 import {
   toConversationDetail,
   toConversationSummary,
@@ -30,15 +31,23 @@ interface IdCursor extends Record<string, unknown> {
 
 @Injectable()
 export class ConversationService {
-  constructor(private readonly repository: ConversationRepository) {}
+  constructor(
+    private readonly repository: ConversationRepository,
+    private readonly patientService: PatientService,
+  ) {}
 
   async create(
     principal: ClinicianPrincipal,
     dto: CreateConversationRequestDto,
   ): Promise<ConversationSummaryResponseDto> {
-    // PATIENT_GUIDANCE는 9단계(Patient 도메인)에서 활성화된다 (docs/specs/06)
-    if (dto.type !== 'GUIDELINE_QA') {
-      throw new ServiceException('BAD_REQUEST', { reason: 'PATIENT_GUIDANCE_NOT_AVAILABLE' });
+    let patientId: string | null = null;
+    if (dto.type === 'PATIENT_GUIDANCE') {
+      if (!dto.patientId) {
+        throw new ServiceException('BAD_REQUEST', { reason: 'PATIENT_ID_REQUIRED' });
+      }
+      // 미존재·타 클리닉 환자는 NOT_FOUND (§4.4 — 클리닉 스코프)
+      await this.patientService.detail({ clinicId: principal.clinicId }, dto.patientId);
+      patientId = dto.patientId;
     }
 
     const id = ulid();
@@ -47,7 +56,7 @@ export class ConversationService {
       clinicianId: principal.clinicianId,
       clinicId: principal.clinicId,
       type: dto.type,
-      patientId: null,
+      patientId,
       title: dto.title ?? DEFAULT_TITLE,
     });
 
