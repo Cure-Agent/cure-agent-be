@@ -19,6 +19,13 @@ pnpm db:migrate               # drizzle 마이그레이션
 pnpm start:dev                # http://localhost:3000/api/v1
 ```
 
+## LLM 프로바이더 (docs/specs/13)
+
+`.env`에 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 넣으면 해당 실 프로바이더가 우선순위(openai → anthropic)로
+등록되고, 하나도 없으면 결정적 fake 단독으로 동작한다(로컬·CI 기본값 — 키 없이 전 구간 검증 가능).
+실 프로바이더가 등록되면 fake는 폴백에서 빠진다: 전 프로바이더 실패는 fake 답변이 아니라
+503 `LLM_UNAVAILABLE`이어야 하기 때문이다. 재시도·서킷브레이커·rate-limit 차단·우선순위 폴백은 §11 참조.
+
 ## 검증
 
 ```bash

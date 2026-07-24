@@ -66,7 +66,12 @@ export class LlmGateway {
         });
 
         this.circuitBreaker.recordSuccess(provider.name);
-        return { provider: provider.name, text, latencyMs: Date.now() - startedAt };
+        return {
+          provider: provider.name,
+          model: provider.model,
+          text,
+          latencyMs: Date.now() - startedAt,
+        };
       } catch (error) {
         // 클라이언트 abort는 폴백 대상이 아니다 — 즉시 전파
         if (request.signal?.aborted) throw error;
