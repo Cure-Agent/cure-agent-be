@@ -76,3 +76,55 @@ describe('LlmGateway 실시간 알림 (docs/specs/12 기준 1·2)', () => {
     expect(breaker.isOpen('aborting')).toBe(false);
   });
 });
+
+describe('LlmGateway 모델 기록 (docs/specs/13 기준 8)', () => {
+  const buildGateway = (providers: LlmProvider[]): LlmGateway =>
+    new LlmGateway(
+      providers,
+      new CircuitBreaker(),
+      new RateLimitBlockStore(),
+      { send: jest.fn() } as unknown as RealTimeAlertSender,
+    );
+
+  const request = {
+    question: '만성 요통 치료는 어떻게 하나요?',
+    evidence: [
+      {
+        marker: 1,
+        content: '만성 요통에 침 치료를 권고한다',
+        guidelineTitle: '요통 진료지침',
+        sectionPath: ['치료', '침치료'],
+      },
+    ],
+  };
+
+  it('model을 가진 프로바이더로 스트림 성공 시 outcome.model에 해당 모델을 기록한다', async () => {
+    const provider: LlmProvider = {
+      name: 'modeled-provider',
+      model: 'model-v1',
+      async *streamAnswer(): AsyncIterable<string> {
+        yield '답변';
+      },
+    };
+    const gateway = buildGateway([provider]);
+
+    const outcome = await gateway.stream(request, () => undefined);
+
+    expect(outcome.model).toBe('model-v1');
+  });
+
+  it('model이 없는 프로바이더로 스트림 성공 시 outcome.model은 undefined이고 provider 이름을 기록한다', async () => {
+    const provider: LlmProvider = {
+      name: 'unmodeled-provider',
+      async *streamAnswer(): AsyncIterable<string> {
+        yield '답변';
+      },
+    };
+    const gateway = buildGateway([provider]);
+
+    const outcome = await gateway.stream(request, () => undefined);
+
+    expect(outcome.model).toBeUndefined();
+    expect(outcome.provider).toBe('unmodeled-provider');
+  });
+});
