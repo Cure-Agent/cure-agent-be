@@ -45,7 +45,7 @@
 
 ## Out of scope
 
-- 실 LLM 프로바이더(OpenAI/Anthropic) 연동 — 후속 spec 07 (API 키 필요)
+- 실 LLM 프로바이더(OpenAI/Anthropic) 연동 — 후속 **spec 13** (API 키 필요. 07 번호는 FE 파운데이션이 사용)
 - response-cache (§11 규칙만 확정, 구현 P1)
 - PATIENT_GUIDANCE·PatientProfileSnapshot·ClinicalGuidance (9단계)
 - PATCH /conversations(제목 변경)·archive/unarchive (History 스텝)
