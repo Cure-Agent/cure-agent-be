@@ -15,6 +15,7 @@ import { AppModule } from '../src/app.module';
 import { PatientSnapshotService } from '../src/domain/patient/service/patient-snapshot.service';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
+const MISSING_PATIENT_ID = '01J00000000000000000000000';
 
 interface TestAuth {
   cookie: string;
@@ -66,17 +67,18 @@ const BASE_PATIENT: CreatePatientRequest = {
   clinicalNotes: '동결민감소견-야간 두통과 어지럼증을 호소함',
 };
 
-function expectEnvelope(body: unknown, success: boolean, code: string): void {
+function expectEnvelope(body: unknown, success: boolean, code?: string): void {
   expect(body).toEqual(
     expect.objectContaining({
       success,
-      code,
+      code: code ?? expect.any(String),
       message: expect.any(String),
       timestamp: expect.any(String),
       traceId: expect.any(String),
     }),
   );
   expect(body).toHaveProperty('data');
+  expect(body).toHaveProperty('page');
 }
 
 function expectCiphertext(value: unknown, plaintexts: string[]): void {
@@ -141,6 +143,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .expect(201);
 
     expectEnvelope(res.body, true, 'CREATED');
+    expect(res.body.page).toBeNull();
     expect(res.body.data).toEqual(
       expect.objectContaining({
         id: expect.any(String),
@@ -230,7 +233,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .get(`/api/v1/patients/${patient.id}`)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(detail.body, true, 'OK');
+    expectEnvelope(detail.body, true);
     expect(detail.body.data).toEqual(
       expect.objectContaining({
         diagnoses: body.diagnoses,
@@ -258,7 +261,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .query({ size: 2 })
       .set('Cookie', paginationAuth.cookie)
       .expect(200);
-    expectEnvelope(page1.body, true, 'OK');
+    expectEnvelope(page1.body, true);
     expect(page1.body.data).toHaveLength(2);
     expect(page1.body.page).toEqual(
       expect.objectContaining({
@@ -291,15 +294,15 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .query({ size: 2, cursor: page1.body.page.nextCursor })
       .set('Cookie', paginationAuth.cookie)
       .expect(200);
-    expectEnvelope(page2.body, true, 'OK');
+    expectEnvelope(page2.body, true);
     expect(page2.body.data).toHaveLength(1);
     expect(page2.body.page).toEqual(
       expect.objectContaining({
         size: 2,
         hasNext: false,
+        nextCursor: null,
       }),
     );
-    expect(page2.body.page).toHaveProperty('nextCursor');
 
     const allIds = [...page1.body.data, ...page2.body.data].map(
       (item: { id: string }) => item.id,
@@ -318,7 +321,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .query({ query: '청룡검색', size: 50 })
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(res.body, true, 'OK');
+    expectEnvelope(res.body, true);
     expect(res.body.data).toHaveLength(2);
     expect(
       (res.body.data as { caseLabel: string }[]).every((item) =>
@@ -337,14 +340,17 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .get(`/api/v1/patients/${patient.id}`)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(owned.body, true, 'OK');
+    expectEnvelope(owned.body, true);
     expect(owned.body.data).toEqual(expect.objectContaining({ id: patient.id }));
 
     const missing = await request(server())
-      .get('/api/v1/patients/00000000-0000-4000-8000-000000000404')
+      .get(`/api/v1/patients/${MISSING_PATIENT_ID}`)
       .set('Cookie', authA.cookie)
       .expect(404);
     expectEnvelope(missing.body, false, 'NOT_FOUND');
+    expect(missing.body).toEqual(
+      expect.objectContaining({ data: null, page: null }),
+    );
   });
 
   it('기준 5: 소유자 GET 200 선행 후 타 클리닉 GET/PATCH/archive는 모두 404', async () => {
@@ -354,7 +360,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .get(`/api/v1/patients/${patient.id}`)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(owned.body, true, 'OK');
+    expectEnvelope(owned.body, true);
     expect(owned.body.data.id).toBe(patient.id);
 
     const foreignGet = await request(server())
@@ -377,6 +383,11 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .set('Cookie', authB.cookie)
       .expect(404);
     expectEnvelope(foreignArchive.body, false, 'NOT_FOUND');
+    for (const response of [foreignGet, foreignPatch, foreignArchive]) {
+      expect(response.body).toEqual(
+        expect.objectContaining({ data: null, page: null }),
+      );
+    }
   });
 
   it('기준 6: PATCH version 성공 시 반영·증가, 구 version 재사용은 409와 currentVersion', async () => {
@@ -392,7 +403,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
         version: patient.version,
       })
       .expect(200);
-    expectEnvelope(updated.body, true, 'OK');
+    expectEnvelope(updated.body, true);
     expect(updated.body.data).toEqual(
       expect.objectContaining({
         id: patient.id,
@@ -413,6 +424,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
     expect(conflict.body.data).toEqual(
       expect.objectContaining({ currentVersion: patient.version + 1 }),
     );
+    expect(conflict.body.page).toBeNull();
   });
 
   it('기준 7: archive 후 PATCH 거부, ARCHIVED 목록 노출, unarchive 후 PATCH 성공', async () => {
@@ -423,7 +435,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .set(CSRF)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(archived.body, true, 'OK');
+    expectEnvelope(archived.body, true);
     expect(archived.body.data).toBeNull();
 
     const rejected = await request(server())
@@ -433,13 +445,15 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .send({ caseLabel: '보관 중 수정 시도', version: patient.version })
       .expect(409);
     expectEnvelope(rejected.body, false, 'PATIENT_ARCHIVED');
+    expect(rejected.body.data).toBeNull();
+    expect(rejected.body.page).toBeNull();
 
     const archivedList = await request(server())
       .get('/api/v1/patients')
       .query({ status: 'ARCHIVED', size: 50 })
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(archivedList.body, true, 'OK');
+    expectEnvelope(archivedList.body, true);
     expect(archivedList.body.data).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: patient.id, status: 'ARCHIVED' }),
@@ -456,14 +470,14 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .set(CSRF)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(unarchived.body, true, 'OK');
+    expectEnvelope(unarchived.body, true);
     expect(unarchived.body.data).toBeNull();
 
     const current = await request(server())
       .get(`/api/v1/patients/${patient.id}`)
       .set('Cookie', authA.cookie)
       .expect(200);
-    expectEnvelope(current.body, true, 'OK');
+    expectEnvelope(current.body, true);
     expect(current.body.data.status).toBe('ACTIVE');
 
     const patched = await request(server())
@@ -475,7 +489,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
         version: current.body.data.version,
       })
       .expect(200);
-    expectEnvelope(patched.body, true, 'OK');
+    expectEnvelope(patched.body, true);
     expect(patched.body.data).toEqual(
       expect.objectContaining({
         id: patient.id,
@@ -521,6 +535,8 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
   it('기준 9: 쿠키 없는 목록·생성 요청은 모두 401 UNAUTHORIZED', async () => {
     const list = await request(server()).get('/api/v1/patients').expect(401);
     expectEnvelope(list.body, false, 'UNAUTHORIZED');
+    expect(list.body.data).toBeNull();
+    expect(list.body.page).toBeNull();
 
     const create = await request(server())
       .post('/api/v1/patients')
@@ -528,5 +544,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
       .send({ ...BASE_PATIENT, caseLabel: '미인증 생성 시도' })
       .expect(401);
     expectEnvelope(create.body, false, 'UNAUTHORIZED');
+    expect(create.body.data).toBeNull();
+    expect(create.body.page).toBeNull();
   });
 });
