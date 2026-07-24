@@ -840,7 +840,7 @@ export type ErrorCode = keyof typeof ErrorCodes;
 ### 10.4 커서 페이지네이션
 
 - 커서는 **불투명 base64url 인코딩** — 내부 정렬키를 계약에 노출하지 않는다.
-- `PageMetaDto { size, hasNext, nextCursor }`를 전 목록 API에 강제.
+- `PageMetaDto { size, hasNext, nextCursor }`를 전 목록 API에 강제. **size는 요청한 페이지 크기 에코**이며 실제 항목 수는 `data.length`다 (spec 09에서 확정).
 
 ---
 

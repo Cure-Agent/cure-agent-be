@@ -49,7 +49,7 @@ export class GuidelineService {
     });
 
     return PageResult.of(items, {
-      size: items.length,
+      size,
       hasNext,
       nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].id }) : null,
     });
@@ -88,7 +88,7 @@ export class GuidelineService {
     return PageResult.of(
       page.map(({ chunk, section }) => toEvidenceSummary(chunk, section)),
       {
-        size: page.length,
+        size,
         hasNext,
         nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].chunk.id }) : null,
       },
