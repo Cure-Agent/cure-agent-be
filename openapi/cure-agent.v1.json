@@ -1970,8 +1970,15 @@
           "clinicalNotes": {
             "type": "string",
             "maxLength": 4000
+          },
+          "version": {
+            "type": "number",
+            "description": "낙관적 잠금 버전 — 상세 조회의 version을 그대로 전송"
           }
-        }
+        },
+        "required": [
+          "version"
+        ]
       }
     }
   }
