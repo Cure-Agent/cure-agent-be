@@ -142,6 +142,22 @@ export class ConversationService {
     );
   }
 
+  rename(
+    _principal: ClinicianPrincipal,
+    _conversationId: string,
+    _title: string,
+  ): Promise<ConversationSummaryResponseDto> {
+    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+  }
+
+  archive(_principal: ClinicianPrincipal, _conversationId: string): Promise<null> {
+    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+  }
+
+  unarchive(_principal: ClinicianPrincipal, _conversationId: string): Promise<null> {
+    return Promise.reject(new Error('NOT_IMPLEMENTED'));
+  }
+
   async submitFeedback(
     principal: ClinicianPrincipal,
     messageId: string,
