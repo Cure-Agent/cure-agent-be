@@ -19,6 +19,8 @@ export interface LlmStreamRequest {
 
 export interface LlmProvider {
   readonly name: string;
+  /** 실사용 모델 식별자 — GenerationRun.model에 기록된다 (선택: fake·테스트 프로바이더는 미제공, docs/specs/13) */
+  readonly model?: string;
   /** 토큰 델타를 순서대로 yield한다. 실패는 LlmProviderError로 던진다. */
   streamAnswer(request: LlmStreamRequest): AsyncIterable<string>;
 }
