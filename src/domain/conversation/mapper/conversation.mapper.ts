@@ -15,6 +15,7 @@ export function toConversationSummary(
     id: row.id,
     type: row.type,
     title: row.title,
+    status: row.status,
     lastMessagePreview: lastMessage ? truncate(lastMessage.content, PREVIEW_LIMIT) : undefined,
     updatedAt: row.updatedAt.toISOString(),
   };
