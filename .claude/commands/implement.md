@@ -24,22 +24,30 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 **원칙: 심판(테스트)과 선수(구현)를 같은 에이전트가 만들지 않는다.** 같은 에이전트가 둘 다 만들면 스펙 오독이 테스트와 구현 양쪽에 복제되어 서로를 통과시킨다. 수용 기준 테스트는 Codex가 스펙에서 독립 파생 작성하고, Claude는 리뷰·동결만 한다.
 
 1. **스텁 준비(Claude)**: 컴파일에 필요한 최소 시그니처(서비스 메서드·DTO 뼈대·모듈 배선)와 fixture 컨벤션만 만든다. 로직 금지. 스텁은 **동결 커밋과 분리해 먼저 커밋**한다(`[TEST/#<번호>] 스텁 준비`) — 동결 커밋에 테스트·fixture만 남아야 Phase 4 감사가 파일 목록을 동결 커밋 자체에서 복원할 수 있다.
-2. **테스트 명세 프롬프트(Claude)**: 대상 레포 루트 `.cure-implement/<번호>-test-prompt.md`(git-ignored)에 작성 — 스펙 전문, 수용 기준별 검증 포인트, 참조 패턴 파일 경로(BE: `test/auth.e2e-spec.ts`, FE: `src/shared/api/http.test.ts`), 스텁 시그니처, 출력 파일 경로, **"테스트·fixture 외 파일 수정 금지"**·**"모든 테스트는 스텁 상태에서 실패해야 한다 (이미 통과하는 테스트는 구현을 검증하지 못하는 공허 테스트)"** 명시.
-3. **Codex 호출(Claude)** — hang 4중 방어 + 모델 핀 필수:
+2. **테스트 명세 프롬프트(Claude)**: 대상 레포 루트 `.cure-implement/<번호>-test-prompt.md`(git-ignored)에 작성 — 스펙 전문, 수용 기준별 검증 포인트, 참조 패턴 파일 경로(BE: `test/auth.e2e-spec.ts`, FE: `src/shared/api/http.test.ts`), 스텁 시그니처, 출력 파일 경로, 그리고 다음 3개 필수 문구:
+   - **"테스트·fixture 외 파일 수정 금지"**
+   - **"모든 테스트는 스텁 상태에서 실패해야 한다"** (이미 통과하는 테스트는 구현을 검증하지 못하는 공허 테스트)
+   - **"어떤 셸 명령도 실행하지 말고 파일 작성만 하라"** — 컴파일·Discovery·RED 검증은 전부 호출측(5번 게이트)이 수행한다. codex가 검증 프로세스(tsc·vitest·jest 등)를 띄우면 실행 시간이 폭증하고 프로세스 트리가 호출 경계를 넘어 살아남아, **강제 종료 후에도 파일이 뒤늦게 착지해 동결 무결성을 오염**시킨다 (9단계 실증 — loopin problem.md의 "복귀 실패" 문제와 같은 뿌리)
+3. **Codex 호출(Claude)** — problem.md 방식 완전 이식 (4중 방어 + 자연 종료):
    ```bash
-   timeout 900 codex exec --sandbox workspace-write -C <대상 레포> \
+   # timeout은 있을 때만 상한 래핑. macOS 기본엔 timeout/gtimeout이 없으므로 없으면 그냥 실행 —
+   # 최종 backstop은 Bash 도구 timeout(600000ms) 또는 run_in_background. perl alarm 등 강제 kill 금지.
+   TO=""; command -v timeout >/dev/null && TO="timeout 480"; command -v gtimeout >/dev/null && TO="gtimeout 480"
+   $TO codex exec --sandbox workspace-write -C <대상 레포> \
+     --ephemeral \
      -m gpt-5.6-sol \
-     -c model_reasoning_effort="xhigh" \
+     -c model_reasoning_effort="high" \
      -c mcp_servers='{}' \
      --color never \
      < .cure-implement/<번호>-test-prompt.md \
      > .cure-implement/<번호>-codex.log 2>&1
    ```
    - 프롬프트는 반드시 **stdin 리다이렉트(`< file`)** — positional 인자로 주면 stdin 대기 hang
-   - 출력은 **파일 리다이렉트** — 파이프 상속 hang 방지
-   - **timeout 필수**, 프롬프트에 장기 실행 프로세스(dev 서버·watch) 금지 명시. `-c mcp_servers='{}'`로 MCP를 전부 비운다 — 테스트 생성에 불필요하고 hang 표면만 늘린다
-   - **모델·reasoning effort는 플래그로 명시 고정** — 팀원별 `~/.codex/config.toml` 편차로 심판(테스트) 품질이 조용히 열화되는 것을 막는다(플래그가 config보다 우선). 핀은 lockfile처럼 의존성 버전으로 관리한다: **핀 모델 미가용**(model not found류 에러) 시 기본 모델(`-m`·effort 플래그 제거)로 1회 재시도하고 동결 커밋에 사용 모델을 명시한다
-   - 실패·hang 시 1회 재시도 → 그래도 실패면 **Claude 단독 폴백** — **동결 포함 절차 동일**(동결의 가치 절반인 "구현 루프 중 테스트 변조 방지"는 작성자 분리 없이도 성립한다), 동결 커밋에 `작성: Claude 단독` 명시. 이때 자기 리뷰는 독립성이 없으므로 5번 기계 게이트가 주 방어선이 된다
+   - 출력은 **파일 리다이렉트** — 파이프 상속 hang 방지. codex 출력에 파이프(`| tail` 등) 금지
+   - **강제 kill(perl alarm·SIGALRM) 금지** — codex는 "파일만 쓰는 작업"이라 2번 문구가 지켜지면 자연 종료한다. 조기 사살은 orphan 작업의 **지연 파일 착지**를 만들어 이후 커밋·동결을 오염시킨다. 오래 걸리면 `run_in_background: true`로 세션을 묶지 않고 완료 통지 후 점검한다
+   - **완료 판정은 exit code가 아니라 산출물로**: 로그 말미의 완료 응답(파일 목록·tokens used)과 출력 파일 존재를 확인한다. timeout으로 끊겼어도 "파일은 이미 디스크에 있을 수 있다" — 실패로 판정하기 전에 반드시 파일을 점검하고, **재시도 전 `pgrep -fl "codex exec"`로 잔존 프로세스를 확인**한다(살아 있으면 완료를 기다린다 — 죽이거나 병행 재시도하지 않는다)
+   - **모델은 플래그로 명시 고정, effort는 `high`** — config 편차로 심판 품질이 열화되는 것을 막되, `xhigh`는 exec 단발 작업에서 사고 단계만으로 시간 예산을 상습 초과하므로(9단계 3회 실증) 핀 대상에서 제외한다. **핀 모델 미가용**(model not found류) 시 기본 모델(`-m`·effort 제거)로 1회 재시도하고 동결 커밋에 사용 모델을 명시한다
+   - 실패 시 1회 재시도 → 그래도 실패면 **Claude 단독 폴백** — **동결 포함 절차 동일**(동결의 가치 절반인 "구현 루프 중 테스트 변조 방지"는 작성자 분리 없이도 성립한다), 동결 커밋에 `작성: Claude 단독` 명시. 이때 자기 리뷰는 독립성이 없으므로 5번 기계 게이트가 주 방어선이 된다. **폴백 착수 전 잔존 codex 프로세스가 없음을 확인**한다 — 뒤늦은 착지와 폴백 산출물이 경합하면 동결 대상이 오염된다
 4. **리뷰(Claude)** — 구현자 관점 개입 금지, 다음만 검사:
    - ① 수용 기준 전 항목이 커버되는가
    - ② **공허 통과** 가능성(미구현 라우트의 404 등으로 이미 통과하는 테스트)이 있는가
