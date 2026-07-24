@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import { CircuitBreaker } from './circuit-breaker';
 import {
   LLM_PROVIDERS,
@@ -36,6 +37,7 @@ export class LlmGateway {
     @Inject(LLM_PROVIDERS) private readonly providers: LlmProvider[],
     private readonly circuitBreaker: CircuitBreaker,
     private readonly rateLimitBlock: RateLimitBlockStore,
+    private readonly alertSender: RealTimeAlertSender,
   ) {}
 
   async stream(
@@ -71,6 +73,13 @@ export class LlmGateway {
           this.rateLimitBlock.block(provider.name, error.options.retryAfterSec);
         } else {
           this.circuitBreaker.recordFailure(provider.name);
+          // 이 지점 도달 = 시도 전 not-open이었으므로, 기록 직후 open이면 곧 전이다 (§14)
+          if (this.circuitBreaker.isOpen(provider.name)) {
+            this.alertSender.send({
+              title: 'LLM_CIRCUIT_OPEN',
+              detail: `프로바이더 ${provider.name} 서킷 open — 연속 실패 임계 초과`,
+            });
+          }
         }
         this.logger.warn(`LLM 프로바이더 ${provider.name} 실패: ${String(error)}`);
 
@@ -79,6 +88,11 @@ export class LlmGateway {
       }
     }
 
+    // 전 프로바이더 소진 — 사용자 영향이 생기는 지점이므로 즉시 알림 (§14)
+    this.alertSender.send({
+      title: 'LLM_EXHAUSTED',
+      detail: '사용 가능한 LLM 프로바이더가 없습니다',
+    });
     throw new LlmExhaustedError();
   }
 }
