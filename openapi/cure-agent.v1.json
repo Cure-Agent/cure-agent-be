@@ -1041,6 +1041,100 @@
           "Patient"
         ]
       }
+    },
+    "/api/v1/clinical-guidance/{guidanceId}": {
+      "get": {
+        "operationId": "ClinicalGuidanceController_detail",
+        "parameters": [
+          {
+            "name": "guidanceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ClinicalGuidanceResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "가이던스 상세 (검토 상태 포함)",
+        "tags": [
+          "ClinicalGuidance"
+        ]
+      }
+    },
+    "/api/v1/clinical-guidance/{guidanceId}/reviews": {
+      "post": {
+        "operationId": "ClinicalGuidanceController_review",
+        "parameters": [
+          {
+            "name": "guidanceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewClinicalGuidanceRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ClinicalGuidanceResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "의료인 검토 확정 — DRAFT 상태에서 1회만 허용 (§5.6)",
+        "tags": [
+          "ClinicalGuidance"
+        ]
+      }
     }
   },
   "info": {
@@ -1978,6 +2072,134 @@
         },
         "required": [
           "version"
+        ]
+      },
+      "GuidanceConsiderationResponseDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitationResponseDto"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "rationale",
+          "citations"
+        ]
+      },
+      "SafetyAlertResponseDto": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "INFO",
+              "WARNING",
+              "CRITICAL"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitationResponseDto"
+            }
+          }
+        },
+        "required": [
+          "severity",
+          "description",
+          "citations"
+        ]
+      },
+      "ClinicalGuidanceResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "patientId": {
+            "type": "string"
+          },
+          "patientProfileSnapshotId": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "considerations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuidanceConsiderationResponseDto"
+            }
+          },
+          "safetyAlerts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SafetyAlertResponseDto"
+            }
+          },
+          "missingInformation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reviewStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACCEPTED",
+              "MODIFIED",
+              "REJECTED"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "id",
+          "patientId",
+          "patientProfileSnapshotId",
+          "summary",
+          "considerations",
+          "safetyAlerts",
+          "missingInformation",
+          "reviewStatus",
+          "generatedAt"
+        ]
+      },
+      "ReviewClinicalGuidanceRequestDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "MODIFIED",
+              "REJECTED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "decision"
         ]
       }
     }

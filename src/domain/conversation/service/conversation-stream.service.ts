@@ -14,7 +14,13 @@ import {
   RetrievalService,
   RetrievedEvidence,
 } from '../../../infrastructure/retrieval/retrieval.service';
+import { ClinicalGuidanceResponseDto } from '../../clinical-guidance/dto/response/clinical-guidance.response.dto';
+import { ClinicalGuidanceComposer } from '../../clinical-guidance/service/clinical-guidance-composer.service';
 import { toEvidenceDetail } from '../../guideline/mapper/guideline.mapper';
+import {
+  PatientSnapshotPayload,
+  PatientSnapshotService,
+} from '../../patient/service/patient-snapshot.service';
 import { SendMessageRequestDto } from '../dto/request/send-message.request.dto';
 import { toCitationDto, toMessageDto } from '../mapper/conversation.mapper';
 import { MessageRow } from '../persistence/conversation.schema';
@@ -26,6 +32,13 @@ const MODEL_LABEL = 'gateway-routed';
 const QUOTE_LIMIT = 120;
 const STREAM_TIMEOUT_MS = 120_000;
 const PG_UNIQUE_VIOLATION = '23505';
+
+/** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
+interface GuidanceContext {
+  patientId: string;
+  snapshotId: string;
+  profile: PatientSnapshotPayload;
+}
 
 /**
  * SSE 스트리밍 오케스트레이터 (architecture.md §8 계약 전체).
@@ -41,6 +54,8 @@ export class ConversationStreamService {
     private readonly llmGateway: LlmGateway,
     private readonly txManager: TransactionManager,
     private readonly traceContext: TraceContext,
+    private readonly patientSnapshotService: PatientSnapshotService,
+    private readonly guidanceComposer: ClinicalGuidanceComposer,
   ) {}
 
   async stream(
@@ -81,7 +96,8 @@ export class ConversationStreamService {
           role: 'ASSISTANT',
           content: '',
           status: 'STREAMING',
-          answerKind: 'GUIDELINE_ANSWER',
+          answerKind:
+            conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
           clientRequestId: null,
         });
       });
@@ -127,14 +143,33 @@ export class ConversationStreamService {
         return;
       }
 
+      // PATIENT_GUIDANCE: 생성 직전 프로필을 immutable 스냅샷으로 고정하고 (§4.5, §9)
+      // 복호화 프로필을 LLM 질문 컨텍스트에 합성한다. abstain 경로는 위에서 이미 이탈했다
+      let guidanceContext: GuidanceContext | null = null;
+      let question = dto.content;
+      if (conversation.type === 'PATIENT_GUIDANCE') {
+        if (!conversation.patientId) throw new ServiceException('INTERNAL_ERROR');
+        const captured = await this.patientSnapshotService.captureWithProfile(
+          { clinicId: principal.clinicId },
+          conversation.patientId,
+        );
+        guidanceContext = {
+          patientId: conversation.patientId,
+          snapshotId: captured.snapshotId,
+          profile: captured.payload,
+        };
+        question = composeGuidanceQuestion(captured.payload, dto.content);
+      }
+
       await this.generateAnswer({
         sse,
         principal,
         retrieved,
-        question: dto.content,
+        question,
         assistantMessageId,
         clientSignal,
         traceId,
+        guidanceContext,
       });
     } catch (error) {
       await this.handleStreamFailure(error, assistantMessageId, clientSignal, sse, traceId);
@@ -151,6 +186,7 @@ export class ConversationStreamService {
     assistantMessageId: string;
     clientSignal: AbortSignal;
     traceId: string;
+    guidanceContext: GuidanceContext | null;
   }): Promise<void> {
     const { sse, retrieved, question, assistantMessageId, clientSignal, traceId } = args;
 
@@ -186,6 +222,7 @@ export class ConversationStreamService {
         quote: truncate(row.chunk.content, QUOTE_LIMIT),
       }));
 
+    let guidance: ClinicalGuidanceResponseDto | null = null;
     await this.txManager.run(async () => {
       await this.repository.updateMessage(assistantMessageId, {
         content: outcome.text,
@@ -206,10 +243,29 @@ export class ConversationStreamService {
         },
         traceId,
       });
+
+      // 가이던스 행은 답변 영속화와 같은 tx에서 생성 — 부분 커밋으로 답변만 남는 상태를 막는다
+      if (args.guidanceContext) {
+        const citationDetails = await this.repository.listCitationDetails([assistantMessageId]);
+        guidance = await this.guidanceComposer.compose({
+          messageId: assistantMessageId,
+          patientId: args.guidanceContext.patientId,
+          patientSnapshotId: args.guidanceContext.snapshotId,
+          clinicId: args.principal.clinicId,
+          answerText: outcome.text,
+          citations: citationDetails.map(toCitationDto),
+          profile: args.guidanceContext.profile,
+        });
+      }
     });
 
     const message = await this.loadMessageDto(assistantMessageId, args.principal);
-    sse.send({ eventType: 'answer.completed', message });
+    // GUIDELINE_QA 완료 이벤트에는 guidance 속성 자체가 없어야 한다 (spec 10 기준 5)
+    if (guidance) {
+      sse.send({ eventType: 'answer.completed', message, guidance });
+    } else {
+      sse.send({ eventType: 'answer.completed', message });
+    }
   }
 
   private async handleStreamFailure(
@@ -249,6 +305,17 @@ export class ConversationStreamService {
 
 function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}…`;
+}
+
+/** 복호화 프로필을 질문 앞에 합성 — 프로필은 LLM 컨텍스트로만 쓰고 저장하지 않는다 (§4.5) */
+function composeGuidanceQuestion(profile: PatientSnapshotPayload, question: string): string {
+  const parts = [
+    `진단: ${profile.diagnoses.join(', ') || '정보 없음'}`,
+    `투약: ${profile.medications.join(', ') || '정보 없음'}`,
+    `알레르기: ${profile.allergies.join(', ') || '없음'}`,
+  ];
+  if (profile.clinicalNotes) parts.push(`임상 메모: ${profile.clinicalNotes}`);
+  return `[환자 프로필] ${parts.join(' / ')}\n${question}`;
 }
 
 function estimateTokens(text: string): number {

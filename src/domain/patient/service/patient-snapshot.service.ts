@@ -10,8 +10,29 @@ export interface PatientScope {
   clinicId: string;
 }
 
+/** 스냅샷 암호문에 고정되는 페이로드 — 가이던스 컨텍스트 합성·안전 경고 규칙이 소비한다 */
+export interface PatientSnapshotPayload {
+  patientId: string;
+  caseLabel: string;
+  birthYear: number | null;
+  sex: 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN' | null;
+  heightCm: number | null;
+  weightKg: number | null;
+  waistCm: number | null;
+  diagnoses: string[];
+  medications: string[];
+  allergies: string[];
+  clinicalNotes: string | null;
+  patientVersion: number;
+  capturedAt: string;
+}
+
 export interface CaptureResult {
   snapshotId: string;
+}
+
+export interface CaptureWithProfileResult extends CaptureResult {
+  payload: PatientSnapshotPayload;
 }
 
 /**
@@ -27,11 +48,23 @@ export class PatientSnapshotService {
   ) {}
 
   async capture(scope: PatientScope, patientId: string): Promise<CaptureResult> {
+    const { snapshotId } = await this.captureWithProfile(scope, patientId);
+    return { snapshotId };
+  }
+
+  /**
+   * 가이던스 생성용 — 스냅샷에 고정된 것과 동일한 페이로드를 함께 반환한다
+   * (별도 재조회 시 스냅샷과 프로필이 어긋날 수 있어 단일 읽기로 묶는다)
+   */
+  async captureWithProfile(
+    scope: PatientScope,
+    patientId: string,
+  ): Promise<CaptureWithProfileResult> {
     const row = await this.repository.findById(scope, patientId);
     if (!row) throw new ServiceException('NOT_FOUND');
 
     const decrypted = this.patientService.decryptFields(row);
-    const payload = {
+    const payload: PatientSnapshotPayload = {
       patientId: row.id,
       caseLabel: row.caseLabel,
       birthYear: row.birthYear,
@@ -54,6 +87,6 @@ export class PatientSnapshotService {
       clinicId: scope.clinicId,
       payloadEncrypted: this.aesGcm.encrypt(JSON.stringify(payload)),
     });
-    return { snapshotId };
+    return { snapshotId, payload };
   }
 }

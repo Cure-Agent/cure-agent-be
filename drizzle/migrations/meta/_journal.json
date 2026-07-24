@@ -29,6 +29,13 @@
       "when": 1784885273590,
       "tag": "0003_patient",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784892832637,
+      "tag": "0004_clinical_guidance",
+      "breakpoints": true
     }
   ]
 }
