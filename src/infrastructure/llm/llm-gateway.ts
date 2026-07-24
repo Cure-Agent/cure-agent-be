@@ -12,6 +12,8 @@ import { withRetry } from './retry-policy';
 
 export interface LlmStreamOutcome {
   provider: string;
+  /** 실사용 모델 — 프로바이더가 제공한 경우에만 (docs/specs/13) */
+  model?: string;
   text: string;
   latencyMs: number;
 }
