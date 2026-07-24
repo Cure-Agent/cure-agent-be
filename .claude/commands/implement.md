@@ -36,7 +36,7 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
    $TO codex exec --sandbox workspace-write -C <대상 레포> \
      --ephemeral \
      -m gpt-5.6-sol \
-     -c model_reasoning_effort="high" \
+     -c model_reasoning_effort="xhigh" \
      -c mcp_servers='{}' \
      --color never \
      < .cure-implement/<번호>-test-prompt.md \
@@ -46,7 +46,7 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
    - 출력은 **파일 리다이렉트** — 파이프 상속 hang 방지. codex 출력에 파이프(`| tail` 등) 금지
    - **강제 kill(perl alarm·SIGALRM) 금지** — codex는 "파일만 쓰는 작업"이라 2번 문구가 지켜지면 자연 종료한다. 조기 사살은 orphan 작업의 **지연 파일 착지**를 만들어 이후 커밋·동결을 오염시킨다. 오래 걸리면 `run_in_background: true`로 세션을 묶지 않고 완료 통지 후 점검한다
    - **완료 판정은 exit code가 아니라 산출물로**: 로그 말미의 완료 응답(파일 목록·tokens used)과 출력 파일 존재를 확인한다. timeout으로 끊겼어도 "파일은 이미 디스크에 있을 수 있다" — 실패로 판정하기 전에 반드시 파일을 점검하고, **재시도 전 `pgrep -fl "codex exec"`로 잔존 프로세스를 확인**한다(살아 있으면 완료를 기다린다 — 죽이거나 병행 재시도하지 않는다)
-   - **모델은 플래그로 명시 고정, effort는 `high`** — config 편차로 심판 품질이 열화되는 것을 막되, `xhigh`는 exec 단발 작업에서 사고 단계만으로 시간 예산을 상습 초과하므로(9단계 3회 실증) 핀 대상에서 제외한다. **핀 모델 미가용**(model not found류) 시 기본 모델(`-m`·effort 제거)로 1회 재시도하고 동결 커밋에 사용 모델을 명시한다
+   - **모델·effort 모두 플래그로 명시 고정(`gpt-5.6-sol`/`xhigh` — problem.md와 통일)** — config 편차로 심판 품질이 조용히 열화되는 것을 막는다. xhigh는 사고 단계가 수 분 이상 길 수 있으나, 위의 "파일만 작성·자연 종료·산출물 기준 판정" 전제에서 이는 hang이 아니라 정상 대기다 — **긴 실행은 `run_in_background: true`가 기본**이며, 9단계의 시간 초과는 xhigh가 아니라 검증 실행 지시+강제 kill이 원인이었다. **핀 모델 미가용**(model not found류) 시 기본 모델(`-m`·effort 제거)로 1회 재시도하고 동결 커밋에 사용 모델을 명시한다
    - 실패 시 1회 재시도 → 그래도 실패면 **Claude 단독 폴백** — **동결 포함 절차 동일**(동결의 가치 절반인 "구현 루프 중 테스트 변조 방지"는 작성자 분리 없이도 성립한다), 동결 커밋에 `작성: Claude 단독` 명시. 이때 자기 리뷰는 독립성이 없으므로 5번 기계 게이트가 주 방어선이 된다. **폴백 착수 전 잔존 codex 프로세스가 없음을 확인**한다 — 뒤늦은 착지와 폴백 산출물이 경합하면 동결 대상이 오염된다
 4. **리뷰(Claude)** — 구현자 관점 개입 금지, 다음만 검사:
    - ① 수용 기준 전 항목이 커버되는가
