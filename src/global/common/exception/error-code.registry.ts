@@ -35,6 +35,12 @@ export const ErrorCodes = {
     message: 'AI 응답 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요.',
   },
 
+  // Ops (docs/specs/16)
+  SERVICE_NOT_READY: {
+    status: 503,
+    message: '서비스가 아직 준비되지 않았습니다.',
+  },
+
   // Guidance
   GUIDANCE_ALREADY_REVIEWED: { status: 409, message: '이미 검토가 완료된 항목입니다.' },
 } as const satisfies Record<string, { status: number; message: string }>;
