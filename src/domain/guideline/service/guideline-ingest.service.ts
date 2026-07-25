@@ -148,6 +148,8 @@ export class GuidelineIngestService {
           guidelineVersionId,
           content: chunk.content,
           embedding: embeddings[index],
+          // 벡터 좌표계 출처 — 검색은 같은 모델의 청크만 본다 (docs/specs/14)
+          embeddingModel: this.embeddingProvider.model,
           recommendationNumber: chunk.recommendationNumber,
           recommendationGrade: chunk.recommendationGrade,
           evidenceLevel: chunk.evidenceLevel,

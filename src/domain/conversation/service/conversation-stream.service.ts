@@ -11,7 +11,6 @@ import { LlmGateway } from '../../../infrastructure/llm/llm-gateway';
 import { LlmEvidenceContext } from '../../../infrastructure/llm/llm-provider.port';
 import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
 import {
-  RETRIEVAL_POLICY_VERSION,
   RetrievalService,
   RetrievedEvidence,
 } from '../../../infrastructure/retrieval/retrieval.service';
@@ -236,7 +235,7 @@ export class ConversationStreamService {
         provider: outcome.provider,
         model: outcome.model ?? MODEL_LABEL,
         promptVersion: PROMPT_VERSION,
-        retrievalPolicyVersion: RETRIEVAL_POLICY_VERSION,
+        retrievalPolicyVersion: this.retrievalService.policyVersion,
         latencyMs: outcome.latencyMs,
         tokenUsage: {
           inputTokens: estimateTokens(question),

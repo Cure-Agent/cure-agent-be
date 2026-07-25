@@ -26,6 +26,16 @@ pnpm start:dev                # http://localhost:3000/api/v1
 실 프로바이더가 등록되면 fake는 폴백에서 빠진다: 전 프로바이더 실패는 fake 답변이 아니라
 503 `LLM_UNAVAILABLE`이어야 하기 때문이다. 재시도·서킷브레이커·rate-limit 차단·우선순위 폴백은 §11 참조.
 
+## 임베딩과 재인제스트 (docs/specs/14)
+
+임베딩도 같은 키(`OPENAI_API_KEY`)로 실 프로바이더가 켜지고(`OPENAI_EMBEDDING_MODEL`, 기본
+`text-embedding-3-small`), 없으면 결정적 fake다. **검색은 현재 모델로 만들어진 청크만 대상으로 한다** —
+청크마다 `evidence_chunks.embedding_model`에 출처를 기록하기 때문이다.
+
+> 모델을 바꾸면 기존 벡터는 좌표계가 달라 무의미하지만 코사인 거리는 그래도 "가장 가까운 5건"을 돌려준다.
+> 그래서 출처가 다른 청크는 검색에서 빼고, **재인제스트 전까지 근거 0건(abstain)**이 되게 했다.
+> 조용한 오답보다 안전한 실패를 택한 것이다. 모델 변경 후에는 `pnpm ingest`로 재적재한다.
+
 ## 검증
 
 ```bash

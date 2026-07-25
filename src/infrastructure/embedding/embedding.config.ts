@@ -3,12 +3,27 @@
  * OPENAI_API_KEY·OPENAI_BASE_URL은 spec 13(LLM)과 공유하고, 모델만 별도 키를 쓴다.
  */
 
+const DEFAULT_MODEL = 'text-embedding-3-small'; // 1536차원 — EMBEDDING_DIMENSIONS와 정합
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
 export interface OpenAiEmbeddingConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
 }
 
-export function resolveEmbeddingConfig(_env: NodeJS.ProcessEnv): OpenAiEmbeddingConfig | null {
-  throw new Error('resolveEmbeddingConfig 미구현 (docs/specs/14)');
+export function resolveEmbeddingConfig(env: NodeJS.ProcessEnv): OpenAiEmbeddingConfig | null {
+  const apiKey = nonEmpty(env.OPENAI_API_KEY);
+  if (!apiKey) return null;
+
+  return {
+    apiKey,
+    model: nonEmpty(env.OPENAI_EMBEDDING_MODEL) ?? DEFAULT_MODEL,
+    baseUrl: (nonEmpty(env.OPENAI_BASE_URL) ?? DEFAULT_BASE_URL).replace(/\/+$/, ''),
+  };
+}
+
+function nonEmpty(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
