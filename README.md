@@ -36,6 +36,13 @@ pnpm start:dev                # http://localhost:3000/api/v1
 > 그래서 출처가 다른 청크는 검색에서 빼고, **재인제스트 전까지 근거 0건(abstain)**이 되게 했다.
 > 조용한 오답보다 안전한 실패를 택한 것이다. 모델 변경 후에는 `pnpm ingest`로 재적재한다.
 
+## 장애 알림 (docs/specs/15)
+
+`ALERT_WEBHOOK_URLS`(콤마 구분)에 넣은 채널 전부에 동시 발송한다. 호스트로 형식을 판별하므로
+Slack(`{text}`)과 Discord(`{content}`)를 섞어 써도 되고, 그 외 호스트에는 구조화 JSON을 보낸다.
+같은 `title`+`detail`은 **5분 내 1회만** 나가서 장애가 지속돼도 채널이 마비되지 않는다.
+발송은 fire-and-forget이며 한 채널 실패가 다른 채널·요청 처리에 영향을 주지 않는다.
+
 ## 검증
 
 ```bash
