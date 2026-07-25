@@ -21,6 +21,13 @@ jobs:
       - run: pnpm test:e2e
       - run: pnpm build
 
+  # 런타임 이미지가 실제로 빌드되는지 검증한다 (docs/specs/16 — 레지스트리 푸시는 하지 않는다)
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t cure-agent-be:ci .
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:
