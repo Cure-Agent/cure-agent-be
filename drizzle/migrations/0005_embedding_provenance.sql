@@ -1,0 +1,1 @@
+ALTER TABLE "evidence_chunks" ADD COLUMN "embedding_model" text DEFAULT 'fake-embedding-v1' NOT NULL;

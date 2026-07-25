@@ -9,6 +9,9 @@ import { EmbeddingProvider } from './embedding-provider.port';
  */
 @Injectable()
 export class FakeEmbeddingProvider implements EmbeddingProvider {
+  /** 청크에 기록되는 좌표계 식별자 — 실 모델로 바꾸면 기존 청크는 검색 대상에서 빠진다 (docs/specs/14) */
+  readonly model = 'fake-embedding-v1';
+
   embed(texts: string[]): Promise<number[][]> {
     return Promise.resolve(texts.map((text) => this.vectorOf(text)));
   }

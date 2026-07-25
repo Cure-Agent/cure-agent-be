@@ -78,6 +78,8 @@ export const evidenceChunks = pgTable(
       .references(() => guidelineVersions.id),
     content: text('content').notNull(),
     embedding: vector('embedding', { dimensions: EMBEDDING_DIMENSIONS }).notNull(),
+    // 벡터 좌표계 출처 — 검색은 같은 모델로 만들어진 청크만 대상으로 한다 (docs/specs/14)
+    embeddingModel: text('embedding_model').notNull().default('fake-embedding-v1'),
     recommendationNumber: text('recommendation_number'),
     recommendationGrade: jsonb('recommendation_grade').$type<RatingValue>(),
     evidenceLevel: jsonb('evidence_level').$type<RatingValue>(),
