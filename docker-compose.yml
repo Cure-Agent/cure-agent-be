@@ -1,4 +1,5 @@
-# 로컬 개발 인프라 (docs/specs/12) — 앱은 pnpm start:dev로 호스트에서 구동한다
+# 로컬 개발 인프라 (docs/specs/12) — 기본 기동은 pg·redis만, 앱은 pnpm start:dev로 호스트에서 띄운다.
+# 컨테이너 이미지까지 함께 확인하려면: docker compose --profile app up --build (docs/specs/16)
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -25,6 +26,35 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    # 기본 기동에는 포함되지 않는다 (--profile app 지정 시에만)
+    profiles: ['app']
+    build: .
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      # compose 네트워크 기준으로 덮어쓴다 (.env의 localhost는 컨테이너 안에서 자기 자신이다)
+      DATABASE_URL: postgres://cure:cure@postgres:5432/cure_agent
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # readiness — DB·Redis 준비까지 확인한다 (docs/specs/16)
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
   postgres-data:

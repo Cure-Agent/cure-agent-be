@@ -28,7 +28,40 @@
             }
           }
         },
-        "summary": "서버 상태 확인",
+        "summary": "서버 상태 확인 (liveness)",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ReadinessResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "트래픽 수용 준비 확인 (readiness)",
         "tags": [
           "Health"
         ]
@@ -1349,6 +1382,47 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "ReadinessDependenciesDto": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "example": "up",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "redis": {
+            "type": "string",
+            "example": "up",
+            "enum": [
+              "up",
+              "down"
+            ]
+          }
+        },
+        "required": [
+          "database",
+          "redis"
+        ]
+      },
+      "ReadinessResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ready"
+          },
+          "dependencies": {
+            "$ref": "#/components/schemas/ReadinessDependenciesDto"
+          }
+        },
+        "required": [
+          "status",
+          "dependencies"
         ]
       },
       "ClinicSummaryResponseDto": {

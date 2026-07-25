@@ -43,6 +43,20 @@ Slack(`{text}`)과 Discord(`{content}`)를 섞어 써도 되고, 그 외 호스�
 같은 `title`+`detail`은 **5분 내 1회만** 나가서 장애가 지속돼도 채널이 마비되지 않는다.
 발송은 fire-and-forget이며 한 채널 실패가 다른 채널·요청 처리에 영향을 주지 않는다.
 
+## 배포·헬스체크 (docs/specs/16)
+
+```bash
+docker build -t cure-agent-be .              # 런타임 이미지(멀티스테이지, 비-root)
+docker compose --profile app up --build      # pg·redis + 앱까지 한 번에
+```
+
+- `GET /api/v1/health` — **liveness**. 프로세스 생존만 본다. 의존성 장애로 재시작되면 안 되므로 DB·Redis를 보지 않는다
+- `GET /api/v1/health/ready` — **readiness**. DB `SELECT 1` + Redis `PING`. 하나라도 끊기면 503 `SERVICE_NOT_READY`와
+  함께 어느 의존성이 죽었는지 반환한다. 로드밸런서·오케스트레이터는 이 엔드포인트를 본다
+
+> 둘을 합치면 안 된다: Redis는 서비스 전반에서 fail-open이라 장애 중에도 앱은 동작해야 하는데,
+> liveness가 Redis를 보면 Redis 장애가 **전 인스턴스 재시작 루프**가 된다.
+
 ## 검증
 
 ```bash
