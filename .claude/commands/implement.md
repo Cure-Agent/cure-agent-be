@@ -89,6 +89,10 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 1. 구현 커밋: `[FEAT/#<번호>] <요약>` — 동결 커밋과 분리 유지. 트레일러:
    `Co-Authored-By: Claude Code <noreply@anthropic.com>`
 2. `gh pr create` — 본문에 스펙 링크 + 수용 기준 체크리스트. PR에서만 `openapi-breaking` job이 동작한다.
-3. CI green 확인 후 머지한다. 머지 성공 후 `.cure-implement/frozen-tests.txt`·`frozen-commit.txt`를 삭제한다(동결 해제) — 머지 실패로 재수정하는 동안은 동결을 유지해 테스트를 계속 보호한다.
-4. **BE 계약이 바뀐 경우**: 머지 후 FE `contract-sync`가 자동 PR(`chore/contract-sync`)을 만들었는지, 그 PR의 typecheck 결과(breaking 여부)까지 확인한다.
-5. 최종 보고: 수용 기준 매핑, 계약 변경 여부, FE 동기화 PR 상태.
+3. CI green 확인 후 **`gh pr merge <번호> --rebase --delete-branch`**로 머지한다 — `--delete-branch`가 원격·로컬 이슈 브랜치를 함께 정리하므로, 이 플래그를 빼면 그 스텝의 브랜치가 그대로 남는다. 머지 성공 후 `.cure-implement/frozen-tests.txt`·`frozen-commit.txt`를 삭제한다(동결 해제) — 머지 실패로 재수정하는 동안은 동결을 유지해 테스트를 계속 보호한다.
+4. **브랜치 정리**: 머지 직후 `git checkout main && git pull --ff-only && git fetch --prune`. `--prune`이 없으면 원격에서 이미 삭제된 브랜치의 추적 ref(`origin/feat/...`)가 로컬에 남아 `git branch -r`이 실제 원격과 다른 상태를 보여준다 — "안 지워졌다"고 오판하고 삭제를 재시도하게 된다. 스텝마다 누락하면 브랜치가 누적된다(실제로 05~11 스텝에서 양 레포에 9개가 쌓였다).
+   > **rebase 머지 함정**: `--rebase`는 커밋 SHA를 새로 만들므로 원본 브랜치는 main의 조상이 **아니다**. 따라서 `git branch --merged main`에 잡히지 않고 `git branch -d`도 거부한다. 뒤늦게 남은 브랜치를 지울 때는 `-d` 실패를 이유로 곧장 `-D`를 쓰지 말고, **PR 머지 여부를 먼저 확인**한 뒤 확인된 것만 `-D`로 지운다:
+   > `gh api "repos/<owner>/<repo>/pulls?state=all&head=<owner>:<브랜치>" --jq '.[0].merged_at'`
+   > 확인 없이 `-D`를 쓰면 머지되지 않은 작업을 조용히 날린다.
+5. **BE 계약이 바뀐 경우**: 머지 후 FE `contract-sync`가 자동 PR(`chore/contract-sync`)을 만들었는지, 그 PR의 typecheck 결과(breaking 여부)까지 확인한다.
+6. 최종 보고: 수용 기준 매핑, 계약 변경 여부, FE 동기화 PR 상태.
