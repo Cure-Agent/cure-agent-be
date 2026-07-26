@@ -1,14 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
-import { CircuitBreaker } from './circuit-breaker';
 import {
   LLM_PROVIDERS,
   LlmProvider,
   LlmProviderError,
   LlmStreamRequest,
 } from './llm-provider.port';
-import { RateLimitBlockStore } from './rate-limit-block-store';
-import { withRetry } from './retry-policy';
+import { CircuitBreaker } from './resilience/circuit-breaker';
+import { RateLimitBlockStore } from './resilience/rate-limit-block-store';
+import { withRetry } from './resilience/retry-policy';
 
 export interface LlmStreamOutcome {
   provider: string;

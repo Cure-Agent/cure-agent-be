@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { CircuitBreaker } from './circuit-breaker';
-import { FakeLlmProvider } from './fake-llm.provider';
 import { LlmGateway } from './llm-gateway';
 import { LLM_PROVIDERS, LlmProvider } from './llm-provider.port';
-import { createLlmProviders } from './llm-providers.factory';
-import { RateLimitBlockStore } from './rate-limit-block-store';
+import { FakeLlmProvider } from './provider/fake-llm.provider';
+import { createLlmProviders } from './provider/llm-providers.factory';
+import { CircuitBreaker } from './resilience/circuit-breaker';
+import { RateLimitBlockStore } from './resilience/rate-limit-block-store';
 
 /**
  * 프로바이더 구성은 env가 결정한다 (docs/specs/13):

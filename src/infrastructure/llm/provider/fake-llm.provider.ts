@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LlmProvider, LlmStreamRequest } from './llm-provider.port';
+import { LlmProvider, LlmStreamRequest } from '../llm-provider.port';
 
 /**
  * 결정적 fake LLM (docs/specs/06 — 실 프로바이더 연동은 docs/specs/13).

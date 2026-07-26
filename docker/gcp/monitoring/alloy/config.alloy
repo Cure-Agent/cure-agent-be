@@ -1,0 +1,145 @@
+// 단일 서버 통합 구성 (배포 계획 v2) — 수집 대상·전송처 전부 compose 내부 통신.
+// v1(OCI) 대비: node-exporter 컨테이너 대신 Alloy 내장 unix exporter로 호스트 지표를 수집하고,
+// remote write / loki push는 환경변수 대신 compose 서비스명으로 고정한다.
+
+// ============================================================
+// 호스트 메트릭 수집 (Alloy 내장 unix exporter — node-exporter 대체)
+// 컨테이너에는 호스트 루트가 /rootfs 로 마운트된다 (compose 참조)
+// ============================================================
+prometheus.exporter.unix "host" {
+  procfs_path = "/rootfs/proc"
+  sysfs_path  = "/rootfs/sys"
+  rootfs_path = "/rootfs"
+
+  filesystem {
+    mount_points_exclude = "^/(sys|proc|dev|host|etc)($|/)"
+  }
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// ============================================================
+// 컨테이너 메트릭 수집 (Alloy 내장 cAdvisor)
+// ============================================================
+prometheus.exporter.cadvisor "default" {
+  docker_host      = "unix:///var/run/docker.sock"
+  docker_only      = true
+  storage_duration = "5m"
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = prometheus.exporter.cadvisor.default.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// NOTE: 앱(/metrics) 스크레이프는 prom-client 도입 후 추가한다 (아직 미노출)
+
+// ============================================================
+// Prometheus Remote Write — compose 내부 prometheus로
+// ============================================================
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// ============================================================
+// Docker 컨테이너 로그 수집
+// ============================================================
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "app_targets" {
+  targets = discovery.docker.containers.targets
+
+  // NestJS app 컨테이너만 분리 수집
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/cure-app"
+    action        = "keep"
+  }
+
+  // Loki 탐색용 라벨
+  rule {
+    target_label = "log_source"
+    replacement  = "nestjs"
+  }
+
+  rule {
+    target_label = "service_name"
+    replacement  = "cure-app"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+    replacement   = "$1"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+}
+
+discovery.relabel "docker_targets" {
+  targets = discovery.docker.containers.targets
+
+  // app 제외, 나머지 Docker 로그
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/cure-app"
+    action        = "drop"
+  }
+
+  // Loki 탐색용 라벨
+  rule {
+    target_label = "log_source"
+    replacement  = "docker"
+  }
+
+  rule {
+    target_label = "service_name"
+    replacement  = "docker_containers"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+    replacement   = "$1"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+}
+
+loki.source.docker "app" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.app_targets.output
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_targets.output
+  forward_to = [loki.write.default.receiver]
+}
+
+// ============================================================
+// Loki 로그 전송 — compose 내부 loki로
+// ============================================================
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

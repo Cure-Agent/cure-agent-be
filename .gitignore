@@ -17,5 +17,19 @@ coverage/
 .idea/
 *.log
 
+# 로컬 IDE MCP 연결 (개인 환경 전용 — 팀 공유 MCP 서버가 생기면 해제하고 커밋)
+.mcp.json
+
 # SDD 하네스 스크래치 (implement.md Phase 2)
 .cure-implement/
+
+# terraform — 상태·변수 파일은 로컬/TFC 전용 (*.tfvars.example만 커밋)
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+**/.terraform/*
+.terraform.*
+# GCP 서비스 계정 키 방어 — terraform 아래에는 커밋할 json이 없다
+terraform/**/*.json

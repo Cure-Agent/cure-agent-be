@@ -1,0 +1,28 @@
+# terraform.tfvars로 복사해 값을 채운다 (*.tfvars는 gitignore — 커밋 금지).
+# private_key, ssh_private_key는 여기 넣지 말고 Terraform Cloud 워크스페이스(cure-agent-oci-a1flex)에
+# Sensitive Variable로 등록한다.
+
+prefix = "cure-a1"
+region = "ap-chuncheon-1"
+
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxx"
+user_ocid        = "ocid1.user.oc1..xxxx"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+compartment_ocid = "ocid1.tenancy.oc1..xxxx" # 별도 compartment 없으면 tenancy OCID와 동일
+
+# 비워두면 availability_domain_index(기본 0)번째 AD를 사용한다.
+# A1 "Out of capacity" 오류 시 availability_domain_index를 1, 2로 바꿔 재시도.
+availability_domain = ""
+
+ssh_public_keys = [
+  "ssh-ed25519 AAAA... local-machine",
+  "ssh-ed25519 AAAA... github-actions",
+]
+
+instance_shape          = "VM.Standard.A1.Flex"
+instance_ocpus          = 2  # Always Free 한도: 2 OCPU
+instance_memory_in_gbs  = 12 # Always Free 한도: 12 GB
+boot_volume_size_in_gbs = 100
+
+# e2_1_micro 워크스페이스 apply 후 terraform output lpg_ocid 값을 입력
+e2_lpg_ocid = "ocid1.localpeeringgateway.oc1.xxxx"

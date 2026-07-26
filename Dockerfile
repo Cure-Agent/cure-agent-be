@@ -21,9 +21,11 @@ ENV NODE_ENV=production
 USER node
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
-# 마이그레이션은 컨테이너에서 실행할 수 있어야 한다 (drizzle-kit이 참조)
+# 마이그레이션은 컨테이너에서 실행할 수 있어야 한다 — drizzle-kit은 devDep이라
+# 프로덕션에서는 scripts/migrate.mjs(drizzle-orm 내장 migrator)를 쓴다 (deploy.sh 참조)
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=build --chown=node:node /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build --chown=node:node /app/package.json ./package.json
 
 EXPOSE 3000
