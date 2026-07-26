@@ -1,18 +1,37 @@
 /**
- * 실 프로바이더 공통 HTTP 유틸 (docs/specs/13).
+ * 외부 프로바이더 공통 HTTP 유틸 (docs/specs/13·14).
  * 오류 등급화는 §11 4단 방어(재시도·서킷·rate-limit 차단)가 소비하는 계약이다.
+ * 오류 계열은 호출 패키지가 정한다 — errorClass로 주입받아 llm·embedding 오류가 섞이지 않게 한다.
  */
-import { LlmProviderError } from './llm-provider.port';
+
+/** 4단 방어가 분류에 사용하는 오류 속성 — LlmProviderError·EmbeddingProviderError 공통 */
+export interface ProviderErrorOptions {
+  retryable?: boolean;
+  rateLimited?: boolean;
+  retryAfterSec?: number;
+}
+
+type ProviderErrorClass<E extends Error> = new (
+  message: string,
+  options?: ProviderErrorOptions,
+) => E;
+
+export interface ProviderContext<E extends Error> {
+  /** 오류 메시지 접두사 겸 프로바이더 식별자 */
+  provider: string;
+  errorClass: ProviderErrorClass<E>;
+  signal?: AbortSignal;
+}
 
 /** 응답 헤더 수신까지의 상한 (architecture.md §11-1). 전체 상한 120s는 호출측이 부여한다. */
 const CONNECT_TIMEOUT_MS = 10_000;
 
-export async function fetchStream(
+export async function fetchStream<E extends Error>(
   url: string,
   init: RequestInit,
-  provider: string,
-  signal?: AbortSignal,
+  context: ProviderContext<E>,
 ): Promise<Response> {
+  const { provider, errorClass: ErrorClass, signal } = context;
   const connectTimeout = new AbortController();
   const timer = setTimeout(
     () => connectTimeout.abort(new Error(`${provider} 연결 타임아웃 (${CONNECT_TIMEOUT_MS}ms)`)),
@@ -27,32 +46,33 @@ export async function fetchStream(
   } catch (error) {
     // 호출자 abort는 폴백·재시도 대상이 아니다 — 감싸지 않고 원 오류를 전파한다
     if (signal?.aborted) throw error;
-    throw new LlmProviderError(`${provider} 연결 실패: ${String(error)}`, { retryable: true });
+    throw new ErrorClass(`${provider} 연결 실패: ${String(error)}`, { retryable: true });
   } finally {
     // 헤더를 받은 뒤에는 본문 스트리밍이 길어져도 이 타이머로 끊지 않는다
     clearTimeout(timer);
   }
 }
 
-export async function toProviderError(
-  provider: string,
+export async function toProviderError<E extends Error>(
   response: Response,
-): Promise<LlmProviderError> {
+  context: ProviderContext<E>,
+): Promise<E> {
+  const { provider, errorClass: ErrorClass } = context;
   const detail = await safeText(response);
 
   if (response.status === 429) {
-    return new LlmProviderError(`${provider} rate limit (429): ${detail}`, {
+    return new ErrorClass(`${provider} rate limit (429): ${detail}`, {
       rateLimited: true,
       retryAfterSec: parseRetryAfter(response.headers.get('retry-after')),
     });
   }
   if (response.status >= 500) {
-    return new LlmProviderError(`${provider} 서버 오류 (${response.status}): ${detail}`, {
+    return new ErrorClass(`${provider} 서버 오류 (${response.status}): ${detail}`, {
       retryable: true,
     });
   }
   // 4xx는 대개 설정 오류(키·모델·요청 형식) — 재시도해도 같은 결과다
-  return new LlmProviderError(`${provider} 요청 실패 (${response.status}): ${detail}`, {
+  return new ErrorClass(`${provider} 요청 실패 (${response.status}): ${detail}`, {
     retryable: false,
   });
 }

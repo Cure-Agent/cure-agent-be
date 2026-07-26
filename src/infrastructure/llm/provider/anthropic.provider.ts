@@ -2,11 +2,11 @@
  * Anthropic Messages 스트리밍 어댑터 (docs/specs/13).
  * content_block_delta(text_delta)만 소비하고 message_stop에서 종료한다.
  */
+import { fetchStream, parseJson, toProviderError } from '../../http/provider-http';
+import { parseSseFrames } from '../../http/sse-stream.parser';
+import { LlmProvider, LlmProviderError, LlmStreamRequest } from '../llm-provider.port';
+import { buildPrompt } from '../prompt-builder';
 import { AnthropicProviderConfig } from './llm.config';
-import { LlmProvider, LlmProviderError, LlmStreamRequest } from './llm-provider.port';
-import { buildPrompt } from './prompt-builder';
-import { fetchStream, parseJson, toProviderError } from './provider-http';
-import { parseSseFrames } from './sse-stream.parser';
 
 const API_VERSION = '2023-06-01';
 
@@ -22,6 +22,11 @@ export class AnthropicProvider implements LlmProvider {
     request.signal?.throwIfAborted();
 
     const prompt = buildPrompt(request);
+    const http = {
+      provider: this.name,
+      errorClass: LlmProviderError,
+      signal: request.signal,
+    };
     const response = await fetchStream(
       `${this.config.baseUrl}/messages`,
       {
@@ -39,11 +44,10 @@ export class AnthropicProvider implements LlmProvider {
           messages: [{ role: 'user', content: prompt.user }],
         }),
       },
-      this.name,
-      request.signal,
+      http,
     );
 
-    if (!response.ok) throw await toProviderError(this.name, response);
+    if (!response.ok) throw await toProviderError(response, http);
     if (!response.body) {
       throw new LlmProviderError('anthropic 응답 본문이 비어 있습니다', { retryable: true });
     }

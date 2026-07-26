@@ -1,4 +1,4 @@
-import { LlmProviderError } from './llm-provider.port';
+import { LlmProviderError } from '../llm-provider.port';
 
 const MAX_ATTEMPTS = 2;
 const BACKOFF_MS = 300;

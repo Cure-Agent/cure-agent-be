@@ -1,9 +1,9 @@
-// docs/specs/13 수용 기준 1·2·3·4 동결 테스트 — 구현 중 수정 금지
+// docs/specs/13 수용 기준 5 동결 테스트 — 구현 중 수정 금지
+import { AnthropicProvider } from './anthropic.provider';
 import {
   LlmProviderError,
   type LlmStreamRequest,
-} from './llm-provider.port';
-import { OpenAiProvider } from './openai.provider';
+} from '../llm-provider.port';
 
 const config = {
   apiKey: 'test-key',
@@ -47,30 +47,29 @@ async function collect(iterable: AsyncIterable<string>): Promise<string[]> {
   return out;
 }
 
-describe('OpenAiProvider', () => {
+describe('AnthropicProvider', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it('청크 경계로 분할된 SSE delta를 순서대로 yield하고 [DONE]에서 종료한다', async () => {
+  it('text_delta만 순서대로 yield하고 message_stop에서 종료한다', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
       streamResponse([
-        'data: {"choices":[{"delta":{"con',
-        'tent":"침 치료는 "}}]}\n',
-        '\ndata: {"choices":[{"delta":{"content":"권고됩',
-        '니다 [1]."}}]}\n\ndata: [DO',
-        'NE]\n\n',
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1"}}\n\n',
+        'event: ping\ndata: {"type":"ping"}\n\nevent: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_',
+        'delta","text":"침 치료는 "}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"권고됩니다 [1]."}}\n\nevent: message_',
+        'stop\ndata: {"type":"message_stop"}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"무시"}}\n\n',
       ]),
     );
-    const provider = new OpenAiProvider(config);
+    const provider = new AnthropicProvider(config);
 
     const deltas = await collect(provider.streamAnswer(request));
 
     expect(deltas).toEqual(['침 치료는 ', '권고됩니다 [1].']);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.test.local/v1/chat/completions');
-    expect(new Headers(init?.headers).get('Authorization')).toBe(
-      'Bearer test-key',
-    );
+    const headers = new Headers(init?.headers);
+    expect(url).toBe('https://api.test.local/v1/messages');
+    expect(headers.get('x-api-key')).toBe('test-key');
+    expect(headers.get('anthropic-version')).toBe('2023-06-01');
     expect(JSON.parse(String(init?.body))).toEqual(
       expect.objectContaining({ stream: true }),
     );
@@ -83,7 +82,7 @@ describe('OpenAiProvider', () => {
         headers: { 'Retry-After': '30' },
       }),
     );
-    const provider = new OpenAiProvider(config);
+    const provider = new AnthropicProvider(config);
     let caught: unknown;
 
     try {
@@ -101,7 +100,7 @@ describe('OpenAiProvider', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       new Response('{"error":{"message":"rate limited"}}', { status: 429 }),
     );
-    const provider = new OpenAiProvider(config);
+    const provider = new AnthropicProvider(config);
     let caught: unknown;
 
     try {
@@ -115,11 +114,11 @@ describe('OpenAiProvider', () => {
     expect((caught as LlmProviderError).options.retryAfterSec).toBeUndefined();
   });
 
-  it('500을 retryable LlmProviderError로 매핑한다', async () => {
+  it('5xx를 retryable LlmProviderError로 매핑한다', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       new Response('{"error":{"message":"server error"}}', { status: 500 }),
     );
-    const provider = new OpenAiProvider(config);
+    const provider = new AnthropicProvider(config);
     let caught: unknown;
 
     try {
@@ -132,11 +131,11 @@ describe('OpenAiProvider', () => {
     expect((caught as LlmProviderError).options.retryable).toBe(true);
   });
 
-  it('401을 retryable하지 않은 LlmProviderError로 매핑한다', async () => {
+  it('4xx를 retryable하지 않은 LlmProviderError로 매핑한다', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(
       new Response('{"error":{"message":"unauthorized"}}', { status: 401 }),
     );
-    const provider = new OpenAiProvider(config);
+    const provider = new AnthropicProvider(config);
     let caught: unknown;
 
     try {
@@ -147,33 +146,5 @@ describe('OpenAiProvider', () => {
 
     expect(caught).toBeInstanceOf(LlmProviderError);
     expect((caught as LlmProviderError).options.retryable).toBe(false);
-  });
-
-  it('이미 abort된 signal이면 fetch와 yield 없이 원 오류를 전파한다', async () => {
-    const fetchMock = jest
-      .spyOn(global, 'fetch')
-      .mockRejectedValue(new Error('fetch should not be called'));
-    const abortController = new AbortController();
-    const abortReason = new Error('caller aborted');
-    abortController.abort(abortReason);
-    const provider = new OpenAiProvider(config);
-    const deltas: string[] = [];
-    let caught: unknown;
-
-    try {
-      for await (const delta of provider.streamAnswer({
-        ...request,
-        signal: abortController.signal,
-      })) {
-        deltas.push(delta);
-      }
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBe(abortReason);
-    expect(caught).not.toBeInstanceOf(LlmProviderError);
-    expect(deltas).toEqual([]);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
