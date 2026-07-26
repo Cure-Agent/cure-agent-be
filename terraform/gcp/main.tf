@@ -39,6 +39,12 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y ca-certificates curl git
 
+# Docker 29+의 containerd 이미지 스토어(overlayfs snapshotter)는 cAdvisor의
+# 레거시 layerdb 레이아웃 전제와 비호환 → 컨테이너 지표 수집이 전멸한다.
+# classic overlay2 그래프 드라이버를 강제한다 (docker 설치·기동 전에 작성해야 함)
+mkdir -p /etc/docker
+echo '{"features":{"containerd-snapshotter":false}}' > /etc/docker/daemon.json
+
 # Docker CE (공식 저장소) + compose plugin
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
