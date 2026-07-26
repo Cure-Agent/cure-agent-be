@@ -1,9 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [dev]
 
 jobs:
   build-test:
@@ -41,8 +40,8 @@ jobs:
 
   # PR에서 OpenAPI breaking change 감지 (architecture.md §1, §13)
   # 스펙 diff=0 검증은 test:e2e의 contract 스펙이 담당한다
+  # dev→main 단방향 흐름이라 dev 스펙 기준 검사가 main 기준 검사를 포괄한다
   openapi-breaking:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
