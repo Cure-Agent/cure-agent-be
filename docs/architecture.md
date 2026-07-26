@@ -193,19 +193,29 @@ cure-agent-be/
 │   │   └── evaluation/               # P1
 │   │
 │   └── infrastructure/
-│       ├── llm/
-│       │   ├── llm-gateway.ts
+│       ├── http/                             # 프로바이더 공통 전송 계층 (llm·embedding 공용)
+│       │   ├── provider-http.ts              # 연결 타임아웃 + 오류 등급화(errorClass 주입)
+│       │   ├── sse-stream.parser.ts
+│       │   └── env.ts                        # config 공용 env 파싱
+│       ├── llm/                              # 루트 = 공개면, 하위 = 내부 구현
+│       │   ├── llm.module.ts
 │       │   ├── llm-provider.port.ts          # 포트 유지 (fake 테스트·교체 실요구 있음)
-│       │   ├── openai-provider.ts
-│       │   ├── anthropic-provider.ts
-│       │   ├── provider-router.ts            # 우선순위·폴백 라우팅
-│       │   ├── retry-policy.ts
-│       │   ├── circuit-breaker.ts            # 연속 실패 시 차단
-│       │   ├── rate-limit-block-store.ts     # 429 감지 시 일정시간 호출 차단
-│       │   └── response-cache.ts             # 규칙은 §11
+│       │   ├── llm-gateway.ts                # 우선순위·폴백 라우팅
+│       │   ├── prompt-builder.ts             # PROMPT_VERSION 포함
+│       │   ├── provider/
+│       │   │   ├── openai.provider.ts
+│       │   │   ├── anthropic.provider.ts
+│       │   │   ├── fake-llm.provider.ts
+│       │   │   ├── llm-providers.factory.ts  # env 기반 등록 정책
+│       │   │   └── llm.config.ts
+│       │   ├── resilience/
+│       │   │   ├── retry-policy.ts
+│       │   │   ├── circuit-breaker.ts        # 연속 실패 시 차단
+│       │   │   └── rate-limit-block-store.ts # 429 감지 시 일정시간 호출 차단
+│       │   └── response-cache.ts             # 규칙은 §11 (P1)
 │       ├── embedding/                        # 포트 유지
 │       ├── retrieval/                        # 포트 유지
-│       ├── document/                         # pdf-parser, guideline-chunker
+│       ├── document/                         # pdf-parser, guideline-chunker (P1)
 │       └── scheduler/                        # P1
 │
 ├── test/
@@ -847,7 +857,7 @@ export type ErrorCode = keyof typeof ErrorCodes;
 
 ## 11. LLM 인프라 안정성
 
-`retry-policy` 단독으로는 부족하다. `infrastructure/llm/`에 4단 방어를 구성한다:
+`retry-policy` 단독으로는 부족하다. `infrastructure/llm/resilience/`에 4단 방어를 구성한다:
 
 1. **retry-policy**: 일시 오류(5xx, 네트워크)에 지수 백오프 재시도. 타임아웃 명시(연결 10s / 전체 60~120s).
 2. **circuit-breaker**: 연속 실패 임계 초과 시 일정 시간 호출 차단(fail-fast). 차단 중 요청은 즉시 `LLM_UNAVAILABLE`.

@@ -2,6 +2,8 @@
  * LLM 포트 (architecture.md §3, §11).
  * provider-router가 이 배열(LLM_PROVIDERS)을 우선순위 순서로 소비한다.
  */
+import { ProviderErrorOptions } from '../http/provider-http';
+
 export const LLM_PROVIDERS = Symbol('LLM_PROVIDERS');
 
 export interface LlmEvidenceContext {
@@ -29,7 +31,7 @@ export interface LlmProvider {
 export class LlmProviderError extends Error {
   constructor(
     message: string,
-    readonly options: { retryable?: boolean; rateLimited?: boolean; retryAfterSec?: number } = {},
+    readonly options: ProviderErrorOptions = {},
   ) {
     super(message);
     this.name = 'LlmProviderError';

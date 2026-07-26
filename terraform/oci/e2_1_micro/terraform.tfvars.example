@@ -1,0 +1,23 @@
+# terraform.tfvars로 복사해 값을 채운다 (*.tfvars는 gitignore — 커밋 금지).
+# private_key, ssh_private_key는 여기 넣지 말고 Terraform Cloud 워크스페이스(cure-agent-oci)에
+# Sensitive Variable로 등록한다.
+
+prefix = "cure"
+region = "ap-chuncheon-1"
+
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxx"
+user_ocid        = "ocid1.user.oc1..xxxx"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+compartment_ocid = "ocid1.tenancy.oc1..xxxx" # 별도 compartment 없으면 tenancy OCID와 동일
+
+# 비워두면 availability_domain_index(기본 0)번째 AD를 사용한다.
+availability_domain = ""
+
+ssh_public_keys = [
+  "ssh-ed25519 AAAA... local-machine",
+  "ssh-ed25519 AAAA... github-actions",
+]
+
+instance_shape          = "VM.Standard.E2.1.Micro"
+instance_count          = 2
+boot_volume_size_in_gbs = 50 # Always Free 총 한도 200GB — e2 50×2 + a1 100 배분

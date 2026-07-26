@@ -1,0 +1,17 @@
+# terraform.tfvars로 복사해 값을 채운다 (*.tfvars는 gitignore — 커밋 금지).
+# credentials(서비스 계정 JSON 키)는 여기 넣지 말고 Terraform Cloud 워크스페이스(cure-agent-gcp)에
+# Sensitive Variable로 등록한다.
+
+prefix     = "cure"
+project_id = "cure-agent-xxxxxx"
+region     = "asia-northeast3"
+zone       = "asia-northeast3-a"
+
+ssh_user = "deploy" # CD의 SERVER_USER Secret과 동일해야 한다
+ssh_public_keys = [
+  "ssh-ed25519 AAAA... local-machine",
+  "ssh-ed25519 AAAA... github-actions",
+]
+
+machine_type         = "e2-standard-2" # 2 vCPU / 8 GB
+boot_disk_size_in_gb = 50

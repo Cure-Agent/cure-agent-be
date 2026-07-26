@@ -2,6 +2,8 @@
  * 임베딩 포트 (architecture.md §3 — 포트는 llm/embedding/retrieval에만).
  * 실 프로바이더(OpenAI) 연동은 docs/specs/14.
  */
+import { ProviderErrorOptions } from '../http/provider-http';
+
 export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');
 
 export interface EmbeddingProvider {
@@ -18,7 +20,7 @@ export interface EmbeddingProvider {
 export class EmbeddingProviderError extends Error {
   constructor(
     message: string,
-    readonly options: { retryable?: boolean; rateLimited?: boolean; retryAfterSec?: number } = {},
+    readonly options: ProviderErrorOptions = {},
   ) {
     super(message);
     this.name = 'EmbeddingProviderError';

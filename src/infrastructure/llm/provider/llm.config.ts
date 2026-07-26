@@ -2,11 +2,13 @@
  * 실 LLM 프로바이더 런타임 설정 (docs/specs/13).
  * 전부 선택 env — 키가 없으면 해당 프로바이더를 등록하지 않는다(env.validation 필수화 금지).
  */
+import { baseUrl, nonEmpty, positiveInt } from '../../http/env';
 
 const DEFAULTS = {
-  openaiModel: 'gpt-5.1',
+  // 데모 운영 기준 최저가 라인 — 품질 요구가 올라가면 gpt-5.1 / claude-sonnet-5로 상향
+  openaiModel: 'gpt-5-mini',
   openaiBaseUrl: 'https://api.openai.com/v1',
-  anthropicModel: 'claude-sonnet-5',
+  anthropicModel: 'claude-haiku-4-5',
   anthropicBaseUrl: 'https://api.anthropic.com/v1',
   maxOutputTokens: 1024,
 } as const;
@@ -53,18 +55,4 @@ export function resolveLlmConfig(env: NodeJS.ProcessEnv): LlmRuntimeConfig {
         }
       : null,
   };
-}
-
-function nonEmpty(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function baseUrl(value: string | undefined, fallback: string): string {
-  return (nonEmpty(value) ?? fallback).replace(/\/+$/, '');
-}
-
-function positiveInt(value: string | undefined, fallback: number): number {
-  const parsed = Number(nonEmpty(value));
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }

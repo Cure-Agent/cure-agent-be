@@ -1,0 +1,62 @@
+name: CD - GCP Deploy (Main)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '배포할 이미지 태그 (롤백 시 CI 실행 번호 입력, 기본값: latest)'
+        required: false
+        default: 'latest'
+
+jobs:
+  deploy-main:
+    runs-on: ubuntu-22.04
+    env:
+      POSTGRES_USERNAME: ${{ secrets.POSTGRES_USERNAME }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      AUTH_JWT_SECRET: ${{ secrets.AUTH_JWT_SECRET }}
+      COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+      CRYPTO_ENC_KEYS: ${{ secrets.CRYPTO_ENC_KEYS }}
+      CRYPTO_ENC_ACTIVE_VERSION: ${{ secrets.CRYPTO_ENC_ACTIVE_VERSION }}
+      CRYPTO_HMAC_INDEX_KEY: ${{ secrets.CRYPTO_HMAC_INDEX_KEY }}
+      ALERT_WEBHOOK_URLS: ${{ secrets.ALERT_WEBHOOK_URLS }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GHCR_USER: ${{ secrets.GHCR_USER }}
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+      GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+      GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      APP_IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose files & deploy.sh to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          source: "docker/gcp/,deploy.sh,nginx/"
+          target: "~/deploy/"
+
+      - name: SSH 접속 및 배포
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          envs: POSTGRES_USERNAME, POSTGRES_PASSWORD, REDIS_PASSWORD, AUTH_JWT_SECRET, COOKIE_DOMAIN, CRYPTO_ENC_KEYS, CRYPTO_ENC_ACTIVE_VERSION, CRYPTO_HMAC_INDEX_KEY, ALERT_WEBHOOK_URLS, OPENAI_API_KEY, ANTHROPIC_API_KEY, GHCR_PAT, GHCR_USER, CERTBOT_EMAIL, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD, DISCORD_WEBHOOK_URL, APP_IMAGE_TAG
+          script: |
+            set -e
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            cd ~/deploy
+            chmod +x deploy.sh
+            export APP_IMAGE_TAG="${APP_IMAGE_TAG:-latest}"
+            COMPOSE_FILE=docker/gcp/compose.yml ./deploy.sh

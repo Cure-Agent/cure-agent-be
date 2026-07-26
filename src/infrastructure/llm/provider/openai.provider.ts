@@ -2,11 +2,11 @@
  * OpenAI Chat Completions 스트리밍 어댑터 (docs/specs/13).
  * 오류는 LlmProviderError로 등급화해 §11 4단 방어가 소비한다 — abort는 감싸지 않고 원 오류 전파.
  */
+import { fetchStream, parseJson, toProviderError } from '../../http/provider-http';
+import { parseSseFrames } from '../../http/sse-stream.parser';
+import { LlmProvider, LlmProviderError, LlmStreamRequest } from '../llm-provider.port';
+import { buildPrompt } from '../prompt-builder';
 import { OpenAiProviderConfig } from './llm.config';
-import { LlmProvider, LlmProviderError, LlmStreamRequest } from './llm-provider.port';
-import { buildPrompt } from './prompt-builder';
-import { fetchStream, parseJson, toProviderError } from './provider-http';
-import { parseSseFrames } from './sse-stream.parser';
 
 const DONE_SENTINEL = '[DONE]';
 
@@ -22,6 +22,11 @@ export class OpenAiProvider implements LlmProvider {
     request.signal?.throwIfAborted();
 
     const prompt = buildPrompt(request);
+    const http = {
+      provider: this.name,
+      errorClass: LlmProviderError,
+      signal: request.signal,
+    };
     const response = await fetchStream(
       `${this.config.baseUrl}/chat/completions`,
       {
@@ -40,11 +45,10 @@ export class OpenAiProvider implements LlmProvider {
           ],
         }),
       },
-      this.name,
-      request.signal,
+      http,
     );
 
-    if (!response.ok) throw await toProviderError(this.name, response);
+    if (!response.ok) throw await toProviderError(response, http);
     if (!response.body) {
       throw new LlmProviderError('openai 응답 본문이 비어 있습니다', { retryable: true });
     }

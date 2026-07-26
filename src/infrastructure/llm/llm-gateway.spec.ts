@@ -1,8 +1,8 @@
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
-import { CircuitBreaker } from './circuit-breaker';
 import { LlmExhaustedError, LlmGateway } from './llm-gateway';
 import { LlmProvider } from './llm-provider.port';
-import { RateLimitBlockStore } from './rate-limit-block-store';
+import { CircuitBreaker } from './resilience/circuit-breaker';
+import { RateLimitBlockStore } from './resilience/rate-limit-block-store';
 
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 
