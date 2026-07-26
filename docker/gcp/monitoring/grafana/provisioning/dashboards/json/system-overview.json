@@ -122,7 +122,7 @@
       "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
       "targets": [
         {
-          "expr": "increase(container_restart_count{name=~\"cure-.+\"}[5m])",
+          "expr": "changes(container_start_time_seconds{name=~\"cure-.+\"}[5m])",
           "legendFormat": "{{name}}",
           "refId": "A"
         }

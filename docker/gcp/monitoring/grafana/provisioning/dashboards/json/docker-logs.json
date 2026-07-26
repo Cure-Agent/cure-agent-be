@@ -105,12 +105,12 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{log_source=\"spring_boot\"}",
+          "expr": "{log_source=\"nestjs\"}",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Spring Boot Logs",
+      "title": "Node.js App Logs (cure-app)",
       "type": "logs"
     },
     {
@@ -197,20 +197,9 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{log_source=\"docker\", compose_service=\"mongodb\"}",
-          "queryType": "range",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
-          "direction": "backward",
-          "editorMode": "code",
           "expr": "{log_source=\"docker\", compose_service=\"postgres\"}",
           "queryType": "range",
-          "refId": "B"
+          "refId": "A"
         }
       ],
       "title": "DB Logs",
@@ -218,8 +207,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
       },
       "fieldConfig": {
         "defaults": {},
@@ -248,26 +237,18 @@
       "pluginVersion": "12.4.2",
       "targets": [
         {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
           "editorMode": "code",
           "expr": "{log_source=\"docker\", compose_service=\"redis\"}",
-          "legendFormat": "__auto",
-          "range": true,
+          "queryType": "range",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "{log_source=\"docker\", compose_service=\"redpanda\"}",
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "B"
         }
       ],
-      "title": "Cache/Kafka Logs",
+      "title": "Redis Logs",
       "type": "logs"
     }
   ],
