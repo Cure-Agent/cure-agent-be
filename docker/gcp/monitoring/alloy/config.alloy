@@ -25,14 +25,13 @@ prometheus.scrape "host" {
 // ============================================================
 // 컨테이너 메트릭 수집 (Alloy 내장 cAdvisor)
 // ============================================================
+// NOTE: cAdvisor는 Docker의 classic overlay2 그래프 드라이버를 전제한다 —
+// containerd 이미지 스토어(overlayfs)와 비호환. terraform cloud-init이
+// daemon.json으로 overlay2를 강제한다 (containerd-snapshotter=false).
 prometheus.exporter.cadvisor "default" {
   docker_host      = "unix:///var/run/docker.sock"
   docker_only      = true
   storage_duration = "5m"
-  // Docker 29 containerd 이미지 스토어(overlayfs)에는 layerdb 레이아웃이 없어
-  // RW 레이어 조회가 실패한다 — disk 지표를 끄면 조회 자체를 건너뛴다.
-  // 컨테이너별 fs 사용량만 잃고(미사용), CPU/메모리/네트워크 수집이 복구된다.
-  disabled_metrics = ["disk"]
 }
 
 prometheus.scrape "cadvisor" {
