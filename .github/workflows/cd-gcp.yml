@@ -67,4 +67,8 @@ jobs:
             cd ~/deploy
             chmod +x deploy.sh
             export APP_IMAGE_TAG="${APP_IMAGE_TAG:-latest}"
+            # 배포 후 디스크 정리는 deploy.sh 말미가 담당한다(별도 단계 없음):
+            #   ① dangling 이미지 prune ② 미사용 앱 이미지 rmi
+            #   ③ containerd 고아 blob prune ④ 디스크·containerd 용량 로깅
+            # 배포 로그 끝의 "disk usage" 블록에서 잔재 누적을 확인할 수 있다.
             COMPOSE_FILE=docker/gcp/compose.yml ./deploy.sh
