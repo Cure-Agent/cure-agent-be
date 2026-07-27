@@ -13,6 +13,9 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PatientSnapshotService } from '../src/domain/patient/service/patient-snapshot.service';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialSignUp } from './fixtures/social-auth';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const MISSING_PATIENT_ID = '01J00000000000000000000000';
@@ -105,29 +108,13 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
     licenseNumber: string,
     clinicName: string,
   ): Promise<TestAuth> => {
-    const res = await request(server())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send({
-        email,
-        password: 'password-1234',
-        displayName: '환자테스트 의사',
-        clinicName,
-        licenseNumber,
-        termsAccepted: true,
-      })
-      .expect(201);
-
-    const cookies = (res.headers['set-cookie'] ?? []) as unknown as string[];
-    const cookie = cookies
-      .map((raw) => raw.split(';')[0])
-      .filter((pair) => pair.startsWith('access_token='))
-      .join('; ');
-    const clinicId = res.body.data.clinician.clinic.id as string;
-
-    expect(cookie).toContain('access_token=');
-    expect(clinicId).toEqual(expect.any(String));
-    return { cookie, clinicId };
+    const session = await socialSignUp(app, {
+      email,
+      licenseNumber,
+      clinicName,
+      displayName: '환자테스트 의사',
+    });
+    return { cookie: session.cookie, clinicId: session.clinicId };
   };
 
   const createPatient = async (
@@ -170,7 +157,10 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
     pool = new Pool({ connectionString: container.getConnectionUri() });
     await migrate(drizzle(pool), { migrationsFolder: 'drizzle/migrations' });
 
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());

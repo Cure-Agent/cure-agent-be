@@ -9,9 +9,10 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { GuidelineIngestService } from '../src/domain/guideline/service/guideline-ingest.service';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialSignUp } from './fixtures/social-auth';
 import { gyeonbitongGuideline, yotongGuideline } from './fixtures/guideline-samples';
-
-const CSRF = { 'X-CSRF-Protection': '1' };
 
 /**
  * docs/specs/05-guideline-evidence.md 수용 기준 동결 테스트.
@@ -39,7 +40,10 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
     pool = new Pool({ connectionString: container.getConnectionUri() });
     await migrate(drizzle(pool), { migrationsFolder: 'drizzle/migrations' });
 
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
@@ -48,23 +52,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
     ingestService = app.get(GuidelineIngestService);
 
     // 보호 라우트 접근용 계정
-    const signup = await request(app.getHttpServer())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send({
-        email: 'guideline-tester@clinic.kr',
-        password: 'password-1234',
-        displayName: '김의사',
-        clinicName: '서울한의원',
-        licenseNumber: 'LIC-0042',
-        termsAccepted: true,
-      })
-      .expect(201);
-    const setCookies = (signup.headers['set-cookie'] ?? []) as unknown as string[];
-    authCookie = setCookies
-      .map((raw) => raw.split(';')[0])
-      .filter((pair) => pair.startsWith('access_token='))
-      .join('; ');
+    authCookie = (await socialSignUp(app, { email: 'guideline-tester@clinic.kr' })).cookie;
   });
 
   afterAll(async () => {
