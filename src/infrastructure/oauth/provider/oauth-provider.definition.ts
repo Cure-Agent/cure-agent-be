@@ -43,10 +43,13 @@ export const KAKAO_DEFINITION: OAuthProviderDefinition = {
   authorizationUrl: 'https://kauth.kakao.com/oauth/authorize',
   tokenUrl: 'https://kauth.kakao.com/oauth/token',
   userInfoUrl: 'https://kapi.kakao.com/v2/user/me',
-  // account_email은 카카오 콘솔에서 "선택 동의"로만 열 수 있어 미동의 응답을 항상 감안해야 한다
-  scope: 'account_email profile_nickname',
+  // account_email은 카카오 콘솔에서 "선택 동의"로만 열 수 있어 미동의 응답을 항상 감안해야 한다.
+  // profile_nickname은 요청하지 않는다 — 콘솔에 열려 있지 않은 항목을 요청하면 인가 단계에서 거부되고,
+  // 이름은 어차피 온보딩 폼에서 직접 받는다.
+  scope: 'account_email',
   toProfile: (raw) => {
     const account = obj(raw.kakao_account);
+    // 닉네임은 요청하지 않으므로 보통 비어 있다 — 콘솔에서 동의 항목을 열면 그때부터 폼 기본값으로 쓰인다
     const profile = obj(account?.profile);
     return {
       providerId: str(raw.id),
