@@ -200,7 +200,39 @@ services:
       - prometheus
       - loki
     networks:
+      # app(/metrics)과 DB·Redis exporter를 긁으려면 backend 망에도 붙어야 한다.
+      # 반대 방향(app을 monitoring 망에 넣기)은 외부 트래픽을 받는 app에
+      # 모니터링 스택 접근 권한을 주게 되므로 택하지 않는다.
       - cure-monitoring
+      - cure-backend
+
+  # ── 데이터스토어 exporter — 로그만으로는 보이지 않는 커넥션·캐시 상태를 노출한다 ──
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: cure-postgres-exporter
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/cure_agent?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cure-backend
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.88.0-alpine
+    container_name: cure-redis-exporter
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - cure-backend
 
   prometheus:
     image: prom/prometheus:v3.11.2

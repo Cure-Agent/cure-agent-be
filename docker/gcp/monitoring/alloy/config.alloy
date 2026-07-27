@@ -12,12 +12,14 @@ prometheus.exporter.unix "host" {
   rootfs_path = "/rootfs"
 
   filesystem {
-    mount_points_exclude = "^/(sys|proc|dev|host|etc)($|/)"
+    // exporter 기본 제외 목록을 덮어쓰므로 기본 항목(var/lib/docker 등)을 함께 유지해야 한다 —
+    // 빠뜨리면 컨테이너 오버레이 마운트가 파일시스템 지표로 새어 들어온다
+    mount_points_exclude = "^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/kubelet/.+|host|etc)($|/)"
   }
 }
 
 prometheus.scrape "host" {
-  targets         = prometheus.exporter.unix.host.targets
+  targets         = discovery.relabel.host_metrics.output
   forward_to      = [prometheus.remote_write.default.receiver]
   scrape_interval = "15s"
 }
@@ -35,12 +37,72 @@ prometheus.exporter.cadvisor "default" {
 }
 
 prometheus.scrape "cadvisor" {
-  targets         = prometheus.exporter.cadvisor.default.targets
+  targets         = discovery.relabel.container_metrics.output
   forward_to      = [prometheus.remote_write.default.receiver]
   scrape_interval = "15s"
 }
 
-// NOTE: 앱(/metrics) 스크레이프는 prom-client 도입 후 추가한다 (아직 미노출)
+// ============================================================
+// 앱 메트릭 수집 (NestJS /metrics — prom-client)
+// ============================================================
+// 글로벌 prefix(api/v1)를 쓰는 앱 컨벤션을 따른다. 외부 노출은 nginx가 404로 막는다.
+prometheus.scrape "app" {
+  targets = [
+    {
+      __address__ = "app:3000",
+      instance    = "cure-app",
+      job         = "cure-app",
+    },
+  ]
+  metrics_path    = "/api/v1/metrics"
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// ============================================================
+// 데이터스토어 메트릭 수집 (postgres_exporter / redis_exporter)
+// ============================================================
+prometheus.scrape "datastores" {
+  targets = [
+    {
+      __address__ = "postgres-exporter:9187",
+      instance    = "cure-postgres",
+      job         = "postgres",
+    },
+    {
+      __address__ = "redis-exporter:9121",
+      instance    = "cure-redis",
+      job         = "redis",
+    },
+  ]
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// ============================================================
+// instance 라벨 고정
+// ============================================================
+// Alloy는 exporter 타겟의 instance를 자기 hostname(=컨테이너 ID)으로 채운다.
+// 배포로 alloy 컨테이너가 재생성될 때마다 instance가 바뀌어, 같은 지표의
+// 시계열이 retention(15d) 동안 유령처럼 중복된다(예: Disk Usage 패널 이중 표시).
+// 단일 서버 구성이므로 논리 이름으로 고정해 서버를 교체해도 시계열이 이어지게 한다.
+discovery.relabel "host_metrics" {
+  targets = prometheus.exporter.unix.host.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "cure-gcp"
+  }
+}
+
+discovery.relabel "container_metrics" {
+  targets = prometheus.exporter.cadvisor.default.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "cure-gcp"
+  }
+}
 
 // ============================================================
 // Prometheus Remote Write — compose 내부 prometheus로

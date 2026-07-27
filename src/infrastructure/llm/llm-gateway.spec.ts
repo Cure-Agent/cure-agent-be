@@ -1,3 +1,4 @@
+import { MetricsService } from '../../global/observability/metrics/metrics.service';
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import { LlmExhaustedError, LlmGateway } from './llm-gateway';
 import { LlmProvider } from './llm-provider.port';
@@ -27,6 +28,7 @@ describe('LlmGateway 실시간 알림 (docs/specs/12 기준 1·2)', () => {
       breaker,
       new RateLimitBlockStore(),
       sender as unknown as RealTimeAlertSender,
+      new MetricsService(),
     );
   };
 
@@ -84,6 +86,7 @@ describe('LlmGateway 모델 기록 (docs/specs/13 기준 8)', () => {
       new CircuitBreaker(),
       new RateLimitBlockStore(),
       { send: jest.fn() } as unknown as RealTimeAlertSender,
+      new MetricsService(),
     );
 
   const request = {

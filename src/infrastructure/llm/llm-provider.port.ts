@@ -13,10 +13,21 @@ export interface LlmEvidenceContext {
   sectionPath: string[];
 }
 
+/** 프로바이더가 보고한 토큰 소비량 — 비용 지표(llm_tokens_total)의 원천 */
+export interface LlmTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LlmStreamRequest {
   question: string;
   evidence: LlmEvidenceContext[];
   signal?: AbortSignal;
+  /**
+   * 프로바이더가 usage를 보고할 때 1회 호출된다(선택 — fake·테스트 프로바이더는 미호출).
+   * 게이트웨이가 주입하므로 서비스 계층 호출자는 채우지 않는다.
+   */
+  onUsage?: (usage: LlmTokenUsage) => void;
 }
 
 export interface LlmProvider {
