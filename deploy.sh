@@ -141,4 +141,22 @@ docker images "$IMAGE_REPO" --format '{{.Repository}}:{{.Tag}}' \
       fi
     done
 
+# containerd 이미지 스토어 잔재 정리
+# Docker 29는 pull한 레이어를 containerd content store에도 남기는데, daemon.json의
+# containerd-snapshotter=false(overlay2 모드)에서는 그걸 실행에 쓰지 않는다. 즉 이미지가
+# /var/lib/docker/overlay2와 /var/lib/containerd에 이중 저장된다.
+# 참조가 끊긴 blob만 회수한다 — 실행 중 컨테이너 rootfs는 overlay2라 영향받지 않는다.
+echo "[deploy] pruning containerd orphan content..."
+sudo -n ctr -n moby content prune references >/dev/null 2>&1 || true
+
+# -----------------------------
+# 디스크 현황 로깅 — 잔재 누적을 배포 로그에서 조기에 감지한다.
+# 2026-07-27에 snapshotter 전환(overlay2 복귀) 잔재 3.7GB가 뒤늦게 발견된 적이 있다.
+# -----------------------------
+echo "[deploy] disk usage:"
+df -h / | tail -1
+CONTAINERD_SIZE=$(sudo -n du -sh /var/lib/containerd 2>/dev/null | awk '{print $1}' || echo "n/a")
+echo "[deploy] /var/lib/containerd: $CONTAINERD_SIZE (overlay2 모드에서는 수 MB가 정상 — GB 단위면 잔재를 의심할 것)"
+docker system df 2>/dev/null || true
+
 echo "[deploy] done"
