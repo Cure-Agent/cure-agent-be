@@ -47,6 +47,26 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     problems.push('REDIS_URL이 필요합니다. 예: redis://localhost:6379');
   }
 
+  // 소셜 로그인 (docs/specs/17). client id는 제공자별 선택이지만,
+  // 하나도 없으면 로그인 수단이 전무하므로 부팅을 막는다.
+  const hasAnyOAuthProvider = ['GOOGLE_CLIENT_ID', 'KAKAO_CLIENT_ID', 'NAVER_CLIENT_ID'].some(
+    (key) => typeof config[key] === 'string' && (config[key] as string).length > 0,
+  );
+  if (!hasAnyOAuthProvider) {
+    problems.push(
+      'GOOGLE_CLIENT_ID / KAKAO_CLIENT_ID / NAVER_CLIENT_ID 중 최소 하나가 필요합니다. ' +
+        '소셜 로그인이 유일한 인증 수단입니다.',
+    );
+  }
+
+  const webBaseUrl = config.OAUTH_WEB_BASE_URL;
+  if (typeof webBaseUrl !== 'string' || !/^https?:\/\//.test(webBaseUrl)) {
+    problems.push(
+      'OAUTH_WEB_BASE_URL은 http(s) 절대 URL이어야 합니다. ' +
+        'OAuth 콜백을 받는 프론트엔드 오리진 (로컬: http://localhost:3001)',
+    );
+  }
+
   if (problems.length > 0) {
     throw new Error(`환경변수 검증 실패:\n- ${problems.join('\n- ')}`);
   }

@@ -11,6 +11,10 @@ import { Pool } from 'pg';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialSignUp } from './fixtures/social-auth';
+
 
 describe('Conversation history (e2e)', () => {
   let app: INestApplication;
@@ -26,34 +30,8 @@ describe('Conversation history (e2e)', () => {
     email: string,
     clinicName: string,
     licenseNumber: string,
-  ): Promise<string> => {
-    const response = await request(app.getHttpServer())
-      .post('/api/v1/auth/signup')
-      .set('X-CSRF-Protection', '1')
-      .send({
-        email,
-        password: 'password-1234',
-        displayName: '김의사',
-        clinicName,
-        licenseNumber,
-        termsAccepted: true,
-      })
-      .expect(201);
-
-    const setCookie = response.headers['set-cookie'];
-    const cookies = Array.isArray(setCookie)
-      ? setCookie
-      : setCookie
-        ? [setCookie]
-        : [];
-    const accessTokenCookie = cookies
-      .filter((cookie: string) => cookie.startsWith('access_token='))
-      .map((cookie: string) => cookie.split(';')[0])
-      .join('; ');
-
-    expect(accessTokenCookie).not.toBe('');
-    return accessTokenCookie;
-  };
+  ): Promise<string> =>
+    (await socialSignUp(app, { email, clinicName, licenseNumber })).cookie;
 
   const createConversation = async (
     cookie: string,
@@ -95,7 +73,10 @@ describe('Conversation history (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');

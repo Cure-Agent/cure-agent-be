@@ -69,14 +69,15 @@
     },
     "/api/v1/auth/signup": {
       "post": {
-        "operationId": "AuthController_signUp",
+        "description": "소셜 콜백이 발급한 티켓과 한의원명·면허번호를 받아 가입을 마친다 (docs/specs/17). 이메일·소셜 신원은 티켓에서 꺼내므로 바디로 받지 않는다.",
+        "operationId": "AuthController_completeSignUp",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SignUpRequestDto"
+                "$ref": "#/components/schemas/CompleteSignUpRequestDto"
               }
             }
           }
@@ -104,50 +105,7 @@
             }
           }
         },
-        "summary": "의료인 가입 + 즉시 로그인 (쿠키 발급)",
-        "tags": [
-          "Auth"
-        ]
-      }
-    },
-    "/api/v1/auth/login": {
-      "post": {
-        "operationId": "AuthController_login",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequestDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ApiResponseDto"
-                    },
-                    {
-                      "properties": {
-                        "data": {
-                          "$ref": "#/components/schemas/AuthSessionResponseDto"
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "이메일 로그인 (쿠키 발급)",
+        "summary": "온보딩 완료 + 즉시 로그인 (쿠키 발급)",
         "tags": [
           "Auth"
         ]
@@ -234,20 +192,10 @@
         ]
       }
     },
-    "/api/v1/auth/email-availability": {
+    "/api/v1/auth/oauth/providers": {
       "get": {
-        "operationId": "AuthController_emailAvailability",
-        "parameters": [
-          {
-            "name": "email",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "example": "doctor@clinic.kr",
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "OAuthController_listProviders",
+        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -261,7 +209,7 @@
                     {
                       "properties": {
                         "data": {
-                          "$ref": "#/components/schemas/EmailAvailabilityResponseDto"
+                          "$ref": "#/components/schemas/OAuthProvidersResponseDto"
                         }
                       }
                     }
@@ -271,7 +219,32 @@
             }
           }
         },
-        "summary": "이메일 중복 확인 (rate limit 적용)",
+        "summary": "활성 소셜 로그인 제공자 목록",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oauth/{provider}": {
+      "get": {
+        "description": "FE는 fetch가 아니라 브라우저 내비게이션(location 이동)으로 호출한다.",
+        "operationId": "OAuthController_start",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "소셜 로그인 시작 — 제공자 동의 화면으로 302",
         "tags": [
           "Auth"
         ]
@@ -1488,20 +1461,17 @@
           "expiresAt"
         ]
       },
-      "SignUpRequestDto": {
+      "CompleteSignUpRequestDto": {
         "type": "object",
         "properties": {
-          "email": {
+          "ticket": {
             "type": "string",
-            "example": "doctor@clinic.kr"
-          },
-          "password": {
-            "type": "string",
-            "minLength": 10
+            "description": "소셜 콜백이 발급한 1회용 티켓"
           },
           "displayName": {
             "type": "string",
-            "example": "김의사"
+            "example": "김의사",
+            "description": "기본값은 소셜 프로필 이름"
           },
           "clinicName": {
             "type": "string",
@@ -1517,39 +1487,31 @@
           }
         },
         "required": [
-          "email",
-          "password",
+          "ticket",
           "displayName",
           "clinicName",
           "licenseNumber",
           "termsAccepted"
         ]
       },
-      "LoginRequestDto": {
+      "OAuthProvidersResponseDto": {
         "type": "object",
         "properties": {
-          "email": {
-            "type": "string",
-            "example": "doctor@clinic.kr"
-          },
-          "password": {
-            "type": "string"
+          "providers": {
+            "type": "array",
+            "description": "client id가 설정되어 실제로 사용 가능한 제공자만 내려온다",
+            "items": {
+              "type": "string",
+              "enum": [
+                "GOOGLE",
+                "KAKAO",
+                "NAVER"
+              ]
+            }
           }
         },
         "required": [
-          "email",
-          "password"
-        ]
-      },
-      "EmailAvailabilityResponseDto": {
-        "type": "object",
-        "properties": {
-          "available": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "available"
+          "providers"
         ]
       },
       "GuidelineSummaryResponseDto": {

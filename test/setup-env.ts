@@ -17,3 +17,10 @@ process.env.AUTH_ACCESS_TTL_SEC = '900';
 process.env.AUTH_REFRESH_TTL_DAYS = '14';
 process.env.COOKIE_SECURE = 'false';
 process.env.COOKIE_DOMAIN = '';
+// 소셜 로그인 (docs/specs/17). 실제 제공자 호출은 FakeOAuthProviderRegistry가 대체하지만,
+// env.validation이 최소 1개 provider를 요구하므로 더미 client id를 채운다.
+process.env.OAUTH_WEB_BASE_URL = 'http://localhost:3001';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+process.env.KAKAO_CLIENT_ID = '';
+process.env.NAVER_CLIENT_ID = '';

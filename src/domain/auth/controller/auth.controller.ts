@@ -1,20 +1,17 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { ApiEnvelopeResponse } from '../../../global/common/response/api-envelope.decorator';
 import { ApiResponseDto } from '../../../global/common/response/api-response.dto';
-import { AuthCookieFactory } from '../../../global/security/auth-cookie.factory';
+import { AuthCookieFactory, CookieSpec } from '../../../global/security/auth-cookie.factory';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { CurrentClinician } from '../../../global/security/current-clinician.decorator';
 import { Public } from '../../../global/security/public.decorator';
 import { TokenResolver } from '../../../global/security/token-resolver';
 import { ClinicianResponseDto } from '../../clinician/dto/response/clinician.response.dto';
-import { EmailAvailabilityQueryDto } from '../dto/request/email-availability.query.dto';
-import { LoginRequestDto } from '../dto/request/login.request.dto';
-import { SignUpRequestDto } from '../dto/request/sign-up.request.dto';
+import { CompleteSignUpRequestDto } from '../dto/request/complete-sign-up.request.dto';
 import { AuthSessionResponseDto } from '../dto/response/auth-session.response.dto';
-import { EmailAvailabilityResponseDto } from '../dto/response/email-availability.response.dto';
 import { AuthService, IssuedAuth } from '../service/auth.service';
 
 @ApiTags('Auth')
@@ -27,32 +24,23 @@ export class AuthController {
   ) {}
 
   @Public()
-  @Post('signup')
-  @ApiOperation({ summary: '의료인 가입 + 즉시 로그인 (쿠키 발급)' })
-  @ApiEnvelopeResponse(AuthSessionResponseDto, { status: 201 })
-  async signUp(
-    @Body() dto: SignUpRequestDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<ApiResponseDto<AuthSessionResponseDto>> {
-    const issued = await this.authService.signUp(dto);
-    this.setAuthCookies(res, issued);
-    return ApiResponseDto.success(issued.session, 'CREATED');
-  }
-
-  @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @Post('login')
-  @HttpCode(200)
-  @ApiOperation({ summary: '이메일 로그인 (쿠키 발급)' })
-  @ApiEnvelopeResponse(AuthSessionResponseDto)
-  async login(
-    @Body() dto: LoginRequestDto,
+  @Post('signup')
+  @ApiOperation({
+    summary: '온보딩 완료 + 즉시 로그인 (쿠키 발급)',
+    description:
+      '소셜 콜백이 발급한 티켓과 한의원명·면허번호를 받아 가입을 마친다 (docs/specs/17). ' +
+      '이메일·소셜 신원은 티켓에서 꺼내므로 바디로 받지 않는다.',
+  })
+  @ApiEnvelopeResponse(AuthSessionResponseDto, { status: 201 })
+  async completeSignUp(
+    @Body() dto: CompleteSignUpRequestDto,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<AuthSessionResponseDto> {
-    const issued = await this.authService.login(dto);
+  ): Promise<ApiResponseDto<AuthSessionResponseDto>> {
+    const issued = await this.authService.completeSignUp(dto);
     this.setAuthCookies(res, issued);
-    return issued.session;
+    return ApiResponseDto.success(issued.session, 'CREATED');
   }
 
   @Public()
@@ -89,27 +77,12 @@ export class AuthController {
     return this.authService.me(principal);
   }
 
-  @Public()
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Get('email-availability')
-  @ApiOperation({ summary: '이메일 중복 확인 (rate limit 적용)' })
-  @ApiEnvelopeResponse(EmailAvailabilityResponseDto)
-  emailAvailability(
-    @Query() query: EmailAvailabilityQueryDto,
-  ): Promise<EmailAvailabilityResponseDto> {
-    return this.authService.emailAvailability(query.email);
-  }
-
   private setAuthCookies(res: Response, issued: IssuedAuth): void {
     this.applyCookie(res, this.cookieFactory.issueAccess(issued.accessToken));
     this.applyCookie(res, this.cookieFactory.issueRefresh(issued.refreshCookieValue));
   }
 
-  private applyCookie(
-    res: Response,
-    spec: ReturnType<AuthCookieFactory['issueAccess']>,
-  ): void {
+  private applyCookie(res: Response, spec: CookieSpec): void {
     res.cookie(spec.name, spec.value, spec.options);
   }
 }

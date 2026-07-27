@@ -3,6 +3,8 @@ import type { Request } from 'express';
 
 export const ACCESS_COOKIE = 'access_token';
 export const REFRESH_COOKIE = 'refresh_token';
+/** OAuth 콜백 CSRF 방어용 state (docs/specs/17) */
+export const OAUTH_STATE_COOKIE = 'oauth_state';
 
 /** 쿠키(기본) → Authorization Bearer(도구용 폴백) 순으로 토큰을 추출한다. */
 @Injectable()
@@ -18,5 +20,9 @@ export class TokenResolver {
 
   resolveRefresh(request: Request): string | null {
     return (request.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE] ?? null;
+  }
+
+  resolveOAuthState(request: Request): string | null {
+    return (request.cookies as Record<string, string> | undefined)?.[OAUTH_STATE_COOKIE] ?? null;
   }
 }
