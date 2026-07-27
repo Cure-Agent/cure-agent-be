@@ -79,6 +79,14 @@ $DC -f "$COMPOSE_FILE" up -d --remove-orphans
 # app은 항상 재생성하여 환경변수/이미지 변경사항 반영 보장
 $DC -f "$COMPOSE_FILE" up -d --force-recreate app
 
+# grafana provisioning(datasources.yml)은 bind mount라 파일만 바뀌면
+# compose가 컨테이너 재생성 트리거를 잡지 못한다. 게다가 데이터소스 프로비저닝은
+# 대시보드(updateIntervalSeconds 주기 리로드)와 달리 부팅 시 1회만 읽으므로,
+# 재시작을 강제하지 않으면 uid 변경이 영영 반영되지 않아 대시보드가
+# "Datasource ... was not found"로 전부 깨진다.
+echo "[deploy] restarting grafana to re-apply provisioning..."
+$DC -f "$COMPOSE_FILE" restart grafana
+
 echo "[deploy] current status:"
 $DC -f "$COMPOSE_FILE" ps
 
