@@ -1,0 +1,29 @@
+# 이미지 빌드 컨텍스트에서 제외 (docs/specs/16)
+#
+# node_modules를 반드시 빼야 한다 — Dockerfile의 `COPY . .`가 호스트(macOS)에서 설치된
+# node_modules로 deps 스테이지의 linux 산출물을 덮어쓰면, 이어지는 `pnpm prune --prod`가
+# 불일치를 감지해 modules 디렉터리 전체 삭제를 시도하고 TTY가 없어 중단된다
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY).
+node_modules/
+
+# 빌드 산출물 — 이미지 안에서 pnpm build로 다시 만든다
+dist/
+
+# 시크릿이 이미지 레이어에 남지 않게 한다
+.env
+.env.*
+!.env.example
+terraform/
+
+# 테스트·로컬 도구 산출물
+coverage/
+test/
+*.log
+.git/
+.github/
+.idea/
+.claude/
+.codex/
+.cure-implement/
+.mcp.json
+.DS_Store

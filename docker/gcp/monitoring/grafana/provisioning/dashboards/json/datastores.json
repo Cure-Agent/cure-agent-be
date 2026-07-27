@@ -1,0 +1,264 @@
+{
+  "annotations": { "list": [] },
+  "description": "Postgres·Redis 상태 — 로그만으로는 보이지 않는 커넥션·캐시·eviction 지표",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Postgres 상태",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "pg_up", "legendFormat": "postgres", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Postgres 연결 사용률 (%)",
+      "description": "max_connections 대비. 80%를 넘으면 커넥션 고갈이 임박한 것이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(pg_stat_database_numbackends) / max(pg_settings_max_connections) * 100",
+          "legendFormat": "사용률",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Redis 상태",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "redis_up", "legendFormat": "redis", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Redis 메모리 사용",
+      "description": "컨테이너 mem_limit은 512M이다. maxmemory 미설정 시 redis_memory_max_bytes는 0으로 나온다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "targets": [{ "expr": "redis_memory_used_bytes", "legendFormat": "used", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Postgres 활성 연결 수",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(datname) (pg_stat_database_numbackends)",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max(pg_settings_max_connections)",
+          "legendFormat": "max_connections",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Postgres 버퍼 캐시 히트율 (%)",
+      "description": "99% 아래로 떨어지면 인덱스 부재나 워킹셋 초과를 의심한다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_blks_hit{datname=\"cure_agent\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{datname=\"cure_agent\"}[5m])) + sum(rate(pg_stat_database_blks_read{datname=\"cure_agent\"}[5m]))) * 100",
+          "legendFormat": "hit ratio",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Postgres 트랜잭션률 (tx/s)",
+      "description": "rollback이 commit에 비해 늘면 애플리케이션 오류나 제약 위반을 의심한다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_xact_commit{datname=\"cure_agent\"}[5m]))",
+          "legendFormat": "commit",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pg_stat_database_xact_rollback{datname=\"cure_agent\"}[5m]))",
+          "legendFormat": "rollback",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Postgres 데드락·잠금",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_deadlocks[5m])) * 60",
+          "legendFormat": "데드락/분",
+          "refId": "A"
+        },
+        { "expr": "sum by(mode) (pg_locks_count)", "legendFormat": "lock {{mode}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Postgres DB 크기",
+      "description": "pgvector 임베딩이 쌓이는 속도를 여기서 본다 — 부트 디스크는 50G다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "pg_database_size_bytes{datname=\"cure_agent\"}",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Redis 키스페이스 히트율 (%)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])) * 100",
+          "legendFormat": "hit ratio",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Redis 메모리 추이",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "expr": "redis_memory_used_bytes", "legendFormat": "used", "refId": "A" },
+        { "expr": "redis_memory_used_rss_bytes", "legendFormat": "rss", "refId": "B" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Redis 명령 처리율 (cmd/s)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(redis_commands_processed_total[5m])",
+          "legendFormat": "commands",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Redis eviction·만료 (건/분)",
+      "description": "eviction이 0보다 크면 메모리 압박으로 세션·토큰 키가 조기 삭제되고 있다는 뜻이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(redis_evicted_keys_total[5m]) * 60",
+          "legendFormat": "evicted",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(redis_expired_keys_total[5m]) * 60",
+          "legendFormat": "expired",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Redis 클라이언트·키 수",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "expr": "redis_connected_clients", "legendFormat": "clients", "refId": "A" },
+        { "expr": "redis_blocked_clients", "legendFormat": "blocked", "refId": "B" },
+        { "expr": "sum by(db) (redis_db_keys)", "legendFormat": "keys {{db}}", "refId": "C" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["cure-agent", "datastores"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "browser",
+  "title": "Datastores",
+  "uid": "cure-datastores",
+  "version": 1
+}

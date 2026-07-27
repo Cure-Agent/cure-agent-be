@@ -1,0 +1,307 @@
+{
+  "annotations": { "list": [] },
+  "description": "NestJS 앱 지표 — HTTP RED, LLM 프로바이더, SSE, Node 런타임 (앱 /api/v1/metrics)",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "요청률 (req/s)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m]))",
+          "legendFormat": "req/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "5xx 에러율 (%)",
+      "description": "서버 오류 비율. 요청이 없으면 NaN이므로 값이 비어 보이는 것이 정상이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100",
+          "legendFormat": "5xx",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "응답 지연 p95",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "진행 중 SSE 스트림",
+      "description": "값이 0으로 내려오지 않고 우상향하면 커넥션 누수를 의심한다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [{ "expr": "sse_active_streams", "legendFormat": "active", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "라우트별 요청률",
+      "description": "route는 express가 매칭한 패턴이다. 미매칭 요청(스캐너·404)은 unmatched로 모인다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(route) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "상태코드별 요청률",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(status) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "응답 지연 분위수",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "라우트별 지연 p95",
+      "description": "SSE 스트림 라우트는 응답이 길게 열려 있어 값이 크게 나오는 것이 정상이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by(le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "LLM 호출 결말 (호출/s)",
+      "description": "skipped = 서킷 open·레이트리밋으로 건너뜀. failure가 늘면 폴백이 돌고 있다는 뜻이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(provider, outcome) (rate(llm_requests_total[5m]))",
+          "legendFormat": "{{provider}} {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "LLM 지연 p95",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by(le, provider) (rate(llm_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "LLM 서킷 상태 (1=open)",
+      "description": "Discord 알림은 open 전이 순간만 알려준다. 지속 상태는 이 패널로 본다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "max": 1, "custom": { "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "llm_circuit_open", "legendFormat": "{{provider}}", "refId": "A" },
+        {
+          "expr": "sum(rate(llm_exhausted_total[5m])) * 60",
+          "legendFormat": "소진/분",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "토큰 소비 (토큰/분)",
+      "description": "프로바이더가 usage를 보고할 때만 집계된다 (fake 프로바이더는 미보고).",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(model, kind) (rate(llm_tokens_total[5m])) * 60",
+          "legendFormat": "{{model}} {{kind}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "SSE 스트림 종료 (건/분)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by(outcome) (rate(sse_streams_total[5m])) * 60",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "이벤트 루프 지연",
+      "description": "p99가 수십 ms를 넘으면 동기 블로킹을 의심한다 — Node에서 지연의 첫 용의자다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 36 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "nodejs_eventloop_lag_p50_seconds",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "nodejs_eventloop_lag_p99_seconds",
+          "legendFormat": "p99",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "힙 사용량",
+      "description": "컨테이너 mem_limit은 2G다. RSS가 그에 근접하면 OOM kill 위험이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 36 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "expr": "nodejs_heap_size_used_bytes", "legendFormat": "heap used", "refId": "A" },
+        { "expr": "nodejs_heap_size_total_bytes", "legendFormat": "heap total", "refId": "B" },
+        { "expr": "process_resident_memory_bytes", "legendFormat": "rss", "refId": "C" }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "프로세스 CPU (%)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 36 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+          "legendFormat": "cpu",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["cure-agent", "application"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "browser",
+  "title": "Application",
+  "uid": "cure-application",
+  "version": 1
+}

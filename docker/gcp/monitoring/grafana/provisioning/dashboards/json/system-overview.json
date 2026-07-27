@@ -1,5 +1,6 @@
 {
   "annotations": { "list": [] },
+  "description": "호스트·컨테이너 리소스 (Alloy unix exporter + cAdvisor)",
   "editable": true,
   "graphTooltip": 1,
   "panels": [
@@ -7,8 +8,8 @@
       "id": 1,
       "type": "timeseries",
       "title": "Host CPU Usage (%)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
       "targets": [
         {
@@ -22,23 +23,39 @@
       "id": 2,
       "type": "timeseries",
       "title": "Host Memory Usage (%)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "description": "max로 감싼 이유는 Disk Usage 패널 설명 참고 — 과거 구간의 중복 instance를 하나로 접는다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
       "targets": [
         {
-          "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+          "expr": "max((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
           "legendFormat": "memory",
           "refId": "A"
         }
       ]
     },
     {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Load Average",
+      "description": "vCPU는 2코어다. load1이 2를 넘으면 실행 대기가 쌓이고 있다는 뜻이다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "expr": "max(node_load1)", "legendFormat": "load1", "refId": "A" },
+        { "expr": "max(node_load5)", "legendFormat": "load5", "refId": "B" },
+        { "expr": "max(node_load15)", "legendFormat": "load15", "refId": "C" }
+      ]
+    },
+    {
       "id": 3,
       "type": "stat",
       "title": "Disk Usage / (%)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 8 },
+      "description": "device별로 접는다 — alloy 컨테이너가 교체되며 남은 과거 instance의 시계열이 같은 이름으로 겹쳐 보이던 문제를 막는다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 7 },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -57,9 +74,58 @@
       },
       "targets": [
         {
-          "expr": "(1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100",
-          "legendFormat": "disk /",
+          "expr": "max by(device) ((1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100)",
+          "legendFormat": "{{device}}",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "7일 후 예상 여유 공간",
+      "description": "최근 6시간 추세의 선형 외삽이다. 부트 디스크는 50G — Postgres·Loki·Prometheus가 같은 볼륨을 쓴다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 5000000000 },
+              { "color": "green", "value": 10000000000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by(device) (predict_linear(node_filesystem_avail_bytes{mountpoint=\"/\"}[6h], 7 * 24 * 3600))",
+          "legendFormat": "{{device}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Disk I/O (bytes/s)",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(node_disk_read_bytes_total{device!~\"loop.*|ram.*\"}[5m]))",
+          "legendFormat": "read",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_disk_written_bytes_total{device!~\"loop.*|ram.*\"}[5m]))",
+          "legendFormat": "write",
+          "refId": "B"
         }
       ]
     },
@@ -67,8 +133,8 @@
       "id": 4,
       "type": "timeseries",
       "title": "Network I/O (bytes/s)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 13 },
       "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
       "targets": [
         {
@@ -87,8 +153,8 @@
       "id": 5,
       "type": "timeseries",
       "title": "Container CPU (%)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] },
       "targets": [
         {
@@ -102,12 +168,43 @@
       "id": 6,
       "type": "timeseries",
       "title": "Container Memory (bytes)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
       "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
       "targets": [
         {
-          "expr": "container_memory_working_set_bytes{name=~\"cure-.+\"}",
+          "expr": "max by(name) (container_memory_working_set_bytes{name=~\"cure-.+\"})",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Container Memory vs Limit (%)",
+      "description": "compose가 컨테이너마다 mem_limit을 걸어두었다(app 2G, postgres 1.5G…). OOM kill은 절대량이 아니라 이 비율이 100%에 닿을 때 발생한다.",
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max by(name) (container_memory_working_set_bytes{name=~\"cure-.+\"} / container_spec_memory_limit_bytes{name=~\"cure-.+\"} > 0) * 100",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -117,12 +214,12 @@
       "id": 7,
       "type": "timeseries",
       "title": "Container Restarts (5m)",
-      "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
       "targets": [
         {
-          "expr": "changes(container_start_time_seconds{name=~\"cure-.+\"}[5m])",
+          "expr": "max by(name) (changes(container_start_time_seconds{name=~\"cure-.+\"}[5m]))",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -137,5 +234,5 @@
   "timezone": "browser",
   "title": "System Overview",
   "uid": "cure-system-overview",
-  "version": 1
+  "version": 2
 }

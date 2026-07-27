@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { MetricsService } from '../../global/observability/metrics/metrics.service';
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import {
   LLM_PROVIDERS,
@@ -40,6 +41,7 @@ export class LlmGateway {
     private readonly circuitBreaker: CircuitBreaker,
     private readonly rateLimitBlock: RateLimitBlockStore,
     private readonly alertSender: RealTimeAlertSender,
+    private readonly metrics: MetricsService,
   ) {}
 
   async stream(
@@ -49,15 +51,33 @@ export class LlmGateway {
     const startedAt = Date.now();
 
     for (const provider of this.providers) {
-      if (this.rateLimitBlock.isBlocked(provider.name) || this.circuitBreaker.isOpen(provider.name)) {
+      const circuitOpen = this.circuitBreaker.isOpen(provider.name);
+      // 쿨다운 만료로 닫히는 것도 이 시점에 드러나므로 매 시도마다 gauge를 맞춘다
+      this.metrics.setLlmCircuitOpen(provider.name, circuitOpen);
+
+      if (this.rateLimitBlock.isBlocked(provider.name) || circuitOpen) {
+        this.metrics.recordLlmOutcome(provider.name, 'skipped');
         continue;
       }
 
+      const attemptStartedAt = Date.now();
       let firstTokenReceived = false;
       try {
+        // 토큰 usage 보고 경로를 여기서 주입한다 — 서비스 계층 호출자는 관여하지 않는다
+        const providerRequest: LlmStreamRequest = {
+          ...request,
+          onUsage: (usage) =>
+            this.metrics.recordLlmTokens(
+              provider.name,
+              provider.model ?? 'unknown',
+              usage.inputTokens,
+              usage.outputTokens,
+            ),
+        };
+
         const text = await withRetry(async () => {
           let accumulated = '';
-          for await (const delta of provider.streamAnswer(request)) {
+          for await (const delta of provider.streamAnswer(providerRequest)) {
             firstTokenReceived = true;
             accumulated += delta;
             await onDelta(delta);
@@ -66,6 +86,9 @@ export class LlmGateway {
         });
 
         this.circuitBreaker.recordSuccess(provider.name);
+        this.metrics.setLlmCircuitOpen(provider.name, false);
+        this.metrics.recordLlmOutcome(provider.name, 'success');
+        this.metrics.recordLlmDuration(provider.name, (Date.now() - attemptStartedAt) / 1000);
         return {
           provider: provider.name,
           model: provider.model,
@@ -73,15 +96,21 @@ export class LlmGateway {
           latencyMs: Date.now() - startedAt,
         };
       } catch (error) {
-        // 클라이언트 abort는 폴백 대상이 아니다 — 즉시 전파
+        // 클라이언트 abort는 폴백 대상이 아니다 — 즉시 전파.
+        // 서비스 실패가 아니므로 지표에도 남기지 않는다(에러율 왜곡 방지)
         if (request.signal?.aborted) throw error;
+
+        this.metrics.recordLlmDuration(provider.name, (Date.now() - attemptStartedAt) / 1000);
 
         if (error instanceof LlmProviderError && error.options.rateLimited) {
           this.rateLimitBlock.block(provider.name, error.options.retryAfterSec);
+          this.metrics.recordLlmOutcome(provider.name, 'rate_limited');
         } else {
           this.circuitBreaker.recordFailure(provider.name);
+          this.metrics.recordLlmOutcome(provider.name, 'failure');
           // 이 지점 도달 = 시도 전 not-open이었으므로, 기록 직후 open이면 곧 전이다 (§14)
           if (this.circuitBreaker.isOpen(provider.name)) {
+            this.metrics.setLlmCircuitOpen(provider.name, true);
             this.alertSender.send({
               title: 'LLM_CIRCUIT_OPEN',
               detail: `프로바이더 ${provider.name} 서킷 open — 연속 실패 임계 초과`,
@@ -96,6 +125,7 @@ export class LlmGateway {
     }
 
     // 전 프로바이더 소진 — 사용자 영향이 생기는 지점이므로 즉시 알림 (§14)
+    this.metrics.recordLlmExhausted();
     this.alertSender.send({
       title: 'LLM_EXHAUSTED',
       detail: '사용 가능한 LLM 프로바이더가 없습니다',

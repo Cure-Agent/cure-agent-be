@@ -6,6 +6,10 @@ import { ErrorCodes } from '../../../global/common/exception/error-code.registry
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { TraceContext } from '../../../global/context/trace-context.service';
+import {
+  MetricsService,
+  SseOutcome,
+} from '../../../global/observability/metrics/metrics.service';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { LlmGateway } from '../../../infrastructure/llm/llm-gateway';
 import { LlmEvidenceContext } from '../../../infrastructure/llm/llm-provider.port';
@@ -56,6 +60,7 @@ export class ConversationStreamService {
     private readonly traceContext: TraceContext,
     private readonly patientSnapshotService: PatientSnapshotService,
     private readonly guidanceComposer: ClinicalGuidanceComposer,
+    private readonly metrics: MetricsService,
   ) {}
 
   async stream(
@@ -112,6 +117,10 @@ export class ConversationStreamService {
     // ── 이후는 SSE 계약 (§8) ──
     const sse = new SseStream(res);
     const traceId = this.traceContext.traceId;
+
+    // 진행 중 스트림 수(sse_active_streams)로 커넥션 누수를 감지한다
+    this.metrics.sseStreamStarted();
+    let sseOutcome: SseOutcome = 'completed';
 
     try {
       sse.send({
@@ -172,9 +181,11 @@ export class ConversationStreamService {
         guidanceContext,
       });
     } catch (error) {
+      sseOutcome = clientSignal.aborted ? 'aborted' : 'failed';
       await this.handleStreamFailure(error, assistantMessageId, clientSignal, sse, traceId);
     } finally {
       sse.end();
+      this.metrics.sseStreamEnded(sseOutcome);
     }
   }
 

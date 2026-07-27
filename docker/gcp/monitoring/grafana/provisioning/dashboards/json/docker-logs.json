@@ -1,272 +1,282 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
-  "description": "Easily view the last x minutes of logs from ETH Docker (https://eth-docker.net/)  containers via Loki data source",
+  "annotations": { "list": [] },
+  "description": "Loki 로그 — 서비스별 볼륨·에러 추세와 통합 검색, 컨테이너별 원본 로그",
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "P8E80F9AEF21F6940"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 5,
-      "options": {
-        "dedupStrategy": "none",
-        "enableInfiniteScrolling": false,
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showControls": false,
-        "showLabels": false,
-        "showTime": false,
-        "sortOrder": "Descending",
-        "unwrappedColumns": false,
-        "wrapLogMessage": false
-      },
-      "pluginVersion": "12.4.2",
+      "id": 10,
+      "type": "timeseries",
+      "title": "서비스별 로그 볼륨 (line/s)",
+      "description": "평소 대비 급증·급감은 그 자체가 신호다. 급감은 컨테이너 정지나 수집 중단을 뜻할 수 있다.",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
-          "direction": "backward",
+          "datasource": { "type": "loki", "uid": "cure-loki" },
           "editorMode": "code",
-          "expr": "{log_source=\"docker\", container_name=\"cure-alloy\"}",
+          "expr": "sum by(compose_service) (rate({log_source=~\"docker|nestjs\"}[5m]))",
+          "legendFormat": "{{compose_service}}",
           "queryType": "range",
           "refId": "A"
         }
-      ],
-      "title": "Infra Agent Health",
-      "type": "logs"
+      ]
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "P8E80F9AEF21F6940"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
-      "id": 1,
+      "id": 11,
+      "type": "timeseries",
+      "title": "앱 로그 레벨 추세 (line/분)",
+      "description": "NestJS 기본 Logger 출력에서 레벨 토큰을 매칭한다. ERROR 급증은 5xx 지표보다 먼저 움직이는 경우가 많다.",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "cure-loki" },
+          "editorMode": "code",
+          "expr": "sum(rate({log_source=\"nestjs\"} |~ `(?i)\\b(error|fatal)\\b` [5m])) * 60",
+          "legendFormat": "error",
+          "queryType": "range",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "cure-loki" },
+          "editorMode": "code",
+          "expr": "sum(rate({log_source=\"nestjs\"} |~ `(?i)\\bwarn\\b` [5m])) * 60",
+          "legendFormat": "warn",
+          "queryType": "range",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "통합 검색 — $service / \"$search\"",
+      "description": "상단 변수로 서비스와 검색어를 바꾼다. 검색어를 비우면 전체를 보여준다.",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 7 },
       "options": {
         "dedupStrategy": "none",
-        "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "prettifyLogMessage": false,
         "showCommonLabels": false,
-        "showControls": false,
-        "showLabels": false,
-        "showTime": false,
-        "sortOrder": "Ascending",
-        "unwrappedColumns": false,
-        "wrapLogMessage": false
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.2",
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
+          "datasource": { "type": "loki", "uid": "cure-loki" },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{log_source=~\"docker|nestjs\", compose_service=~\"$service\"} |~ `(?i)$search`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "Node.js App Logs (cure-app)",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "cure-loki" },
           "direction": "backward",
           "editorMode": "code",
           "expr": "{log_source=\"nestjs\"}",
           "queryType": "range",
           "refId": "A"
         }
-      ],
-      "title": "Node.js App Logs (cure-app)",
-      "type": "logs"
+      ]
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "P8E80F9AEF21F6940"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
       "id": 2,
+      "type": "logs",
+      "title": "Nginx Logs",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 26 },
       "options": {
         "dedupStrategy": "none",
-        "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "prettifyLogMessage": false,
         "showCommonLabels": false,
-        "showControls": false,
         "showLabels": false,
-        "showTime": false,
-        "sortOrder": "Ascending",
-        "unwrappedColumns": false,
-        "wrapLogMessage": false
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.2",
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
+          "datasource": { "type": "loki", "uid": "cure-loki" },
           "direction": "backward",
           "editorMode": "code",
           "expr": "{log_source=\"docker\", compose_service=\"nginx\"}",
           "queryType": "range",
           "refId": "A"
         }
-      ],
-      "title": "Nginx Logs",
-      "type": "logs"
+      ]
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "P8E80F9AEF21F6940"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 22
-      },
       "id": 3,
+      "type": "logs",
+      "title": "DB Logs",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 33 },
       "options": {
         "dedupStrategy": "none",
-        "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "prettifyLogMessage": false,
         "showCommonLabels": false,
-        "showControls": false,
         "showLabels": false,
-        "showTime": false,
-        "sortOrder": "Ascending",
-        "unwrappedColumns": false,
-        "wrapLogMessage": false
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.2",
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
+          "datasource": { "type": "loki", "uid": "cure-loki" },
           "direction": "backward",
           "editorMode": "code",
           "expr": "{log_source=\"docker\", compose_service=\"postgres\"}",
           "queryType": "range",
           "refId": "A"
         }
-      ],
-      "title": "DB Logs",
-      "type": "logs"
+      ]
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "P8E80F9AEF21F6940"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 29
-      },
       "id": 4,
+      "type": "logs",
+      "title": "Redis Logs",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 40 },
       "options": {
         "dedupStrategy": "none",
-        "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "prettifyLogMessage": false,
         "showCommonLabels": false,
-        "showControls": false,
         "showLabels": false,
-        "showTime": false,
+        "showTime": true,
         "sortOrder": "Descending",
-        "unwrappedColumns": false,
-        "wrapLogMessage": false
+        "wrapLogMessage": true
       },
-      "pluginVersion": "12.4.2",
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "P8E80F9AEF21F6940"
-          },
+          "datasource": { "type": "loki", "uid": "cure-loki" },
           "direction": "backward",
           "editorMode": "code",
           "expr": "{log_source=\"docker\", compose_service=\"redis\"}",
           "queryType": "range",
           "refId": "A"
         }
-      ],
-      "title": "Redis Logs",
-      "type": "logs"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Infra Agent Health (alloy)",
+      "description": "수집기 자신의 로그. 다른 패널이 전부 비어 있을 때 가장 먼저 볼 곳이다.",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 47 },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "cure-loki" },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{log_source=\"docker\", container_name=\"cure-alloy\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "Certbot Logs",
+      "description": "인증서 갱신은 12시간 주기로 조용히 돈다 — 실패를 조기에 잡으려면 여기를 본다.",
+      "datasource": { "type": "loki", "uid": "cure-loki" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 54 },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "cure-loki" },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{log_source=\"docker\", container_name=~\"cure-certbot.*\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "preload": false,
   "refresh": "1m",
-  "schemaVersion": 42,
-  "tags": [],
+  "schemaVersion": 39,
+  "tags": ["cure-agent", "logs"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "service",
+        "label": "서비스",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "cure-loki" },
+        "query": "label_values(compose_service)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+      },
+      {
+        "name": "search",
+        "label": "검색어",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" },
+        "options": []
+      }
+    ]
   },
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Docker Logs",
+  "title": "Logs",
   "uid": "d1b29328-02cf-437d-a81e-1d2ac3c2075f",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
