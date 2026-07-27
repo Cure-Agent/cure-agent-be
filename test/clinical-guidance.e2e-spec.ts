@@ -19,6 +19,9 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { GuidelineIngestService } from '../src/domain/guideline/service/guideline-ingest.service';
 import { AesGcmUtil } from '../src/global/security/crypto/aes-gcm.util';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
 
 type ConversationType = 'PATIENT_GUIDANCE' | 'GUIDELINE_QA';
@@ -90,38 +93,12 @@ describe('Clinical guidance (e2e)', () => {
   let otherClinicCookie: string;
   let patientSequence = 0;
 
-  const signUp = async ({
-    email,
-    displayName,
-    clinicName,
-    licenseNumber,
-  }: {
+  const signUp = async (identity: {
     email: string;
     displayName: string;
     clinicName: string;
     licenseNumber: string;
-  }): Promise<string> => {
-    const response = await request(app.getHttpServer())
-      .post('/api/v1/auth/signup')
-      .set('X-CSRF-Protection', '1')
-      .send({
-        email,
-        password: 'password-1234',
-        displayName,
-        clinicName,
-        licenseNumber,
-        termsAccepted: true,
-      })
-      .expect(201);
-
-    const setCookies = response.headers['set-cookie'] as unknown as string[] | undefined;
-    const accessTokenCookie = setCookies
-      ?.map((cookie) => cookie.split(';')[0])
-      .find((cookie) => cookie.startsWith('access_token='));
-
-    expect(accessTokenCookie).toBeDefined();
-    return accessTokenCookie as string;
-  };
+  }): Promise<string> => (await socialSignUp(app, identity)).cookie;
 
   const createPatient = async (
     overrides: Partial<PatientCreateBody> = {},
@@ -239,7 +216,10 @@ describe('Clinical guidance (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());

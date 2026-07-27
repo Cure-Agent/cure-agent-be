@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { OAuthProviderId } from '../../../infrastructure/oauth/oauth-provider.port';
 import { ClinicRow, clinics } from '../persistence/clinic.schema';
 import { ClinicianRow, clinicians } from '../persistence/clinician.schema';
 
@@ -15,7 +16,13 @@ export class ClinicianRepository {
   async insertClinician(
     row: Pick<
       ClinicianRow,
-      'id' | 'clinicId' | 'email' | 'passwordHash' | 'displayName' | 'licenseNumberEncrypted'
+      | 'id'
+      | 'clinicId'
+      | 'email'
+      | 'oauthProvider'
+      | 'oauthProviderId'
+      | 'displayName'
+      | 'licenseNumberEncrypted'
     >,
   ): Promise<void> {
     await this.txManager.conn.insert(clinicians).values(row);
@@ -30,12 +37,21 @@ export class ClinicianRepository {
     return rows.length > 0;
   }
 
-  async findByEmail(email: string): Promise<{ clinician: ClinicianRow; clinic: ClinicRow } | null> {
+  /** 소셜 계정 동일성 판정 (docs/specs/17) — 이메일이 아니라 provider+providerId가 기준이다. */
+  async findByOAuthAccount(
+    provider: OAuthProviderId,
+    providerId: string,
+  ): Promise<{ clinician: ClinicianRow; clinic: ClinicRow } | null> {
     const rows = await this.txManager.conn
       .select({ clinician: clinicians, clinic: clinics })
       .from(clinicians)
       .innerJoin(clinics, eq(clinicians.clinicId, clinics.id))
-      .where(eq(clinicians.email, email))
+      .where(
+        and(
+          eq(clinicians.oauthProvider, provider),
+          eq(clinicians.oauthProviderId, providerId),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }

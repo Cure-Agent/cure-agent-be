@@ -170,6 +170,7 @@ cure-agent-be/
 │   │   │   ├── jwt-auth.guard.ts             # + @CurrentClinician 데코레이터
 │   │   │   ├── token-denylist.service.ts     # access 즉시 무효화 (Redis, §4.3)
 │   │   │   ├── csrf.guard.ts                 # 상태 변경 요청의 커스텀 헤더 검증
+│   │   │   #  비밀번호 해시는 없다 — 인증 수단은 소셜 로그인뿐 (docs/specs/17)
 │   │   │   └── crypto/
 │   │   │       ├── aes-gcm.util.ts           # 필드 암호화
 │   │   │       ├── hmac-index.util.ts        # 검색용 blind index
@@ -197,6 +198,12 @@ cure-agent-be/
 │       │   ├── provider-http.ts              # 연결 타임아웃 + 오류 등급화(errorClass 주입)
 │       │   ├── sse-stream.parser.ts
 │       │   └── env.ts                        # config 공용 env 파싱
+│       ├── oauth/                            # 소셜 로그인 제공자 (docs/specs/17)
+│       │   ├── oauth-provider.port.ts        # authorizationUrl / fetchProfile
+│       │   ├── oauth-provider.registry.ts    # client id가 있는 제공자만 등록
+│       │   └── provider/
+│       │       ├── http-oauth.provider.ts    # Authorization Code Grant 공통 구현
+│       │       └── oauth-provider.definition.ts  # google·kakao·naver 엔드포인트·프로필 매핑
 │       ├── llm/                              # 루트 = 공개면, 하위 = 내부 구현
 │       │   ├── llm.module.ts
 │       │   ├── llm-provider.port.ts          # 포트 유지 (fake 테스트·교체 실요구 있음)
@@ -280,16 +287,25 @@ export class AuthCookieFactory {
 
 ### 4.2 인증 API
 
+인증 수단은 **소셜 로그인뿐이다** — 비밀번호를 저장하지 않는다 (docs/specs/17).
+
 | API | 동작 |
 |---|---|
-| `POST /auth/signup` | 가입 + 즉시 로그인 처리, Set-Cookie로 access/refresh 발급 |
-| `POST /auth/login` | 검증 후 Set-Cookie 발급, 바디에는 `AuthSessionResponseDto`(토큰 미포함) |
+| `GET /auth/oauth/providers` | client id가 설정된 활성 제공자 목록 (FE 버튼 렌더용) |
+| `GET /auth/oauth/{provider}` | state 쿠키 발급 후 제공자 동의 화면으로 302 |
+| `GET /auth/oauth/{provider}/callback` | code→token→userinfo 후 분기: 기존 회원은 쿠키 발급 + `/assistant`, 신규는 티켓 발급 + `/signup?ticket=` |
+| `POST /auth/signup` | 티켓 + 한의원명·면허번호로 온보딩 완료 + 즉시 로그인, Set-Cookie |
 | `POST /auth/logout` | `token-resolver`로 토큰 추출 → 서버측 세션 revoke → 만료 쿠키 발급 |
 | `POST /auth/refresh` | refresh 쿠키 검증 → access 재발급 + refresh rotation |
 | `GET /auth/me` | 세션 복구 |
-| `GET /auth/email-availability` | **rate limit 적용** (이메일 열거 공격 표면) |
 
 refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페치 오발동 위험).
+
+**계정 동일성**은 `(oauthProvider, oauthProviderId)`다. 제공자가 주는 이메일은 바뀔 수 있으므로 식별자로 쓰지 않는다 — 이메일은 신규 가입 시에만 필수이며, 기존 회원은 이메일 미동의 상태로도 로그인된다.
+
+**콜백 오리진**: 콜백은 BE 오리진이 아니라 **FE 오리진의 `/api/v1/...`** 로 받는다(FE Next rewrites 프록시 경유, `OAUTH_WEB_BASE_URL`). 제공자가 브라우저를 BE 오리진으로 직접 보내면 발급 쿠키가 BE 도메인에 저장돼 FE 요청에 실리지 않는다.
+
+**신규 가입 티켓**: 검증된 소셜 신원을 Redis에 두고 브라우저에는 불투명 티켓만 준다 → FE가 이메일·providerId를 위조할 수 없다. GETDEL로 1회성이며, denylist(§4.3)와 달리 **fail-closed**다.
 
 ### 4.3 Refresh rotation + 재사용 감지
 
@@ -338,16 +354,18 @@ API prefix는 `/api/v1`로 통일한다.
 
 | 기능 | API | Request DTO | Response data DTO |
 |---|---|---|---|
-| 이메일 로그인 | POST /auth/login | LoginRequestDto | AuthSessionResponseDto (+Set-Cookie) |
+| 활성 제공자 조회 | GET /auth/oauth/providers | 없음 | OAuthProvidersResponseDto |
+| 소셜 로그인 시작 | GET /auth/oauth/{provider} | 없음 | 302 (링크 이동, fetch 금지) |
 | 현재 사용자 복구 | GET /auth/me | 없음 | ClinicianResponseDto |
 | 세션 갱신 | POST /auth/refresh | HttpOnly Cookie | AuthSessionResponseDto (+Set-Cookie) |
 
-### 5.2 회원가입 화면 `/signup`
+### 5.2 온보딩 화면 `/signup?ticket=`
+
+소셜 인증을 마친 신규 사용자만 도달한다 (docs/specs/17). 티켓 없이 진입하면 `/login`으로 보낸다.
 
 | 기능 | API | Request DTO | Response data DTO |
 |---|---|---|---|
-| 의료인 가입(+로그인) | POST /auth/signup | SignUpRequestDto | AuthSessionResponseDto (+Set-Cookie) |
-| 이메일 중복 확인 | GET /auth/email-availability | EmailAvailabilityQueryDto | EmailAvailabilityResponseDto |
+| 온보딩 완료(+로그인) | POST /auth/signup | CompleteSignUpRequestDto | AuthSessionResponseDto (+Set-Cookie) |
 
 로그아웃은 보호된 전체 화면에서 사용: `POST /auth/logout` → `ApiResponseDto<null>` + 만료 쿠키.
 
@@ -421,18 +439,13 @@ PC에서는 목록과 상세를 한 화면에 배치한다.
 계약 형태이며 BE에서는 class + class-validator로 작성한다.
 
 ```ts
-class SignUpRequestDto {
-  email: string;
-  password: string;
+// 온보딩 완료 (docs/specs/17). 이메일·소셜 신원은 서버가 티켓에서 꺼내므로 바디에 없다.
+class CompleteSignUpRequestDto {
+  ticket: string;
   displayName: string;
   clinicName: string;
   licenseNumber: string;
   termsAccepted: boolean;
-}
-
-class LoginRequestDto {
-  email: string;
-  password: string;
 }
 
 class CreatePatientRequestDto {
@@ -712,7 +725,7 @@ type ConversationStreamEventDto =
 | Entity | 주요 필드 및 관계 |
 |---|---|
 | ClinicEntity | id, name, createdAt |
-| ClinicianEntity | id, clinicId, email, passwordHash, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus |
+| ClinicianEntity | id, clinicId, email, **oauthProvider+oauthProviderId(unique, 계정 동일성 기준)**, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus |
 | AuthSessionEntity | id, clinicianId, refreshTokenHash, **familyId, rotatedAt, reuseDetectedAt**, expiresAt, revokedAt |
 | PatientEntity | id, clinicId, caseLabel, 신체정보, **병력·약물·알레르기·노트(AES-GCM 암호화, 검색 필드는 HMAC index 병행)**, version, status |
 | PatientProfileSnapshotEntity | 가이드 생성 당시 환자 정보를 immutable JSON으로 저장 (**암호화 + 보존 기간 정책**) |
@@ -929,6 +942,17 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 각 스텝은 구현 전에 `docs/specs/NN-<이름>.md`를 작성한다. 스펙은 1페이지를 유지하고, 이 문서와 중복되는 내용은 §링크로만 참조한다.
 
+**12단계 이후 — spec을 쓸 것과 쓰지 않을 것**: 구현 순서는 12단계로 끝나지만 변경은 계속된다. 판단 기준은 "새 기능인가"가 아니라 **"동결할 수용 기준을 쓸 수 있는가"** 다.
+
+| spec 작성 후 `/implement` | spec 없이 이슈·PR로 |
+|---|---|
+| 새 엔드포인트·도메인 | 인프라·CI·배포 파이프라인 조정 |
+| 계약(DTO·OpenAPI) 변경 | 리팩토링, 의존성 업그레이드 |
+| 마이그레이션 동반 | 버그 픽스 (회귀 테스트로 충분) |
+| 인증·보안 정책 변경 | 로그·모니터링 튜닝 |
+
+오른쪽 열에 spec을 쓰면 동결할 계약이 없어 Phase 2가 성립하지 않는다. 실제 운영 예: 13~17은 spec을 썼고, #20(인프라 정합화)·#24(CI 트리거)는 쓰지 않았다.
+
 ```markdown
 # NN. <스텝 이름>
 ## 범위: 엔드포인트 목록 (URI·DTO는 architecture.md §5~§7 참조 — 복사 금지)
@@ -977,3 +1001,4 @@ FE UI
 | 15 | 계약 동기화 자동화: BE `openapi/**` push → FE repository_dispatch → 자동 동기화 PR, breaking은 동기화 PR typecheck 실패로 표면화 |
 | 16 | cron 폴백 제거 — push 단독 동기화로 확정, 토큰 부재·만료는 contract-notify hard-fail로 감지 |
 | 17 | SDD 테스트 교차 작성: 동결 테스트는 Codex가 스펙에서 독립 파생, Claude는 리뷰·동결·구현 담당 (8단계부터 적용, Codex 불가 시 Claude 폴백) |
+| 18 | 이메일·비밀번호 인증 제거, 소셜 로그인(Google/Kakao/Naver) 전용 전환 — §4 전면 개정, 온보딩 티켓·`/signup?ticket=` 화면 신설 (spec 17) |

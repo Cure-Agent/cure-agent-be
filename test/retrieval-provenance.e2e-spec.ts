@@ -13,6 +13,9 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { GuidelineIngestService } from '../src/domain/guideline/service/guideline-ingest.service';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
@@ -39,25 +42,8 @@ describe('spec 14: 임베딩 provenance 검색 필터', () => {
   let app: INestApplication;
   let cookie: string;
 
-  const signUp = async (email: string): Promise<string> => {
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send({
-        email,
-        password: 'password-1234',
-        displayName: '김의사',
-        clinicName: '서울한의원',
-        licenseNumber: 'LIC-0042',
-        termsAccepted: true,
-      })
-      .expect(201);
-    const cookies = (res.headers['set-cookie'] ?? []) as unknown as string[];
-    return cookies
-      .map((raw) => raw.split(';')[0])
-      .filter((pair) => pair.startsWith('access_token='))
-      .join('; ');
-  };
+  const signUp = async (email: string): Promise<string> =>
+    (await socialSignUp(app, { email })).cookie;
 
   beforeAll(async () => {
     [container, redisContainer] = await Promise.all([
@@ -72,7 +58,10 @@ describe('spec 14: 임베딩 provenance 검색 필터', () => {
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());

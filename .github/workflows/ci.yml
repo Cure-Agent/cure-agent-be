@@ -41,8 +41,13 @@ jobs:
   # PR에서 OpenAPI breaking change 감지 (architecture.md §1, §13)
   # 스펙 diff=0 검증은 test:e2e의 contract 스펙이 담당한다
   # dev→main 단방향 흐름이라 dev 스펙 기준 검사가 main 기준 검사를 포괄한다
+  #
+  # 의도된 breaking(인증 방식 전환 등)은 `breaking-change-approved` 라벨로 통과시킨다.
+  # 기본은 여전히 차단이며, 예외는 라벨로 PR에 기록이 남는다 — FE 동반 배포가
+  # 필요하다는 뜻이므로 라벨을 붙일 때 PR 본문에 그 영향 범위를 함께 적는다.
   openapi-breaking:
     runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, 'breaking-change-approved')"
     steps:
       - uses: actions/checkout@v4
         with:

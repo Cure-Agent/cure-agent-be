@@ -3,7 +3,6 @@ import { ConfigModule, ConfigType } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { authConfig } from '../config/auth.config';
 import { AuthCookieFactory } from './auth-cookie.factory';
-import { PasswordHasher } from './password-hasher';
 import { TokenDenylistService } from './token-denylist.service';
 import { TokenResolver } from './token-resolver';
 
@@ -21,7 +20,7 @@ import { TokenResolver } from './token-resolver';
       }),
     }),
   ],
-  providers: [AuthCookieFactory, TokenResolver, PasswordHasher, TokenDenylistService],
-  exports: [AuthCookieFactory, TokenResolver, PasswordHasher, TokenDenylistService],
+  providers: [AuthCookieFactory, TokenResolver, TokenDenylistService],
+  exports: [AuthCookieFactory, TokenResolver, TokenDenylistService],
 })
 export class SecurityModule {}

@@ -14,6 +14,8 @@ process.env.CRYPTO_HMAC_INDEX_KEY ??= Buffer.alloc(32, 3).toString('base64');
 process.env.DATABASE_URL ??= 'postgres://placeholder:placeholder@localhost:5/placeholder';
 process.env.REDIS_URL ??= 'redis://localhost:6390';
 process.env.AUTH_JWT_SECRET ??= 'export-only-jwt-secret-export-only-jwt-secret';
+process.env.OAUTH_WEB_BASE_URL ??= 'http://localhost:3001';
+process.env.GOOGLE_CLIENT_ID ??= 'export-only-google-client-id';
 
 import { NestFactory } from '@nestjs/core';
 import { mkdirSync, writeFileSync } from 'node:fs';

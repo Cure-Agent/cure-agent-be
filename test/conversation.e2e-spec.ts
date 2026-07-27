@@ -14,6 +14,9 @@ import {
   LlmProvider,
   LlmProviderError,
 } from '../src/infrastructure/llm/llm-provider.port';
+import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
+import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { socialLogin, socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
@@ -64,30 +67,15 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
   let convId: string; // A의 대화 (해피패스)
   let assistantMessageId: string;
 
-  const signUp = async (email: string): Promise<string> => {
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send({
-        email,
-        password: 'password-1234',
-        displayName: '김의사',
-        clinicName: '서울한의원',
-        licenseNumber: 'LIC-0042',
-        termsAccepted: true,
-      })
-      .expect(201);
-    const cookies = (res.headers['set-cookie'] ?? []) as unknown as string[];
-    return cookies
-      .map((raw) => raw.split(';')[0])
-      .filter((pair) => pair.startsWith('access_token='))
-      .join('; ');
-  };
+  const signUp = async (email: string): Promise<string> =>
+    (await socialSignUp(app, { email })).cookie;
 
   const buildApp = async (
     customize?: (builder: TestingModuleBuilder) => TestingModuleBuilder,
   ): Promise<INestApplication> => {
-    let builder = Test.createTestingModule({ imports: [AppModule] });
+    let builder = Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(OAuthProviderRegistry)
+      .useClass(FakeOAuthProviderRegistry);
     if (customize) builder = customize(builder);
     const moduleRef = await builder.compile();
     const instance = moduleRef.createNestApplication();
@@ -378,18 +366,7 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       builder.overrideProvider(LLM_PROVIDERS).useValue([failingProvider, okProvider]),
     );
     try {
-      const cookie = await (async () => {
-        const res = await request(fallbackApp.getHttpServer())
-          .post('/api/v1/auth/login')
-          .set(CSRF)
-          .send({ email: 'doctor-a@clinic.kr', password: 'password-1234' })
-          .expect(200);
-        const cookies = (res.headers['set-cookie'] ?? []) as unknown as string[];
-        return cookies
-          .map((raw) => raw.split(';')[0])
-          .filter((pair) => pair.startsWith('access_token='))
-          .join('; ');
-      })();
+      const cookie = await socialLogin(fallbackApp, { email: 'doctor-a@clinic.kr' });
 
       const created = await request(fallbackApp.getHttpServer())
         .post('/api/v1/conversations')
@@ -427,16 +404,7 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       builder.overrideProvider(LLM_PROVIDERS).useValue([failingProvider]),
     );
     try {
-      const login = await request(brokenApp.getHttpServer())
-        .post('/api/v1/auth/login')
-        .set(CSRF)
-        .send({ email: 'doctor-a@clinic.kr', password: 'password-1234' })
-        .expect(200);
-      const cookies = (login.headers['set-cookie'] ?? []) as unknown as string[];
-      const cookie = cookies
-        .map((raw) => raw.split(';')[0])
-        .filter((pair) => pair.startsWith('access_token='))
-        .join('; ');
+      const cookie = await socialLogin(brokenApp, { email: 'doctor-a@clinic.kr' });
 
       const created = await request(brokenApp.getHttpServer())
         .post('/api/v1/conversations')
