@@ -1,13 +1,17 @@
 apiVersion: 1
 
+# uid는 대시보드 JSON이 참조하는 키다 — 고정하지 않으면 grafana-data 볼륨 재생성 시
+# 새 uid가 발급되어 프로비저닝된 대시보드가 전부 "datasource not found"로 깨진다.
 datasources:
   - name: Prometheus
+    uid: cure-prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
 
   - name: Loki
+    uid: cure-loki
     type: loki
     access: proxy
     url: http://loki:3100

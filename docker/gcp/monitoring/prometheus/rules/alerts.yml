@@ -41,8 +41,10 @@ groups:
 
   - name: container
     rules:
+      # cAdvisor(docker_only)는 container_restart_count를 노출하지 않는다 —
+      # 시작 시각의 변화로 재시작을 센다 (system-overview 대시보드와 동일 기준)
       - alert: ContainerRestarting
-        expr: increase(container_restart_count{name=~"cure-.+"}[5m]) > 0
+        expr: changes(container_start_time_seconds{name=~"cure-.+"}[5m]) > 0
         for: 0m
         labels:
           severity: warning
@@ -50,5 +52,83 @@ groups:
           summary: "Container {{ $labels.name }} restarted"
           description: "Container {{ $labels.name }} has restarted in the last 5 minutes."
 
-# NOTE: HTTP 5xx율·p95 지연 알림은 앱 /metrics(prom-client) 도입 후 추가한다 —
-# 현재 앱은 메트릭을 노출하지 않는다 (장애 알림은 앱 자체 ALERT_WEBHOOK_URLS가 담당)
+  # 앱 지표 기반 — 개별 예외 알림은 앱의 ALERT_WEBHOOK_URLS가 즉시 보내고,
+  # 여기서는 "추세가 나빠진 상태"를 본다 (일시적 1건으로는 울리지 않는다)
+  - name: application
+    rules:
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP 5xx 비율 5% 초과"
+          description: "최근 5분 5xx 비율이 5%를 넘었습니다."
+
+      - alert: HighHttpLatency
+        expr: |
+          histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m]))) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP p95 지연 3초 초과"
+          description: "최근 10분간 p95 응답 지연이 3초를 넘었습니다."
+
+      - alert: LlmCircuitOpen
+        expr: llm_circuit_open == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM 프로바이더 {{ $labels.provider }} 서킷 open 지속"
+          description: "5분 넘게 서킷이 닫히지 않았습니다 — 폴백만으로 버티는 중입니다."
+
+      - alert: LlmExhausted
+        expr: increase(llm_exhausted_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "가용 LLM 프로바이더 소진"
+          description: "전 프로바이더가 불가하여 사용자에게 LLM_UNAVAILABLE이 나갔습니다."
+
+  - name: datastore
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres 접속 불가"
+          description: "postgres_exporter가 2분 넘게 DB에 접속하지 못했습니다."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis 접속 불가"
+          description: "redis_exporter가 2분 넘게 Redis에 접속하지 못했습니다."
+
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_database_numbackends) / max(pg_settings_max_connections) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Postgres 커넥션 사용률 80% 초과"
+          description: "커넥션 고갈이 임박했습니다."
+
+      - alert: RedisEvictingKeys
+        expr: increase(redis_evicted_keys_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 키 eviction 발생"
+          description: "메모리 압박으로 키가 삭제되고 있습니다 — 세션·리프레시 토큰이 조기 만료될 수 있습니다."
