@@ -22,6 +22,11 @@ export interface SourceListItem {
   releaseDate: string | null;
   /** view.do — 인용 시 노출할 원문 링크 */
   sourceUrl: string;
+  /**
+   * 목록의 guide_file. 저장 파일명으로 쓴다 — content-disposition은 EUC-KR로 깨져 오기 때문이다.
+   * 목록에 없으면 호출측이 externalId 기반 이름으로 대체한다.
+   */
+  fileName?: string;
 }
 
 /** 다운로드 결과 — 판정 전의 raw 응답이다 */
