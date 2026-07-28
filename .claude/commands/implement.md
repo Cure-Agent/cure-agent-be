@@ -1,5 +1,5 @@
 ---
-description: docs/specs/ 스펙 기반 SDD 구현 — 테스트 동결 → 구현 → 검증 → PR
+description: docs/specs/ 스펙 기반 SDD 구현 — 이슈·브랜치 → 테스트 동결 → 구현 → 검증 → 배포(ship 위임)
 argument-hint: <spec 번호 또는 경로 (예: 05)>
 ---
 
@@ -12,7 +12,19 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 
 1. `$ARGUMENTS`로 스펙을 결정한다: 숫자면 `docs/specs/<번호>-*.md` 매칭, 경로면 그대로. 못 찾으면 `ls docs/specs/`를 보여주고 중단한다.
 2. 스펙 전문 + 스펙이 §링크한 `docs/architecture.md` 섹션을 읽는다. §3(구조·경량화 원칙), §10(응답·에러 규약), §13(테스트 전략)은 항상 포함.
-3. `git status` clean 확인, `git pull` 후 브랜치 생성: `feat/<번호>-<이름>`.
+3. `git status` clean 확인, `git checkout dev && git pull origin dev`.
+4. **이슈 생성**: `gh issue create --title "[FEAT] <스텝명>" --label "✨ FEAT"` — 본문은
+   `.github/ISSUE_TEMPLATE/기능-구현.yml`의 `body:` 각 항목 `label`을 마크다운 헤더(`## <label>`)로
+   매핑하고 `required: true` 항목을 스펙의 범위·수용 기준으로 채워 `--body`로 전달한다(폼 파일 자체를
+   붙여넣지 않는다). 출력 URL 끝 숫자가 `<이슈번호>`다.
+5. 브랜치 생성: `"feat/#<이슈번호>"` → checkout. 브랜치명에 `#`이 포함되므로 모든 git/gh 명령에서
+   **반드시 따옴표로 감싼다**.
+
+> **`#N` 자리에는 항상 이슈 번호를 쓴다 — spec 번호가 아니다.** GitHub은 커밋·PR 제목의 `#N`을
+> 이슈 참조로 자동 링크하므로, spec 번호를 쓰면 같은 번호의 무관한 이슈에 걸린다
+> (실제 사고: `[FEAT/#18]`로 커밋한 spec 18 구현이 이슈 #18 `[CHORE] 배포`에 연결됨).
+> spec은 본문·PR에서 `docs/specs/<번호>` 경로로 참조한다. 이 규범은 `automation/pipeline.md`
+> Step 1(`[TYPE/#이슈번호] 설명`)과 동일하다.
 
 ## Phase 1 — 계획
 
@@ -26,7 +38,7 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 | 파라미터 | 값 |
 |---|---|
 | 명세 | Phase 0에서 읽은 스펙 전문 + §링크한 architecture.md 섹션 |
-| 작업 ID | 스펙 번호 |
+| 작업 ID | **이슈 번호** (Phase 0-4에서 발급 — 커밋 제목 `[TEST/#<이슈번호>]`에 쓰인다) |
 | 동결 단위 | 스펙 1개 = 1 단위 |
 | 참조 패턴 파일 | BE `test/auth.e2e-spec.ts` / FE `src/shared/api/http.test.ts` |
 
@@ -51,15 +63,31 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 3. 수용 기준 항목별 → 커버하는 테스트 매핑을 만든다 (최종 보고에 포함).
 4. 스펙의 Out of scope를 침범하지 않았는지 점검한다.
 
-## Phase 5 — PR·머지·후속
+## Phase 5 — 배포·후속
 
-1. 구현 커밋: `[FEAT/#<번호>] <요약>` — 동결 커밋과 분리 유지. 트레일러:
+1. 구현 커밋: `[FEAT/#<이슈번호>] <요약>` — 동결 커밋과 분리 유지. 트레일러:
    `Co-Authored-By: Claude Code <noreply@anthropic.com>`
-2. `gh pr create` — 본문에 스펙 링크 + 수용 기준 체크리스트. PR에서만 `openapi-breaking` job이 동작한다.
-3. CI green 확인 후 **`gh pr merge <번호> --rebase --delete-branch`**로 머지한다 — `--delete-branch`가 원격·로컬 이슈 브랜치를 함께 정리하므로, 이 플래그를 빼면 그 스텝의 브랜치가 그대로 남는다. 머지 성공 후 `automation/freeze.md`의 「동결 해제」를 수행한다 — 머지 실패로 재수정하는 동안은 동결을 유지해 테스트를 계속 보호한다.
-4. **브랜치 정리**: 머지 직후 `git checkout main && git pull --ff-only && git fetch --prune`. `--prune`이 없으면 원격에서 이미 삭제된 브랜치의 추적 ref(`origin/feat/...`)가 로컬에 남아 `git branch -r`이 실제 원격과 다른 상태를 보여준다 — "안 지워졌다"고 오판하고 삭제를 재시도하게 된다. 스텝마다 누락하면 브랜치가 누적된다(실제로 05~11 스텝에서 양 레포에 9개가 쌓였다).
-   > **rebase 머지 함정**: `--rebase`는 커밋 SHA를 새로 만들므로 원본 브랜치는 main의 조상이 **아니다**. 따라서 `git branch --merged main`에 잡히지 않고 `git branch -d`도 거부한다. 뒤늦게 남은 브랜치를 지울 때는 `-d` 실패를 이유로 곧장 `-D`를 쓰지 말고, **PR 머지 여부를 먼저 확인**한 뒤 확인된 것만 `-D`로 지운다:
-   > `gh api "repos/<owner>/<repo>/pulls?state=all&head=<owner>:<브랜치>" --jq '.[0].merged_at'`
+2. **배포는 `automation/ship.md`에 위임한다.** 그 문서를 읽고 실행하면 현재 이슈 브랜치를
+   Preflight가 감지해 **Phase 1·3을 스킵하고 Phase 2(검증)로 직행**하며, Phase 4에서
+   `automation/pipeline.md`가 dev PR → CI → 배포 PR → CD까지 수행한다.
+   전달할 컨텍스트: 브랜치명, 타입(`[FEAT]`), 이슈번호, Phase 4의 검증 결과 요약.
+   - PR 본문에는 **스펙 링크(`docs/specs/<번호>`) + 수용 기준 ↔ 테스트 매핑 표**를 넣는다.
+     dev PR에서만 `openapi-breaking` job이 동작한다.
+
+   > **머지 방식을 임의로 바꾸지 않는다** — dev PR은 `--squash`, 배포 PR(dev→main)은 `--merge`다.
+   > 이유는 `automation/pipeline.md`의 「머지 방식」 참조: dev PR을 merge commit으로 머지하면
+   > GitHub Actions 런 제목이 `Merge pull request #N from ...`이 되어 **어느 변경의 CI인지
+   > 런 목록에서 식별할 수 없다.** 이 스텝에서 직접 `gh pr merge`를 호출하지 않는다.
+
+3. **배포 성공 후** `automation/freeze.md`의 「동결 해제」를 수행한다 — 배포가 실패해 코드를
+   재수정하는 동안은 동결을 유지해 테스트를 계속 보호한다.
+4. **브랜치 정리**는 `automation/pipeline.md` Step 4가 수행한다(배포 이슈 close, 로컬·원격 브랜치
+   삭제, 워크트리 정리). 누락되면 스텝마다 브랜치가 누적되므로 최종 보고 전에 `git branch -a`로
+   확인한다.
+   > **squash·rebase 머지 함정**: 두 방식 모두 커밋 SHA를 새로 만들므로 원본 브랜치는 대상 브랜치의
+   > 조상이 **아니다**. `git branch --merged`에 잡히지 않고 `git branch -d`도 거부한다. 남은 브랜치를
+   > 지울 때 `-d` 실패를 이유로 곧장 `-D`를 쓰지 말고, **PR 머지 여부를 먼저 확인**한 뒤 확인된 것만
+   > `-D`로 지운다: `gh api "repos/<owner>/<repo>/pulls?state=all&head=<owner>:<브랜치>" --jq '.[0].merged_at'`
    > 확인 없이 `-D`를 쓰면 머지되지 않은 작업을 조용히 날린다.
 5. **BE 계약이 바뀐 경우**: 머지 후 FE `contract-sync`가 자동 PR(`chore/contract-sync`)을 만들었는지, 그 PR의 typecheck 결과(breaking 여부)까지 확인한다.
 6. 최종 보고: 수용 기준 매핑, 계약 변경 여부, FE 동기화 PR 상태.
