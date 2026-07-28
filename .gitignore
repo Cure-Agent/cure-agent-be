@@ -20,8 +20,11 @@ coverage/
 # 로컬 IDE MCP 연결 (개인 환경 전용 — 팀 공유 MCP 서버가 생기면 해제하고 커밋)
 .mcp.json
 
-# SDD 하네스 스크래치 (implement.md Phase 2)
+# 테스트 동결 하네스 스크래치 (automation/freeze.md — /implement·/problem 공용)
 .cure-implement/
+
+# 수집한 지침 원본 PDF (docs/specs/18) — 재배포 회피: 레포엔 임베딩만, 원문은 NCKM 링크
+.cure-data/
 
 # terraform — 상태·변수 파일은 로컬/TFC 전용 (*.tfvars.example만 커밋)
 *.tfstate
