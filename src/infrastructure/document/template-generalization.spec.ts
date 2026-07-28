@@ -11,7 +11,7 @@ import {
   noMarkerPages,
 } from '../../../test/fixtures/nckm-template-samples';
 import {
-  chunkNckmGuidelineWithDiagnostics,
+  chunkNckmGuideline,
   type GuidelineDocumentMeta,
 } from './guideline-chunker';
 
@@ -69,7 +69,7 @@ IV 권고사항
 【 R9 】
 이 번호는 요약문에서 언급되었지만 뒤에 권고 표나 등급이 없다.`,
     ];
-    const result = chunkNckmGuidelineWithDiagnostics(pages, meta);
+    const result = chunkNckmGuideline(pages, meta);
 
     expect(sorted(result.diagnostics.uniqueNumbers)).toEqual(['R1', 'R2', 'R9']);
     expect(recommendationNumbers(result.input)).toEqual(['R1', 'R2']);
@@ -81,15 +81,15 @@ IV 권고사항
     const duplicatedPages = familyAPages.map((page) =>
       page.replace('【 R2 】', '【 R1 】'),
     );
-    const result = chunkNckmGuidelineWithDiagnostics(duplicatedPages, meta);
+    const result = chunkNckmGuideline(duplicatedPages, meta);
 
     expect(result.diagnostics.uniqueNumbers).toEqual(['R1']);
     expect(result.diagnostics.duplicated).toEqual(['R1']);
   });
 
   it('기준 3: 마커가 전혀 없는 문서는 고유 번호가 0개인 것으로 진단한다', () => {
-    const supported = chunkNckmGuidelineWithDiagnostics(familyAPages, meta);
-    const noMarkers = chunkNckmGuidelineWithDiagnostics(noMarkerPages, meta);
+    const supported = chunkNckmGuideline(familyAPages, meta);
+    const noMarkers = chunkNckmGuideline(noMarkerPages, meta);
 
     // 빈 배열 단언만으로 스텁이 통과하지 않도록 먼저 마커 검출의 양성 대조군을 둔다.
     expect(supported.diagnostics.uniqueNumbers).toEqual(['R1', 'R2']);
@@ -101,7 +101,7 @@ IV 권고사항
     const gradeMissingPages = familyAPages.map((page) =>
       page.replace(/A\/High|B\/Low/g, '등급 미기재'),
     );
-    const result = chunkNckmGuidelineWithDiagnostics(gradeMissingPages, meta);
+    const result = chunkNckmGuideline(gradeMissingPages, meta);
 
     expect(result.diagnostics.uniqueNumbers).toEqual(['R1', 'R2']);
     expect(recommendationNumbers(result.input)).toEqual(['R1', 'R2']);
@@ -109,7 +109,7 @@ IV 권고사항
   });
 
   it('기준 5: 표 안의 마커 재인용은 새 블록으로 세지 않는다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(familyBPages, meta);
+    const result = chunkNckmGuideline(familyBPages, meta);
 
     expect(recommendationNumbers(result.input)).toEqual(['R1', 'R2']);
     expect(result.diagnostics.uniqueNumbers).toEqual(['R1', 'R2']);
@@ -117,8 +117,8 @@ IV 권고사항
   });
 
   it('기준 6: ASCII와 전각 로마 숫자 장 헤더를 같은 경로로 정규화한다', () => {
-    const familyA = chunkNckmGuidelineWithDiagnostics(familyAPages, meta);
-    const familyB = chunkNckmGuidelineWithDiagnostics(familyBPages, meta);
+    const familyA = chunkNckmGuideline(familyAPages, meta);
+    const familyB = chunkNckmGuideline(familyBPages, meta);
 
     expect(findRecommendation(familyA.input, 'R1')?.sectionPath[0]).toBe(
       'Ⅳ. 권고사항',
@@ -129,7 +129,7 @@ IV 권고사항
   });
 
   it('기준 7: 러닝 타이틀이 붙은 첫 줄에서 인쇄 번호를 읽고 그 페이지 본문을 포함한다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(familyBPages, meta);
+    const result = chunkNckmGuideline(familyBPages, meta);
     const r1 = findRecommendation(result.input, 'R1');
 
     expect(r1?.chunk).toMatchObject({
@@ -143,7 +143,7 @@ IV 권고사항
   });
 
   it('기준 8: 장 러닝 헤더가 없는 문서도 관측된 절 헤더만으로 경로를 만든다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(familyCPages, meta);
+    const result = chunkNckmGuideline(familyCPages, meta);
 
     expect(recommendationNumbers(result.input)).toEqual(['R1', 'R2']);
     expect(findRecommendation(result.input, 'R1')?.sectionPath).toEqual([
@@ -156,7 +156,7 @@ IV 권고사항
   });
 
   it('기준 9: 슬래시 둘레의 공백과 무관하게 권고등급과 근거수준을 분리한다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(gradeSpacingPages, meta);
+    const result = chunkNckmGuideline(gradeSpacingPages, meta);
     const r1 = findRecommendation(result.input, 'R1');
     const r2 = findRecommendation(result.input, 'R2');
 
@@ -187,7 +187,7 @@ IV 권고사항
   });
 
   it('기준 10: 마커 뒤에 붙은 제목을 제외하고 권고 번호와 권고문을 추출한다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(familyCPages, meta);
+    const result = chunkNckmGuideline(familyCPages, meta);
     const r1 = findRecommendation(result.input, 'R1');
 
     expect(r1?.chunk).toMatchObject({ recommendationNumber: 'R1' });
@@ -201,7 +201,7 @@ IV 권고사항
   });
 
   it('기준 11: 컬럼 구성이 다른 표 헤더를 권고문 content에서 제외한다', () => {
-    const result = chunkNckmGuidelineWithDiagnostics(familyCPages, meta);
+    const result = chunkNckmGuideline(familyCPages, meta);
     const r2 = findRecommendation(result.input, 'R2');
 
     expect(r2?.chunk.content).toBe(
@@ -217,8 +217,8 @@ IV 권고사항
   });
 
   it('기준 12: 기호·마침표 절 헤더에도 경로 상속과 하위 레벨 초기화를 적용한다', () => {
-    const familyB = chunkNckmGuidelineWithDiagnostics(familyBPages, meta);
-    const familyC = chunkNckmGuidelineWithDiagnostics(familyCPages, meta);
+    const familyB = chunkNckmGuideline(familyBPages, meta);
+    const familyC = chunkNckmGuideline(familyCPages, meta);
 
     expect(findRecommendation(familyB.input, 'R1')?.sectionPath).toEqual([
       'Ⅳ. 권고사항',

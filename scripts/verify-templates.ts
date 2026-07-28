@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  chunkNckmGuidelineWithDiagnostics,
+  chunkNckmGuideline,
   GuidelineDocumentMeta,
 } from '../src/infrastructure/document/guideline-chunker';
 import { extractPdfPages } from '../src/infrastructure/document/pdf-text.extractor';
@@ -54,7 +54,7 @@ async function collectActual(dir: string): Promise<Record<string, TemplateActual
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.pdf')).sort()) {
     const documentId = file.replace(/\.pdf$/, '');
     const pages = await extractPdfPages(join(dir, file));
-    const { input, diagnostics } = chunkNckmGuidelineWithDiagnostics(pages, PLACEHOLDER_META);
+    const { input, diagnostics } = chunkNckmGuideline(pages, PLACEHOLDER_META);
     const recommendations = input.sections
       .flatMap((section) => section.chunks)
       .filter((chunk) => chunk.recommendationGrade !== undefined).length;
