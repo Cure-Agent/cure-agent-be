@@ -20,6 +20,7 @@
     "ingest": "ts-node -T scripts/ingest-guidelines.ts",
     "acquire:nckm": "ts-node -T scripts/acquire-guidelines.ts",
     "parse:nckm": "ts-node -T scripts/parse-nckm-guideline.ts",
+    "verify:templates": "ts-node -T scripts/verify-templates.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
