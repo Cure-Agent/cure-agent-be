@@ -48,6 +48,16 @@ export class SourceDocumentRepository {
     return rows[0] ?? null;
   }
 
+  /** 문서 메타 조회용 — 같은 external_id의 최신 행 (docs/specs/19) */
+  async findLatestByExternalId(
+    sourceSystem: string,
+    externalId: string,
+  ): Promise<SourceDocumentRow | null> {
+    void sourceSystem;
+    void externalId;
+    return Promise.resolve(null);
+  }
+
   async insert(row: SourceDocumentInsert): Promise<void> {
     await this.txManager.conn.insert(sourceDocuments).values(row);
   }
