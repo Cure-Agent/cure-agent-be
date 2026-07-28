@@ -321,7 +321,32 @@ function appendWrapped(accumulated: string, next: string): string {
   if (/[A-Za-z0-9]$/.test(accumulated) && /^[A-Za-z0-9]/.test(next)) {
     return `${accumulated} ${next}`;
   }
+  if (endsAtWordBoundary(accumulated) && /^[가-힣]/.test(next)) {
+    return `${accumulated} ${next}`;
+  }
   return `${accumulated}${next}`;
+}
+
+/**
+ * 어절 경계에서 끊긴 줄인지 추정한다.
+ *
+ * 한글 줄바꿈은 어중(`권`/`고한다`)과 어절 경계(`있는`/`환자에게`) 양쪽에서 일어나는데, 후자의 공백은
+ * 양쪽 정렬이 흡수해 **PDF에 아예 인코딩되지 않는다**(pdfjs 항목 단위로도 없다). 복구 불가능한
+ * 정보라 형태로 추정한다 — 마지막 음절이 격조사면 어절이 끝난 것으로 본다.
+ *
+ * **격조사만 넣고 어미(`고`·`해` 등)는 넣지 않는다.** 요약문의 권고 문장 44개를 정답지로 측정한 결과
+ * 격조사만 쓰면 36/44가 정확한 반면, 어미를 더하면 `고려`가 `고`/`려`로 끊긴 자리에서 오탐이 나
+ * 32/44로 떨어진다 (미적용은 24/44). 오탐은 붙여쓰기 오류와 달리 의미를 훼손하지 않지만,
+ * 권고 문장은 임상의에게 그대로 인용되는 텍스트라 정확도를 우선한다 (docs/specs/19 「어절 경계 줄바꿈」).
+ */
+const PARTICLE_ENDINGS = new Set([
+  '을', '를', '이', '가', '은', '는', '의', '에', '로', '와', '과', '도', '만',
+]);
+
+function endsAtWordBoundary(text: string): boolean {
+  const last = text.slice(-1);
+  // 단음절 어절 자체는 판단 근거가 없다 — 앞에 다른 글자가 붙어 있을 때만 조사·어미로 본다
+  return text.length > 1 && PARTICLE_ENDINGS.has(last);
 }
 
 function mergeParagraphs(paragraphs: Paragraph[]): Paragraph | null {
