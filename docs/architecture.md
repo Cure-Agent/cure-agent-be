@@ -224,7 +224,7 @@ cure-agent-be/
 │       ├── retrieval/                        # 포트 없음 — DB 검색이라 실물로 검증
 │       ├── guideline-source/                 # 포트 (NCKM HTTP — fake 치환) §18
 │       ├── document/                         # pdf-parser, guideline-chunker §19
-│       └── scheduler/                        # 지침 개정 감지 크론 §21
+│       └── scheduler/                        # 지침 개정 감지 크론 §22
 │
 ├── test/
 │   ├── contract/                     # OpenAPI 재생성 diff + breaking change 검사
