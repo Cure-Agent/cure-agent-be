@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
-  chunkNckmGuideline,
+  ChunkDiagnostics,
+  chunkNckmGuidelineWithDiagnostics,
   GuidelineDocumentMeta,
 } from '../../../infrastructure/document/guideline-chunker';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
@@ -29,10 +30,18 @@ export interface ParseGuidelineOptions {
 export class GuidelineParseService {
   constructor(private readonly sourceDocuments: SourceDocumentRepository) {}
 
-  /** 페이지 텍스트 + 조회한 메타 → 인제스트 입력 */
+  /**
+   * 페이지 텍스트 + 조회한 메타 → 인제스트 입력.
+   *
+   * 진단에 문제가 있으면 **던진다** (docs/specs/20 수용 기준 1~4). 조용히 적게 내보내면
+   * "인제스트했는데 아무것도 안 들어간" 문서가 생기고 아무도 모른다 — 특히 §21의 스케줄러가
+   * 이 경로를 주기적으로 자동 실행하게 되므로, 불일치는 반드시 실패로 드러나야 한다.
+   */
   async parse(options: ParseGuidelineOptions): Promise<GuidelineIngestInput> {
     const meta = await this.resolveMeta(options);
-    return chunkNckmGuideline(options.pages, meta);
+    const { input, diagnostics } = chunkNckmGuidelineWithDiagnostics(options.pages, meta);
+    assertParsable(diagnostics);
+    return input;
   }
 
   /**
@@ -71,6 +80,29 @@ export class GuidelineParseService {
       );
     }
     return meta;
+  }
+}
+
+/**
+ * 파싱 실패 가드 (docs/specs/20 수용 기준 1~4).
+ * 어떤 번호가 문제인지 열거한다 — 열거가 없으면 어디를 고쳐야 하는지 알 수 없다.
+ */
+function assertParsable(diagnostics: ChunkDiagnostics): void {
+  const problems: string[] = [];
+  if (diagnostics.uniqueNumbers.length === 0) {
+    problems.push('권고 블록 마커(【R…】)를 하나도 찾지 못했습니다');
+  }
+  if (diagnostics.missing.length > 0) {
+    problems.push(`권고문 청크가 만들어지지 않은 번호: ${diagnostics.missing.join(', ')}`);
+  }
+  if (diagnostics.duplicated.length > 0) {
+    problems.push(`권고문 청크가 중복 생성된 번호: ${diagnostics.duplicated.join(', ')}`);
+  }
+  if (diagnostics.gradeMissing.length > 0) {
+    problems.push(`등급을 추출하지 못한 번호: ${diagnostics.gradeMissing.join(', ')}`);
+  }
+  if (problems.length > 0) {
+    throw new Error(`지침 파싱 실패 — ${problems.join(' / ')}`);
   }
 }
 

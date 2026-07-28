@@ -1,0 +1,192 @@
+{
+  "90": {
+    "uniqueNumbers": 0,
+    "recommendations": 0,
+    "status": "OK"
+  },
+  "97": {
+    "uniqueNumbers": 0,
+    "recommendations": 0,
+    "status": "OK"
+  },
+  "141": {
+    "uniqueNumbers": 22,
+    "recommendations": 22,
+    "status": "OK"
+  },
+  "149": {
+    "uniqueNumbers": 17,
+    "recommendations": 17,
+    "status": "OK"
+  },
+  "161": {
+    "uniqueNumbers": 19,
+    "recommendations": 19,
+    "status": "OK"
+  },
+  "163": {
+    "uniqueNumbers": 19,
+    "recommendations": 19,
+    "status": "OK"
+  },
+  "167": {
+    "uniqueNumbers": 26,
+    "recommendations": 26,
+    "status": "OK"
+  },
+  "170": {
+    "uniqueNumbers": 5,
+    "recommendations": 5,
+    "status": "OK"
+  },
+  "171": {
+    "uniqueNumbers": 37,
+    "recommendations": 19,
+    "status": "PARTIAL",
+    "unparsed": [
+      "R1-3",
+      "R11-1",
+      "R13-1",
+      "R13-2",
+      "R13-3",
+      "R13-4",
+      "R16-1",
+      "R16-2",
+      "R17-1",
+      "R18-1",
+      "R18-2",
+      "R18-3",
+      "R2-1",
+      "R3-1",
+      "R4-1",
+      "R4-2",
+      "R9-1",
+      "R9-2"
+    ]
+  },
+  "218": {
+    "uniqueNumbers": 19,
+    "recommendations": 19,
+    "status": "OK"
+  },
+  "233": {
+    "uniqueNumbers": 22,
+    "recommendations": 22,
+    "status": "OK"
+  },
+  "234": {
+    "uniqueNumbers": 24,
+    "recommendations": 24,
+    "status": "OK"
+  },
+  "289": {
+    "uniqueNumbers": 18,
+    "recommendations": 18,
+    "status": "OK"
+  },
+  "292": {
+    "uniqueNumbers": 40,
+    "recommendations": 40,
+    "status": "OK"
+  },
+  "299": {
+    "uniqueNumbers": 28,
+    "recommendations": 28,
+    "status": "OK"
+  },
+  "300": {
+    "uniqueNumbers": 16,
+    "recommendations": 16,
+    "status": "OK"
+  },
+  "309": {
+    "uniqueNumbers": 32,
+    "recommendations": 32,
+    "status": "OK"
+  },
+  "311": {
+    "uniqueNumbers": 16,
+    "recommendations": 16,
+    "status": "OK"
+  },
+  "319": {
+    "uniqueNumbers": 16,
+    "recommendations": 16,
+    "status": "OK"
+  },
+  "321": {
+    "uniqueNumbers": 28,
+    "recommendations": 28,
+    "status": "OK"
+  },
+  "324": {
+    "uniqueNumbers": 29,
+    "recommendations": 16,
+    "status": "PARTIAL",
+    "unparsed": [
+      "R17",
+      "R18",
+      "R20",
+      "R21",
+      "R22",
+      "R23",
+      "R24",
+      "R25",
+      "R26",
+      "R27",
+      "R5",
+      "R8",
+      "R9"
+    ]
+  },
+  "326": {
+    "uniqueNumbers": 49,
+    "recommendations": 49,
+    "status": "OK"
+  },
+  "327": {
+    "uniqueNumbers": 16,
+    "recommendations": 16,
+    "status": "OK"
+  },
+  "331": {
+    "uniqueNumbers": 18,
+    "recommendations": 18,
+    "status": "OK"
+  },
+  "332": {
+    "uniqueNumbers": 12,
+    "recommendations": 12,
+    "status": "OK"
+  },
+  "333": {
+    "uniqueNumbers": 38,
+    "recommendations": 38,
+    "status": "OK"
+  },
+  "342": {
+    "uniqueNumbers": 28,
+    "recommendations": 28,
+    "status": "OK"
+  },
+  "350": {
+    "uniqueNumbers": 23,
+    "recommendations": 23,
+    "status": "OK"
+  },
+  "351": {
+    "uniqueNumbers": 32,
+    "recommendations": 32,
+    "status": "OK"
+  },
+  "352": {
+    "uniqueNumbers": 31,
+    "recommendations": 31,
+    "status": "OK"
+  },
+  "652": {
+    "uniqueNumbers": 22,
+    "recommendations": 22,
+    "status": "OK"
+  }
+}
