@@ -19,6 +19,7 @@
     "openapi:export": "ts-node -T scripts/export-openapi.ts",
     "ingest": "ts-node -T scripts/ingest-guidelines.ts",
     "acquire:nckm": "ts-node -T scripts/acquire-guidelines.ts",
+    "parse:nckm": "ts-node -T scripts/parse-nckm-guideline.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
@@ -53,7 +54,8 @@
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "unpdf": "^1.8.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",

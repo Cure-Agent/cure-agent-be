@@ -6,6 +6,8 @@ import {
 import { SourceDocumentRepository } from '../repository/source-document.repository';
 import { GuidelineIngestInput } from './guideline-ingest.input';
 
+const DEFAULT_SOURCE_SYSTEM = 'NCKM';
+
 export interface ParseGuidelineOptions {
   /** PDF에서 추출한 페이지 텍스트 (추출은 CLI가 담당 — 서비스는 텍스트만 받는다) */
   pages: string[];
@@ -36,19 +38,44 @@ export class GuidelineParseService {
   /**
    * `source_documents`의 최신 행에서 문서 메타를 만든다.
    * `release_date`("2024-07")가 version이 되고, publishedAt은 일자를 1일로 보정한다.
-   * 행이 없으면 예외를 던진다.
+   * 행이 없으면 예외를 던진다 — CLI 전용이라 에러코드 레지스트리를 타지 않고 종료코드로 알린다.
    */
   async resolveMeta(
     options: Pick<ParseGuidelineOptions, 'externalId' | 'sourceSystem' | 'overrides'>,
   ): Promise<GuidelineDocumentMeta> {
-    void this.sourceDocuments;
-    void options;
-    return Promise.resolve({
-      title: '',
-      publisher: '',
-      version: '',
-      publishedAt: '',
-      sourceUrl: '',
-    });
+    const sourceSystem = options.sourceSystem ?? DEFAULT_SOURCE_SYSTEM;
+    const row = await this.sourceDocuments.findLatestByExternalId(
+      sourceSystem,
+      options.externalId,
+    );
+    if (!row) {
+      throw new Error(
+        `${sourceSystem} ${options.externalId} 문서를 source_documents에서 찾지 못했습니다. ` +
+          '먼저 `pnpm acquire:nckm --guide-idx <idx>`로 원본을 수집하세요.',
+      );
+    }
+
+    const overrides = options.overrides ?? {};
+    const releaseDate = row.releaseDate ?? undefined;
+    const meta: GuidelineDocumentMeta = {
+      title: overrides.title ?? row.title,
+      publisher: overrides.publisher ?? row.publisher,
+      sourceUrl: overrides.sourceUrl ?? row.sourceUrl,
+      version: overrides.version ?? releaseDate ?? '',
+      publishedAt: overrides.publishedAt ?? toIsoDate(releaseDate),
+    };
+    if (!meta.version || !meta.publishedAt) {
+      throw new Error(
+        `${sourceSystem} ${options.externalId}의 release_date가 없습니다. ` +
+          '`--version`과 `--published-at`으로 직접 지정하세요.',
+      );
+    }
+    return meta;
   }
+}
+
+/** 목록이 "2024-07"처럼 일자 없이 주므로 1일로 보정한다 (§19 「문서 메타의 출처」) */
+function toIsoDate(releaseDate: string | undefined): string {
+  if (!releaseDate) return '';
+  return /^\d{4}-\d{2}$/.test(releaseDate) ? `${releaseDate}-01` : releaseDate;
 }
