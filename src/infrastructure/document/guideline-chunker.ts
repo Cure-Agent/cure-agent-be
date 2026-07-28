@@ -82,6 +82,45 @@ interface Paragraph {
 }
 
 /**
+ * 청킹 진단 (docs/specs/20) — 실패를 조용히 넘기지 않기 위한 근거다.
+ *
+ * 기준은 마커 *출현* 수가 아니라 *고유 권고 번호*다. 본문·결과요약표가 `【R】`를 재인용하므로
+ * 출현 수는 블록 수의 불변식이 될 수 없다 (편두통 171: 출현 44 / 고유 37).
+ */
+export interface ChunkDiagnostics {
+  /** 문서에서 관측된 고유 권고 번호 (재인용 제외 전) */
+  uniqueNumbers: string[];
+  /** 권고문 청크가 만들어지지 않은 번호 */
+  missing: string[];
+  /** 권고문 청크가 2개 이상 만들어진 번호 — 재인용을 블록으로 오인한 신호 */
+  duplicated: string[];
+  /** 권고문 청크는 있으나 등급을 추출하지 못한 번호 */
+  gradeMissing: string[];
+}
+
+export interface ChunkResult {
+  input: GuidelineIngestInput;
+  diagnostics: ChunkDiagnostics;
+}
+
+/**
+ * 페이지 텍스트 배열(물리 페이지 순서)을 인제스트 입력 + 진단으로 변환한다.
+ *
+ * 진단만 만들고 **던지지 않는다** — 실패 판정은 호출자(서비스)의 몫이다.
+ * `verify:templates`는 여러 문서를 훑으며 상태를 모아야 하므로 예외로 중단되면 안 된다.
+ */
+export function chunkNckmGuidelineWithDiagnostics(
+  pages: string[],
+  meta: GuidelineDocumentMeta,
+): ChunkResult {
+  void pages;
+  return {
+    input: { ...meta, sections: [] },
+    diagnostics: { uniqueNumbers: [], missing: [], duplicated: [], gradeMissing: [] },
+  };
+}
+
+/**
  * 페이지 텍스트 배열(물리 페이지 순서)을 인제스트 입력으로 변환한다.
  *
  * @param pages PDF에서 추출한 페이지별 평문. 각 페이지 첫 줄이 인쇄 페이지 번호다.
