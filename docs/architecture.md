@@ -220,10 +220,11 @@ cure-agent-be/
 │       │   │   ├── circuit-breaker.ts        # 연속 실패 시 차단
 │       │   │   └── rate-limit-block-store.ts # 429 감지 시 일정시간 호출 차단
 │       │   └── response-cache.ts             # 규칙은 §11 (P1)
-│       ├── embedding/                        # 포트 유지
-│       ├── retrieval/                        # 포트 유지
-│       ├── document/                         # pdf-parser, guideline-chunker (P1)
-│       └── scheduler/                        # P1
+│       ├── embedding/                        # 포트 (외부 API — fake 치환)
+│       ├── retrieval/                        # 포트 없음 — DB 검색이라 실물로 검증
+│       ├── guideline-source/                 # 포트 (NCKM HTTP — fake 치환) §18
+│       ├── document/                         # pdf-parser, guideline-chunker §19
+│       └── scheduler/                        # 지침 개정 감지 크론 §20
 │
 ├── test/
 │   ├── contract/                     # OpenAPI 재생성 diff + breaking change 검사
@@ -256,7 +257,9 @@ domain/patient/
 
 원칙:
 
-- **포트(인터페이스) 추상화는 `llm`/`embedding`/`retrieval`에만 둔다.** fake 대역과 프로바이더 교체가 실제 요구사항인 곳이다. 일반 CRUD 도메인은 구현 1개짜리 인터페이스를 만들지 않는다 — 필요해지는 시점에 추출한다.
+- **포트(인터페이스) 추상화는 프로세스 밖 경계에만 둔다** — 외부 HTTP·유료 API·비결정적 응답처럼 **e2e에서 fake로 치환해야 검증이 성립하는** 지점이다(§13). 판단 기준은 "교체할 것 같은가"가 아니라 **"이걸 감싸지 않으면 수용 기준을 테스트로 동결할 수 없는가"**다. 현재 해당: `llm`, `embedding`, `oauth`, `guideline-source`(§18).
+  - DB는 Testcontainers로 실물을 쓰므로 포트를 만들지 않는다. 일반 CRUD 도메인도 구현 1개짜리 인터페이스를 만들지 않는다 — 필요해지는 시점에 추출한다.
+  - 이 목록은 열거가 아니라 위 기준의 현재 스냅샷이다. 새 외부 경계가 생기면 목록에 추가하되, **기준을 만족하지 않으면 추가하지 않는다.**
 - Entity에 Swagger 데코레이터를 붙이거나 Entity를 컨트롤러에서 직접 반환하지 않는다.
 - 각 NestJS Module은 필요한 서비스만 export해 도메인의 외부 공개 경계를 유지한다.
 - ORM은 Drizzle. PostgreSQL + pgvector가 핵심이며, Drizzle은 vector 타입과 HNSW/IVFFlat 인덱스를 공식 지원하고 마이그레이션에서 `CREATE EXTENSION vector`를 직접 관리할 수 있다.
@@ -898,7 +901,7 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 **BE:**
 
-- `test/e2e`: Testcontainers로 `pgvector/pgvector` 실DB 기동. LLM/embedding은 **포트 덕분에 fake provider로 치환** — 포트를 llm 계열에만 유지하는 이유가 이것이다.
+- `test/e2e`: Testcontainers로 `pgvector/pgvector` 실DB 기동. 외부 경계(LLM·embedding·oauth·지침 원본 수집)는 **포트 덕분에 fake로 치환** — 포트를 프로세스 밖 경계에만 두는 이유가 이것이다(§3). DB는 반대로 실물을 쓴다.
 - e2e 필수 시나리오:
   - 타 클리닉 리소스 접근 → 404 (§4.4)
   - refresh rotation·재사용 감지 → family 전체 폐기 + 같은 family의 access 토큰 즉시 차단
@@ -942,16 +945,21 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 각 스텝은 구현 전에 `docs/specs/NN-<이름>.md`를 작성한다. 스펙은 1페이지를 유지하고, 이 문서와 중복되는 내용은 §링크로만 참조한다.
 
-**12단계 이후 — spec을 쓸 것과 쓰지 않을 것**: 구현 순서는 12단계로 끝나지만 변경은 계속된다. 판단 기준은 "새 기능인가"가 아니라 **"동결할 수용 기준을 쓸 수 있는가"** 다.
+**12단계 이후 — 두 하네스의 역할 분리**: 구현 순서는 12단계로 끝나지만 변경은 계속된다. 판단 기준은 "새 기능인가"가 아니라 **"6개월 뒤 누군가 이 결정의 근거를 찾을 것인가"** 다 — 영속 문서가 자산이 되는 변경만 spec을 쓴다.
 
-| spec 작성 후 `/implement` | spec 없이 이슈·PR로 |
+| spec 작성 후 `/implement` | `/problem` |
 |---|---|
-| 새 엔드포인트·도메인 | 인프라·CI·배포 파이프라인 조정 |
-| 계약(DTO·OpenAPI) 변경 | 리팩토링, 의존성 업그레이드 |
-| 마이그레이션 동반 | 버그 픽스 (회귀 테스트로 충분) |
-| 인증·보안 정책 변경 | 로그·모니터링 튜닝 |
+| 새 엔드포인트·도메인 | 버그 픽스·장애 대응 |
+| 계약(DTO·OpenAPI) 변경 | 마이그레이션 단독 |
+| 인증·보안 정책 변경 | 인프라·CI·배포 조정, 리팩토링, 의존성 업그레이드, 로그·모니터링 튜닝 |
 
-오른쪽 열에 spec을 쓰면 동결할 계약이 없어 Phase 2가 성립하지 않는다. 실제 운영 예: 13~17은 spec을 썼고, #20(인프라 정합화)·#24(CI 트리거)는 쓰지 않았다.
+**두 경로 모두 테스트를 동결한다** — 차이는 "동결하느냐"가 아니라 **수용 기준을 영속 문서로 남기느냐**다. 절차 원본은 `automation/freeze.md` 하나이며 양쪽이 파라미터만 달리해 호출한다(명세 출처: spec 전문 / Phase 1 해결책 상세).
+
+- **마이그레이션 단독**은 오른쪽이다: `automation/pipeline.md`의 「파괴적 DB 마이그레이션 2단계 배포 원칙」이 절차로 다루므로 문서가 따로 필요하지 않다.
+- **라우팅은 사람이 고르지 않는다.** 버그 리포트 시점에는 원인을 모르므로(설정값 문제인지 정책 결함인지) 하네스 선택을 사전에 할 수 없다. 운영 변경은 무조건 `/problem`으로 시작하고, `automation/problem.md` Phase 1.5가 **진단 후에** 영향 파일을 경로 패턴(계약·보안·새 도메인)에 대조해 기계적으로 판정한다. 걸리면 그 자리에서 spec 승격, 통과하면 계속 진행한다.
+- 구현 중 계약·보안 변경이 뒤늦게 드러나면 **그 자리에서 중단하고 보고**한다 — 하네스는 스스로 경계를 넘지 않는다. 최종 안전망은 PR의 `openapi-breaking` job이다.
+
+실제 운영 예: 13~17은 spec을 썼고, #20(인프라 정합화)·#24(CI 트리거)는 쓰지 않았다.
 
 ```markdown
 # NN. <스텝 이름>
