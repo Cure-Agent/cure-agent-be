@@ -18,6 +18,7 @@
     "test:e2e": "jest --config test/jest-e2e.json",
     "openapi:export": "ts-node -T scripts/export-openapi.ts",
     "ingest": "ts-node -T scripts/ingest-guidelines.ts",
+    "acquire:nckm": "ts-node -T scripts/acquire-guidelines.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

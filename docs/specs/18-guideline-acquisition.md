@@ -23,6 +23,10 @@
   의존하지 않으며, 실제 NCKM 호출은 CLI 실행 시에만 일어난다. §3의 포트 기준("감싸지 않으면 수용
   기준을 동결할 수 없는 프로세스 밖 경계")을 만족한다 — 수용 기준 2·3·4·7이 응답 형태를 제어해야
   검증 가능하기 때문이다.
+- **판정은 포트가 아니라 서비스가 한다.** 포트는 받아온 것을 그대로 넘기고
+  (`{ body: Buffer, contentType: string }`, 네트워크 실패는 예외를 던진다),
+  `FETCHED`/`SKIPPED_NO_ATTACHMENT`/`FAILED` 판정과 매직바이트 검사는 서비스의 몫이다 —
+  포트가 판정하면 fake도 판정을 흉내내야 해서 **수용 기준 2·3·4가 자기 자신을 검증하게 된다.**
 - 다운로드한 PDF는 `--out` 디렉토리(기본 `.cure-data/`, git-ignored)에 쓰고 DB에는 경로를 남기지 않는다.
 
 ### NCKM 접속 규약 (실측 확인 — 2026-07-28)
@@ -58,7 +62,7 @@
 | `title` / `publisher` / `release_date` | 목록 메타. `release_date`는 **text**("2024-07") |
 | `source_url` | view.do — 인용 시 노출할 원문 링크 |
 | `file_hash` | **응답 본문을 받았으면 그 내용이 무엇이든 sha256**(PDF든 HTML 에러 페이지든). 본문 자체를 못 받은 네트워크 실패만 NULL |
-| `file_bytes` / `content_type` | 다운로드 검증 |
+| `file_bytes` / `content_type` | **본문을 받은 모든 경우** 기록 (`FETCHED`·`SKIPPED_NO_ATTACHMENT`·매직바이트 `FAILED`) — `file_hash`와 같은 규칙. 본문 자체를 못 받은 실패만 NULL |
 | `status` | 위 enum |
 | `error` | 실패 사유, 2000자로 절단 (`ingestion_runs`와 동일 관례) |
 | `fetched_at` | 마지막 확인 시각 |
@@ -93,7 +97,11 @@
 6. 동일 문서의 내용이 바뀜(해시 상이) → 새 행이 추가되고 이전 행은 보존된다
 7. 개별 문서의 네트워크 실패(본문 없음)가 배치 전체를 중단시키지 않는다 — 해당 문서만 `FAILED`
    (`file_hash` NULL), 나머지는 진행. 재실행 시 실패 행은 제약에 걸리지 않고 이력으로 누적된다
-8. 모든 다운로드 요청에 `User-Agent`와 **해당 문서의** `Referer`가 포함된다 (fake가 헤더를 검증)
+8. 모든 다운로드 요청에 `User-Agent`와 **해당 문서의** `Referer`가 포함된다 — **이 항목만 e2e가
+   아니라 `NckmGuidelineSource` 단위 테스트**(`jest.spyOn(global, 'fetch')`)로 검증한다. fake는
+   포트 구현체를 통째로 대체하므로 실 구현이 만드는 HTTP 헤더를 볼 수 없다
+   (`openai-embedding.provider.spec.ts` 기준 1의 `Authorization` 헤더 검증과 같은 패턴).
+   같은 테스트에서 목록 요청이 `rowCount` 파라미터를 쓰는지도 함께 검증한다
 9. `--guide-idx`로 특정 문서만, `--limit`으로 건수를 제한해 수집할 수 있다
 
 ## Out of scope
