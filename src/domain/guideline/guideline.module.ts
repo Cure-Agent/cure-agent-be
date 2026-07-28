@@ -7,6 +7,7 @@ import { GuidelineRepository } from './repository/guideline.repository';
 import { SourceDocumentRepository } from './repository/source-document.repository';
 import { GuidelineAcquisitionService } from './service/guideline-acquisition.service';
 import { GuidelineIngestService } from './service/guideline-ingest.service';
+import { GuidelineParseService } from './service/guideline-parse.service';
 import { GuidelineService } from './service/guideline.service';
 
 @Module({
@@ -19,7 +20,9 @@ import { GuidelineService } from './service/guideline.service';
     // 지침 원본 수집 (docs/specs/18) — 엔드포인트 없이 CLI가 소비한다
     GuidelineAcquisitionService,
     SourceDocumentRepository,
+    // 지침 PDF 파싱 (docs/specs/19) — 위와 같이 CLI가 소비한다
+    GuidelineParseService,
   ],
-  exports: [GuidelineIngestService, GuidelineAcquisitionService],
+  exports: [GuidelineIngestService, GuidelineAcquisitionService, GuidelineParseService],
 })
 export class GuidelineModule {}
