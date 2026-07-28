@@ -34,6 +34,19 @@ export interface AcquireResult {
   items: AcquireItemResult[];
 }
 
+/**
+ * 단건 수집 결과 (docs/specs/21).
+ * 배치(`acquire`)와 달리 **본문을 그대로 돌려준다** — 파이프라인이 메모리에서 파싱하고 버리기
+ * 때문이다. 디스크에 쓰면 누적되고, 현재 수집 경로에는 삭제 코드가 없다.
+ */
+export interface AcquiredDocument {
+  item: SourceListItem;
+  status: SourceDocumentStatus;
+  unchanged: boolean;
+  /** FETCHED일 때만 채워진다 */
+  body: Buffer | null;
+}
+
 const PDF_MAGIC = '%PDF';
 const ERROR_MAX_LENGTH = 2000;
 
@@ -79,6 +92,15 @@ export class GuidelineAcquisitionService {
       unchanged: results.filter((r) => r.unchanged).length,
       items: results,
     };
+  }
+
+  /**
+   * 문서 1건을 수집해 본문과 함께 돌려준다 (docs/specs/21). 파일은 쓰지 않는다.
+   * 원본 목록에 그 externalId가 없으면 `null` — 못 가져온 것(FAILED)과 없는 것을 구분한다.
+   */
+  // TODO(docs/specs/21): 스텁
+  acquireDocument(_externalId: string): Promise<AcquiredDocument | null> {
+    return Promise.reject(new Error('not implemented'));
   }
 
   private async acquireOne(item: SourceListItem, outDir?: string): Promise<AcquireItemResult> {
