@@ -28,6 +28,13 @@
 
 - 목록은 불투명 커서 + PageMeta (§10.4).
 - `pipeline`은 `guideIdx`(NCKM 문서 식별자)를 받는다. 수집은 §18의 `GuidelineSourcePort`를 그대로 쓴다.
+  원본 목록에 그 `guideIdx`가 없으면 404 `NOT_FOUND`다 — 원본을 **못 가져온 것**(502)과 **없는 것**을 구분한다.
+- 중첩된 버전 이력의 순서는 **판본(`version`) 내림차순 → 같은 판본 안에서 `revision` 내림차순**이다.
+  최신 판본의 최신 회차가 항상 맨 위에 온다. revision 단독으로는 판본이 섞여 순서가 의미를 잃는다.
+- `PATCH`는 **요청한 버전의 status만 바꾼다.** SUPERSEDED → ACTIVE 승격이 같은 판본의 다른 ACTIVE
+  revision을 내리지 않는다 — 한 번의 PATCH가 명시하지 않은 행을 바꾸지 않는 편이 예측 가능하고,
+  ACTIVE가 둘이면 검색이 양쪽을 모두 볼 뿐 손실이 없다. 되돌리려면 다른 쪽을 별도 PATCH으로 내린다.
+  (재적재 경로의 `revision+1`은 이와 별개로 직전 revision을 자동으로 내린다 — 아래 「재적재 의미론」.)
 - **버전을 서브리소스로 분리하지 않는다.** 지침당 판본 1~3개 + revision 몇 개라 86건 전부여도 200행
   남짓이고, 페이지네이션이 필요할 만큼 커지지 않는다. `AdminGuidelineResponseDto`가
   `versions: [{ revision, status, version, publishedAt, contentHash, chunkCount }]`를 중첩해 담는다.
@@ -152,10 +159,10 @@ SUPERSEDED 청크는 새 답변에 인용되지 않고, 과거 인용에서는 �
 5. **파싱 결과가 바뀐 뒤 재실행 → `revision=2`가 `ACTIVE`, `revision=1`은 `SUPERSEDED`로 내려가고
    revision 1의 청크는 그대로 남아 있다**
 6. 검색은 `ACTIVE` 버전의 청크만 반환한다 — 5의 상태에서 revision 1의 청크는 검색 결과에 없다
-7. GET /admin/guidelines: 지침 목록에 **버전 이력이 revision 내림차순으로 중첩**되어 status·
-   contentHash·청크 수가 함께 나오고, 커서 페이지네이션이 동작한다
+7. GET /admin/guidelines: 지침 목록에 **버전 이력이 판본 내림차순 → revision 내림차순으로 중첩**되어
+   status·contentHash·청크 수가 함께 나오고, 커서 페이지네이션이 동작한다
 8. PATCH status: `ACTIVE` → `SUPERSEDED` 전환이 반영되고, 그 버전의 청크가 검색에서 빠진다.
-   미존재 버전 → 404
+   **다른 버전의 status는 바뀌지 않는다.** 미존재 버전 → 404
 9. **DELETE: 인용이 없는 버전 → 204, 그 버전의 청크·섹션·버전 행이 사라진다.** 같은 지침의 다른
    버전은 영향받지 않는다
 10. **DELETE: 인용된 청크가 있는 버전 → 409 `GUIDELINE_VERSION_CITED`, 청크·섹션·버전이 하나도
