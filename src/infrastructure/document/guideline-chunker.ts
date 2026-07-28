@@ -146,8 +146,11 @@ export interface ChunkResult {
  *
  * 진단만 만들고 **던지지 않는다** — 실패 판정은 호출자(서비스)의 몫이다.
  * `verify:templates`는 여러 문서를 훑으며 상태를 모아야 하므로 예외로 중단되면 안 된다.
+ *
+ * @param pages PDF에서 추출한 페이지별 평문. 각 페이지 첫 줄이 인쇄 페이지 번호다.
+ * @param meta 문서 메타 (title·publisher·version·publishedAt·sourceUrl)
  */
-export function chunkNckmGuidelineWithDiagnostics(
+export function chunkNckmGuideline(
   pages: string[],
   meta: GuidelineDocumentMeta,
 ): ChunkResult {
@@ -209,19 +212,6 @@ function findMarkerOccurrences(lines: SourceLine[]): MarkerOccurrence[] {
 function isBlockStart(lines: SourceLine[], index: number): boolean {
   const window = lines.slice(index + 1, index + 1 + BLOCK_EVIDENCE_WINDOW);
   return window.some((line) => TABLE_HEADER.test(line.text) || GRADE_TOKEN.test(line.text));
-}
-
-/**
- * 페이지 텍스트 배열(물리 페이지 순서)을 인제스트 입력으로 변환한다.
- *
- * @param pages PDF에서 추출한 페이지별 평문. 각 페이지 첫 줄이 인쇄 페이지 번호다.
- * @param meta 문서 메타 (title·publisher·version·publishedAt·sourceUrl)
- */
-export function chunkNckmGuideline(
-  pages: string[],
-  meta: GuidelineDocumentMeta,
-): GuidelineIngestInput {
-  return chunkNckmGuidelineWithDiagnostics(pages, meta).input;
 }
 
 /** 페이지 헤더를 파싱한 결과 — 선언되지 않은 항목은 undefined다 */

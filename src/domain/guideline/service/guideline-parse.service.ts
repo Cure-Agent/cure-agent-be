@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   ChunkDiagnostics,
-  chunkNckmGuidelineWithDiagnostics,
+  chunkNckmGuideline,
   GuidelineDocumentMeta,
 } from '../../../infrastructure/document/guideline-chunker';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
@@ -39,7 +39,7 @@ export class GuidelineParseService {
    */
   async parse(options: ParseGuidelineOptions): Promise<GuidelineIngestInput> {
     const meta = await this.resolveMeta(options);
-    const { input, diagnostics } = chunkNckmGuidelineWithDiagnostics(options.pages, meta);
+    const { input, diagnostics } = chunkNckmGuideline(options.pages, meta);
     assertParsable(diagnostics);
     return input;
   }

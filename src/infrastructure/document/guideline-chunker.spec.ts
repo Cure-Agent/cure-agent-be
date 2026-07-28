@@ -54,7 +54,7 @@ describe('spec 19: 지침 PDF 파싱·청킹', () => {
   let chunks: LocatedChunk[];
 
   beforeEach(() => {
-    parsed = chunkNckmGuideline(nckmSamplePages, meta);
+    parsed = chunkNckmGuideline(nckmSamplePages, meta).input;
     chunks = flattenChunks(parsed);
   });
 
