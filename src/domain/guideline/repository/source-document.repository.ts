@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import {
   SourceDocumentRow,
@@ -44,6 +44,25 @@ export class SourceDocumentRepository {
           eq(sourceDocuments.fileHash, fileHash),
         ),
       )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /** 문서 메타 조회용 — 같은 external_id의 최신 행 (docs/specs/19) */
+  async findLatestByExternalId(
+    sourceSystem: string,
+    externalId: string,
+  ): Promise<SourceDocumentRow | null> {
+    const rows = await this.txManager.conn
+      .select()
+      .from(sourceDocuments)
+      .where(
+        and(
+          eq(sourceDocuments.sourceSystem, sourceSystem),
+          eq(sourceDocuments.externalId, externalId),
+        ),
+      )
+      .orderBy(desc(sourceDocuments.fetchedAt))
       .limit(1);
     return rows[0] ?? null;
   }
