@@ -4,7 +4,7 @@
 
 ## 목표
 
-지침 코퍼스를 API로 **조회·적재·폐기·삭제**한다. 지금 파이프라인은 단방향이라 되돌릴 수단이 없다:
+지침 코퍼스를 API로 **적재·조회·폐기·삭제**한다. 지금 파이프라인은 단방향이라 되돌릴 수단이 없다:
 
 - `GuidelineIngestService`는 동일 버전 재인제스트를 **조용히 skip**한다(`created: false`)
 - repository에 삭제·수정 메서드가 **없다**
@@ -13,7 +13,7 @@
 §20에서 파서를 고쳤고 171·324는 아직 PARTIAL이다. 파서는 앞으로도 바뀌므로 **재적재는 예외가 아니라
 일상**인데, 지금은 DB를 직접 건드리는 것 말고 길이 없다. **코퍼스를 올리기 전에** 되돌릴 수단이 있어야 한다.
 
-수집·파싱 트리거는 여기 없다 — 770MB·수 분짜리 배치는 HTTP 요청/응답 모양이 아니다. §22 스케줄러의 몫이다.
+문서 **1건**의 수집→파싱→적재까지 이 스텝에서 다룬다. **전건 일괄은 다루지 않는다** — 아래 「1건과 전건의 경계」.
 
 ## 범위 (엔드포인트)
 
@@ -21,17 +21,63 @@
 
 | API | Request | Response data | 동작 |
 |---|---|---|---|
-| GET /admin/guidelines | ListAdminGuidelinesQueryDto | AdminGuidelineSummaryResponseDto[] + page | 지침별 버전 수·활성 revision·청크 수 |
-| GET /admin/guidelines/{guidelineId}/versions | – | AdminGuidelineVersionResponseDto[] | 버전 이력 (revision·status·contentHash·청크 수) |
-| POST /admin/guidelines/ingest | GuidelineIngestInput (§5 계약 그대로) | AdminIngestResponseDto | 파싱된 JSON 적재 |
+| POST /admin/guidelines/pipeline | RunPipelineRequestDto | AdminIngestResponseDto | **1건 수집→파싱→적재** |
+| GET /admin/guidelines | ListAdminGuidelinesQueryDto | AdminGuidelineResponseDto[] + page | 지침 목록 — **버전 이력을 중첩해 담는다** |
 | PATCH /admin/guideline-versions/{versionId} | UpdateVersionStatusRequestDto | AdminGuidelineVersionResponseDto | ACTIVE ↔ SUPERSEDED |
 | DELETE /admin/guideline-versions/{versionId} | – | 204 | 버전·섹션·청크 삭제 |
-| GET /admin/ingestion-runs | ListIngestionRunsQueryDto | AdminIngestionRunResponseDto[] + page | 인제스트 이력 |
 
 - 목록은 불투명 커서 + PageMeta (§10.4).
-- **인제스트는 파싱된 JSON을 받는다.** §19가 파싱과 적재를 분리한 이유(*"중간 산출물을 눈으로 검토하는
-  단계가 인용 정확도의 마지막 방어선"*)를 API에서도 유지한다 — 업로드 전에 사람이 JSON을 본다.
-- 문서 1건 적재는 청크 수백 개 + 임베딩 배치 몇 회라 **동기 처리**로 충분하다. 배치가 필요한 수집은 §22.
+- `pipeline`은 `guideIdx`(NCKM 문서 식별자)를 받는다. 수집은 §18의 `GuidelineSourcePort`를 그대로 쓴다.
+- **버전을 서브리소스로 분리하지 않는다.** 지침당 판본 1~3개 + revision 몇 개라 86건 전부여도 200행
+  남짓이고, 페이지네이션이 필요할 만큼 커지지 않는다. `AdminGuidelineResponseDto`가
+  `versions: [{ revision, status, version, publishedAt, contentHash, chunkCount }]`를 중첩해 담는다.
+  §5가 `GET /guidelines/{id}/evidence`를 서브리소스로 둔 것은 청크가 버전당 152개라 페이지네이션이
+  실제로 필요해서였다 — 버전은 그 경우가 아니다.
+
+### 파싱·적재를 합치고, 적재 전 검토 경로는 두지 않는다
+
+§19는 둘을 일부러 분리했다 — *"중간 산출물을 눈으로 검토하는 단계가 인용 정확도의 마지막 방어선"*.
+그건 **자동 검증도 없고 되돌릴 수도 없던 시점**의 논리다. 전제가 둘 다 바뀌었다:
+
+| §19 당시 | 지금 |
+|---|---|
+| 파서가 조용히 0청크를 낼 수 있었다 | **§20 실패 가드** — 마커 수 불일치·등급 누락·중복이면 실패한다 |
+| 잘못 적재하면 되돌릴 수 없었다 | **이 스텝의 revision·SUPERSEDED·삭제** |
+
+그래서 **"적재 전 검토"를 "적재 후 검토·되돌리기"로 대체한다.** 파싱 결과만 돌려주는 엔드포인트나
+JSON을 직접 올리는 엔드포인트는 두지 않는다 — revision·삭제를 넣으면서 적재 전 검토 경로를 따로
+남기는 것은 앞뒤가 맞지 않는다. 운영 루프는 이렇다:
+
+```
+pipeline → 구조 문제면 422로 막힘 (§20 가드, 적재 없음)
+         → 통과하면 적재 → GET versions·검색으로 확인
+                        → 나쁘면 DELETE(인용 없음) 또는 PATCH SUPERSEDED
+                        → 파서를 고치고 다시 pipeline → revision+1
+```
+
+- **손으로 고친 JSON을 올리는 경로는 만들지 않는다.** 청크는 파싱 산출물이라 손으로 고치지 않는다(Out of scope).
+- 가드가 막았을 때 **파싱 출력을 보는 일은 로컬에서 한다** — NCKM은 공개라 받아서 CLI로 돌리면 되고,
+  171·324를 실제로 그렇게 진단했다. 프로덕션에 디버깅용 엔드포인트를 두지 않는다.
+
+### PDF는 디스크에 쓰지 않는다
+
+`pipeline`은 받은 PDF를 **메모리에서 파싱하고 버린다.** 실측 크기가 중앙값 5.5MB·최대 90.5MB라
+단일 버퍼로 감당되고, 디스크에 쓰면 누적된다 — 현재 수집 경로에는 **삭제 코드가 없어** 그대로 쌓인다.
+`source_documents` 기록(해시·상태·`fetched_at`)은 §18 그대로 남긴다. 원본이 필요하면 재다운로드한다(§18 목표).
+
+`extractPdfPages`는 파일 경로만 받으므로 **버퍼를 받는 경로를 추가**한다(내부적으로 이미 `Uint8Array`를 쓴다).
+
+### 1건과 전건의 경계
+
+**1건은 잡이 필요 없고, 전건은 잡 없이는 불가능하다.** 이 선에서 스텝을 자른다.
+
+| 단위 | 소요 | 형태 |
+|---|---|---|
+| 1건 | 다운로드(중앙값 5.5MB) + 파싱 0.8초 + 임베딩 ~2회 ≈ **10~20초** | 동기 HTTP로 충분 (`nginx` 일반 API `proxy_read_timeout 300s`) |
+| 전건 86건 | 스로틀 43초 + 770MB 전송 + 파싱 1~2분 + 임베딩 ~135회 ≈ **수 분** | 잡 + 진행 스트림 필요 → **별도 spec** |
+
+27건 정도는 이 API를 27번 호출하면 된다(스크립트로 감으면 그만이다). 전건 자동화가 실제로 필요해지면
+그때 잡을 만든다.
 
 ## Entity / 마이그레이션 변경분
 
@@ -76,6 +122,12 @@ SUPERSEDED 청크는 새 답변에 인용되지 않고, 과거 인용에서는 �
 | 코드 | status | message |
 |---|---|---|
 | `GUIDELINE_VERSION_CITED` | 409 | 이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요. |
+| `GUIDELINE_PARSE_FAILED` | 422 | 지침을 파싱하지 못했습니다. |
+| `GUIDELINE_SOURCE_UNAVAILABLE` | 502 | 지침 원본을 가져오지 못했습니다. |
+
+- `GUIDELINE_PARSE_FAILED`의 `data`에 §20 가드가 잡은 **문제 권고 번호를 싣는다**(`missing`·`duplicated`·
+  `gradeMissing`). 어떤 번호가 왜 걸렸는지 없으면 어디를 고쳐야 하는지 알 수 없다.
+- 첨부가 없는 문서(§18 `SKIPPED_NO_ATTACHMENT`)는 에러가 아니다 — 200으로 그 상태를 돌려준다.
 
 나머지는 공통으로 충분하다 — 미인증 `UNAUTHORIZED`(401), 역할 부족 `FORBIDDEN`(403), 미존재 `NOT_FOUND`(404).
 
@@ -90,28 +142,34 @@ SUPERSEDED 청크는 새 답변에 인용되지 않고, 과거 인용에서는 �
 ## 수용 기준 (= 동결할 e2e 시나리오, Definition of Done)
 
 1. 미인증으로 `/admin/*` 접근 → 401 `UNAUTHORIZED`. `MEMBER` 역할로 접근 → **403 `FORBIDDEN`**
-   (6개 엔드포인트 전부)
-2. `ADMIN`으로 POST ingest → 201, `revision=1` · `status=ACTIVE`로 저장되고 청크에 임베딩이 존재한다
-3. **동일 입력 재적재 → 새 revision이 생기지 않고 `created=false`**, `ingestion_runs`만 1건 늘어난다
-   (§5 수용 기준 2의 멱등성이 깨지지 않는다)
-4. **내용이 바뀐 재적재 → `revision=2`가 `ACTIVE`, `revision=1`은 `SUPERSEDED`로 내려가고
+   (전 엔드포인트)
+2. `ADMIN`으로 POST pipeline → `source_documents`에 수집 기록이 남고, `revision=1` · `status=ACTIVE`로
+   적재되며 청크에 임베딩이 존재한다. **PDF 파일이 디스크에 남지 않는다**
+3. **파싱 가드에 걸리는 문서로 POST pipeline → 422 `GUIDELINE_PARSE_FAILED`**, `data`에 문제 권고
+   번호가 실리고 **적재는 일어나지 않는다**(`guideline_versions` 무변경)
+4. **같은 문서로 POST pipeline 재실행** → 내용이 같으면 새 revision이 생기지 않고 `created=false`,
+   `ingestion_runs`만 1건 늘어난다 (§5 수용 기준 2의 멱등성이 깨지지 않는다)
+5. **파싱 결과가 바뀐 뒤 재실행 → `revision=2`가 `ACTIVE`, `revision=1`은 `SUPERSEDED`로 내려가고
    revision 1의 청크는 그대로 남아 있다**
-5. 검색은 `ACTIVE` 버전의 청크만 반환한다 — 4의 상태에서 revision 1의 청크는 검색 결과에 없다
-6. GET /admin/guidelines: 지침별 버전 수·활성 revision·청크 수가 나오고 커서 페이지네이션이 동작한다
-7. GET /admin/guidelines/{id}/versions: revision 내림차순으로 status·contentHash·청크 수가 나온다.
-   미존재 지침 → 404
+6. 검색은 `ACTIVE` 버전의 청크만 반환한다 — 5의 상태에서 revision 1의 청크는 검색 결과에 없다
+7. GET /admin/guidelines: 지침 목록에 **버전 이력이 revision 내림차순으로 중첩**되어 status·
+   contentHash·청크 수가 함께 나오고, 커서 페이지네이션이 동작한다
 8. PATCH status: `ACTIVE` → `SUPERSEDED` 전환이 반영되고, 그 버전의 청크가 검색에서 빠진다.
    미존재 버전 → 404
 9. **DELETE: 인용이 없는 버전 → 204, 그 버전의 청크·섹션·버전 행이 사라진다.** 같은 지침의 다른
    버전은 영향받지 않는다
 10. **DELETE: 인용된 청크가 있는 버전 → 409 `GUIDELINE_VERSION_CITED`, 청크·섹션·버전이 하나도
     지워지지 않는다** (부분 삭제 없음)
-11. GET /admin/ingestion-runs: 최신순 + 커서 페이지네이션, 실패 실행의 `error`가 함께 보인다
 
 ## Out of scope
 
-- **수집·파싱 트리거** — 770MB·수 분짜리 배치는 HTTP 모양이 아니다. §22 스케줄러가 잡으로 수행하고,
-  이 API는 그 잡이 만든 결과를 조회·관리한다
+- **전건 일괄 파이프라인** — 수 분짜리라 잡과 진행 스트림이 필요하다. 잡을 만들면 크론도 그것을
+  부르면 되므로 **잡·진행 스트림을 다루는 별도 spec**에서 함께 설계한다
+- **인제스트 이력 조회 API**(`ingestion_runs`) — 이 스텝의 `pipeline`은 **동기**라 실패·skip이
+  HTTP 응답에 그대로 담긴다. 사후 조회가 꼭 필요해지는 것은 **잡이 비동기로 도는 시점**이고, 그때는
+  runs가 무슨 일이 있었는지 아는 유일한 기록이 된다 — 위 잡 spec에서 함께 만든다.
+  기록 자체는 `GuidelineIngestService`가 지금도 계속 쌓으므로 나중에 읽기만 붙이면 된다
+- **개정 감지 스케줄러**(크론 + Redis 락 + 개정 판정) — 위 잡을 감싸는 **별도 spec**
 - **역할 관리 API** — 누가 누구에게 ADMIN을 주는가. 최초 지정은 수동 `UPDATE`로 하고, 필요해지면 별도 spec
 - **관리 화면(FE)** — 이 스텝은 계약까지다
 - 문서별·클리닉별 세밀한 권한, 감사 로그 전용 테이블
