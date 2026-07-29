@@ -68,19 +68,27 @@ export class NckmGuidelineSource implements GuidelineSourcePort {
     url.searchParams.set('guide_idx', item.externalId);
     url.searchParams.set('file_type', 'pdf');
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': this.config.userAgent,
-        // 해당 문서의 상세 페이지여야 한다 — 다른 Referer는 WAF가 막는다
-        Referer: item.sourceUrl,
-      },
-    });
-    if (!response.ok) {
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': this.config.userAgent,
+          // 해당 문서의 상세 페이지여야 한다 — 다른 Referer는 WAF가 막는다
+          Referer: item.sourceUrl,
+        },
+      });
+    } catch (error) {
+      // 본문 자체를 못 받은 것만 실패다 — guide_idx와 원인을 실어야 기록만 보고 진단할 수 있다
       throw new GuidelineSourceError(
-        `NCKM 다운로드 실패 guide_idx=${item.externalId} (${response.status})`,
+        `NCKM 다운로드 실패 guide_idx=${item.externalId} ` +
+          `(${error instanceof Error ? error.message : String(error)})`,
       );
     }
 
+    // **상태 코드로 판정하지 않는다.** 첨부가 없는 문서에 NCKM이 돌려주는 응답이 200 OK에서
+    // 500으로 바뀐 적이 있는데(본문은 같은 2,852B 에러 페이지), `!response.ok`로 막던 시절에는
+    // 그 변화만으로 §18이 설계한 SKIPPED_NO_ATTACHMENT 경로가 통째로 무력화됐다.
+    // 본문을 받았으면 그대로 넘기고 판정은 서비스의 `judge()`에 맡긴다 (포트 계약).
     return {
       body: Buffer.from(await response.arrayBuffer()),
       contentType: response.headers.get('content-type') ?? '',

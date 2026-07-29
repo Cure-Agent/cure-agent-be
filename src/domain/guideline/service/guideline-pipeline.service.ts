@@ -98,11 +98,18 @@ export class GuidelinePipelineService {
         );
       }
       if (acquired.status === 'FAILED') {
+        // 수집이 남긴 사유를 detail로 실어 `pipeline_runs.error`까지 가져간다 — 코드만 남으면
+        // 「지침 원본을 가져오지 못했습니다.」뿐이라 HTTP 상태도 원인도 알 수 없다.
+        // detail은 응답 봉투에 쓰이지 않으므로(`service.exception.ts`) 계약은 그대로다.
         return await this.fail(
           options,
           run,
           phase,
-          new ServiceException('GUIDELINE_SOURCE_UNAVAILABLE'),
+          new ServiceException(
+            'GUIDELINE_SOURCE_UNAVAILABLE',
+            undefined,
+            acquired.error ?? undefined,
+          ),
         );
       }
 
