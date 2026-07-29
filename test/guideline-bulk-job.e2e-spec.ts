@@ -622,7 +622,7 @@ describe('spec 22: 지침 전건 파이프라인', () => {
       await fakeSource.waitForDownloads(1);
 
       stream = await openSseStream(
-        `${currentApp().getUrl()}/api/v1/admin/guideline-jobs/${created.id}/stream`,
+        `${await currentApp().getUrl()}/api/v1/admin/guideline-jobs/${created.id}/stream`,
         { cookie: admin.cookie, timeoutMs: 5_000 },
       );
       expect(stream.status).toBe(200);
@@ -730,7 +730,7 @@ describe('spec 22: 지침 전건 파이프라인', () => {
       await fakeSource.waitForDownloads(1);
 
       lateStream = await openSseStream(
-        `${currentApp().getUrl()}/api/v1/admin/guideline-jobs/${lateJob.id}/stream`,
+        `${await currentApp().getUrl()}/api/v1/admin/guideline-jobs/${lateJob.id}/stream`,
         { cookie: admin.cookie },
       );
       const snapshot = asJobEvent(await lateStream.waitFor('job.snapshot'));
