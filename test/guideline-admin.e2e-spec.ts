@@ -245,7 +245,6 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
         guidelines,
         pipeline_runs,
         guideline_jobs,
-        ingestion_runs,
         source_documents
       CASCADE
     `);
