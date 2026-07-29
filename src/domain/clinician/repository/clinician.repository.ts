@@ -56,6 +56,16 @@ export class ClinicianRepository {
     return rows[0] ?? null;
   }
 
+  /** 역할만 필요한 가드 경로 — 토큰에 박지 않고 요청당 조회한다 (docs/specs/21) */
+  async findRoleById(id: string): Promise<ClinicianRow['role'] | null> {
+    const rows = await this.txManager.conn
+      .select({ role: clinicians.role })
+      .from(clinicians)
+      .where(eq(clinicians.id, id))
+      .limit(1);
+    return rows[0]?.role ?? null;
+  }
+
   async findById(id: string): Promise<{ clinician: ClinicianRow; clinic: ClinicRow } | null> {
     const rows = await this.txManager.conn
       .select({ clinician: clinicians, clinic: clinics })

@@ -813,7 +813,8 @@ class PageMetaDto {
 
 운영 규칙:
 
-- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/403/404/409/422/429/500/503 사용.
+- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/403/404/409/422/429/500/502/503 사용.
+  - **502는 상류(upstream) 실패 전용**이다 — 우리가 호출한 외부 시스템이 응답을 주지 않은 경우이며, 우리 코드의 결함(500)과 구분된다 (첫 사례: `GUIDELINE_SOURCE_UNAVAILABLE`, docs/specs/21).
 - code는 FE 분기용으로 안정적으로 유지, message는 사용자 표시용, traceId는 로그·응답 연결용.
 - 목록은 `data: T[]` + `page: PageMetaDto`. 생성 API는 HTTP 201 + envelope.
 - SSE·파일 다운로드에는 envelope 미적용.
@@ -848,6 +849,10 @@ export const ErrorCodes = {
   SERVICE_NOT_READY:          { status: 503, message: "서비스가 아직 준비되지 않았습니다." },
   // Guidance
   GUIDANCE_ALREADY_REVIEWED:  { status: 409, message: "이미 검토가 완료된 항목입니다." },
+  // Guideline 코퍼스 관리 (docs/specs/21)
+  GUIDELINE_VERSION_CITED:    { status: 409, message: "이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요." },
+  GUIDELINE_PARSE_FAILED:     { status: 422, message: "지침을 파싱하지 못했습니다." },
+  GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: "지침 원본을 가져오지 못했습니다." },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;
