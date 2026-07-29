@@ -136,14 +136,16 @@ export class GuidelineAcquisitionService {
       unchanged: result.unchanged,
       body: result.body,
       contentType: result.contentType,
-      error: null, // 스텁 — 구현에서 채운다
+      error: result.error,
     };
   }
 
   private async acquireOne(
     item: SourceListItem,
     outDir?: string,
-  ): Promise<AcquireItemResult & { body: Buffer | null; contentType: string }> {
+  ): Promise<
+    AcquireItemResult & { body: Buffer | null; contentType: string; error: string | null }
+  > {
     const fetchedAt = new Date();
 
     let body: Buffer;
@@ -154,6 +156,7 @@ export class GuidelineAcquisitionService {
       contentType = download.contentType;
     } catch (error) {
       // 본문 자체를 받지 못했다 — 해시가 없어 partial unique 대상 밖이고, 이력으로 누적된다
+      const reason = truncate(String(error instanceof Error ? error.message : error));
       await this.repository.insert({
         id: ulid(),
         sourceSystem: this.source.system,
@@ -166,7 +169,7 @@ export class GuidelineAcquisitionService {
         fileBytes: null,
         contentType: null,
         status: 'FAILED',
-        error: truncate(String(error instanceof Error ? error.message : error)),
+        error: reason,
         fetchedAt,
       });
       this.logger.warn(`수집 실패 ${item.externalId}: ${String(error)}`);
@@ -176,6 +179,8 @@ export class GuidelineAcquisitionService {
         unchanged: false,
         body: null,
         contentType: '',
+        // 같은 문자열이 source_documents.error에도 들어간다 — 파이프라인이 이걸 실행 기록으로 옮긴다
+        error: reason,
       };
     }
 
@@ -198,6 +203,7 @@ export class GuidelineAcquisitionService {
         unchanged: true,
         body: verdict.persist ? body : null,
         contentType,
+        error: verdict.error,
       };
     }
 
@@ -225,6 +231,7 @@ export class GuidelineAcquisitionService {
       externalId: item.externalId,
       status: verdict.status,
       unchanged: false,
+      error: verdict.error,
       body: verdict.persist ? body : null,
       contentType,
     };
