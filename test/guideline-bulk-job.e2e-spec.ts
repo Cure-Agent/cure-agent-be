@@ -353,7 +353,6 @@ describe('spec 22: 지침 전건 파이프라인', () => {
         guideline_sections,
         guideline_versions,
         guidelines,
-        ingestion_runs,
         source_documents
       CASCADE
     `);
