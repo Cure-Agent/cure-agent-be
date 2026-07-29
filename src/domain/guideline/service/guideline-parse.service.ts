@@ -4,6 +4,7 @@ import {
   chunkNckmGuideline,
   GuidelineDocumentMeta,
 } from '../../../infrastructure/document/guideline-chunker';
+import { ServiceException } from '../../../global/common/exception/service.exception';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
 import { GuidelineIngestInput } from './guideline-ingest.input';
 
@@ -85,25 +86,41 @@ export class GuidelineParseService {
 
 /**
  * 파싱 실패 가드 (docs/specs/20 수용 기준 1~4).
- * 어떤 번호가 문제인지 열거한다 — 열거가 없으면 어디를 고쳐야 하는지 알 수 없다.
+ *
+ * 어떤 번호가 문제인지 **data에 실어** 던진다 — 열거가 없으면 어디를 고쳐야 하는지 알 수 없다
+ * (docs/specs/21). CLI도 같은 예외를 받지만 message가 사람이 읽을 요약을 담는다.
  */
 function assertParsable(diagnostics: ChunkDiagnostics): void {
+  const { missing, duplicated, gradeMissing } = diagnostics;
+  // 마커를 하나도 못 찾은 문서는 세 목록이 모두 비어 있어도 실패다 — 조용한 0청크 적재를 막는다
+  const parsable =
+    diagnostics.uniqueNumbers.length > 0 &&
+    missing.length === 0 &&
+    duplicated.length === 0 &&
+    gradeMissing.length === 0;
+  if (parsable) return;
+
   const problems: string[] = [];
   if (diagnostics.uniqueNumbers.length === 0) {
     problems.push('권고 블록 마커(【R…】)를 하나도 찾지 못했습니다');
   }
-  if (diagnostics.missing.length > 0) {
-    problems.push(`권고문 청크가 만들어지지 않은 번호: ${diagnostics.missing.join(', ')}`);
+  if (missing.length > 0) {
+    problems.push(`권고문 청크가 만들어지지 않은 번호: ${missing.join(', ')}`);
   }
-  if (diagnostics.duplicated.length > 0) {
-    problems.push(`권고문 청크가 중복 생성된 번호: ${diagnostics.duplicated.join(', ')}`);
+  if (duplicated.length > 0) {
+    problems.push(`권고문 청크가 중복 생성된 번호: ${duplicated.join(', ')}`);
   }
-  if (diagnostics.gradeMissing.length > 0) {
-    problems.push(`등급을 추출하지 못한 번호: ${diagnostics.gradeMissing.join(', ')}`);
+  if (gradeMissing.length > 0) {
+    problems.push(`등급을 추출하지 못한 번호: ${gradeMissing.join(', ')}`);
   }
-  if (problems.length > 0) {
-    throw new Error(`지침 파싱 실패 — ${problems.join(' / ')}`);
-  }
+
+  // data는 세 목록으로 고정한다 (docs/specs/21 「추가 에러코드」) — FE 분기가 형태에 의존한다.
+  // 사람이 읽을 열거는 detail로 간다 — CLI와 로그가 그것을 본다 (docs/specs/20 수용 기준 1·2·4).
+  throw new ServiceException(
+    'GUIDELINE_PARSE_FAILED',
+    { missing, duplicated, gradeMissing },
+    `지침 파싱 실패 — ${problems.join(' / ')}`,
+  );
 }
 
 /** 목록이 "2024-07"처럼 일자 없이 주므로 1일로 보정한다 (§19 「문서 메타의 출처」) */

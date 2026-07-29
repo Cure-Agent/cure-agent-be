@@ -63,10 +63,16 @@ export class GuidelineIngestService {
     );
     const guidelineId = existingGuideline?.id ?? ulid();
 
-    // 동일 버전 재인제스트 → 콘텐츠 변경 없이 skip (수용 기준 2)
+    // 동일 내용 재인제스트 → 새 revision 없이 skip (docs/specs/05 수용 기준 2의 멱등성).
+    // 기준은 판본이 아니라 **내용 해시**다 — 파서가 좋아지면 같은 판본도 새 revision이 된다 (docs/specs/21).
+    let revision = 1;
     if (existingGuideline) {
-      const existingVersion = await this.repository.findVersion(guidelineId, input.version);
-      if (existingVersion) {
+      const sameContent = await this.repository.findVersionByContentHash(
+        guidelineId,
+        input.version,
+        inputHash,
+      );
+      if (sameContent) {
         const skippedChunks = input.sections.reduce((sum, s) => sum + s.chunks.length, 0);
         const stats = { sections: 0, chunks: 0, skippedChunks };
         await this.repository.insertIngestionRun({
@@ -74,11 +80,20 @@ export class GuidelineIngestService {
           status: 'SUCCEEDED',
           inputHash,
           guidelineId,
-          guidelineVersionId: existingVersion.id,
+          guidelineVersionId: sameContent.id,
           stats,
         });
-        return { guidelineId, guidelineVersionId: existingVersion.id, created: false, stats };
+        return {
+          guidelineId,
+          guidelineVersionId: sameContent.id,
+          created: false,
+          revision: sameContent.revision,
+          status: sameContent.status,
+          version: sameContent.version,
+          stats,
+        };
       }
+      revision = (await this.repository.findMaxRevision(guidelineId, input.version)) + 1;
     }
 
     // 버전 내 중복 콘텐츠 dedupe 후 임베딩 일괄 계산 (트랜잭션 밖)
@@ -123,10 +138,21 @@ export class GuidelineIngestService {
         id: guidelineVersionId,
         guidelineId,
         version: input.version,
+        revision,
+        status: 'ACTIVE',
         publishedAt: new Date(input.publishedAt),
         sourceUrl: input.sourceUrl,
         contentHash: inputHash,
       });
+      // 새 revision이 ACTIVE가 되면 직전 revision은 내려간다 — 같은 판본 안에서만이다 (docs/specs/21).
+      // 이전 revision의 청크는 지우지 않는다: 과거 답변이 실제로 그 청크로 생성됐다.
+      if (revision > 1) {
+        await this.repository.supersedeOtherRevisions(
+          guidelineId,
+          input.version,
+          guidelineVersionId,
+        );
+      }
 
       const sectionIds: string[] = [];
       for (const [index, section] of input.sections.entries()) {
@@ -170,7 +196,15 @@ export class GuidelineIngestService {
       });
     });
 
-    return { guidelineId, guidelineVersionId, created: true, stats };
+    return {
+      guidelineId,
+      guidelineVersionId,
+      created: true,
+      revision,
+      status: 'ACTIVE',
+      version: input.version,
+      stats,
+    };
   }
 
   private validate(input: GuidelineIngestInput): void {

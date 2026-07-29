@@ -1,4 +1,8 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import type { Request } from 'express';
+import { ClinicianRepository } from '../../domain/clinician/repository/clinician.repository';
+import { ServiceException } from '../common/exception/service.exception';
+import { ClinicianPrincipal } from './clinician-principal';
 
 /**
  * ADMIN 역할 가드 (docs/specs/21).
@@ -11,8 +15,17 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
-  // TODO(docs/specs/21): 스텁 — 역할 조회는 구현 단계에서 채운다
-  canActivate(_context: ExecutionContext): Promise<boolean> {
-    return Promise.resolve(true);
+  constructor(private readonly clinicians: ClinicianRepository) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { clinician?: ClinicianPrincipal }>();
+    const principal = request.clinician;
+    if (!principal) throw new ServiceException('UNAUTHORIZED');
+
+    const role = await this.clinicians.findRoleById(principal.clinicianId);
+    if (role !== 'ADMIN') throw new ServiceException('FORBIDDEN');
+    return true;
   }
 }

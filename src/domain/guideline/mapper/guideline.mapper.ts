@@ -4,6 +4,8 @@ import {
   GuidelineSectionRow,
   GuidelineVersionRow,
 } from '../persistence/guideline.schema';
+import { AdminGuidelineVersionResponseDto } from '../dto/response/admin-guideline-version.response.dto';
+import { AdminGuidelineResponseDto } from '../dto/response/admin-guideline.response.dto';
 import { EvidenceDetailResponseDto } from '../dto/response/evidence-detail.response.dto';
 import { EvidenceSummaryResponseDto } from '../dto/response/evidence-summary.response.dto';
 import { GuidelineDetailResponseDto } from '../dto/response/guideline-detail.response.dto';
@@ -71,6 +73,34 @@ export function toEvidenceDetail(row: {
     pageStart: chunk.pageStart ?? undefined,
     pageEnd: chunk.pageEnd ?? undefined,
     sourceUrl: version.sourceUrl,
+  };
+}
+
+// ── 코퍼스 관리 (docs/specs/21) ────────────────────────
+
+export function toAdminGuidelineVersion(
+  version: GuidelineVersionRow & { chunkCount: number },
+): AdminGuidelineVersionResponseDto {
+  return {
+    id: version.id,
+    version: version.version,
+    revision: version.revision,
+    status: version.status,
+    publishedAt: version.publishedAt.toISOString(),
+    contentHash: version.contentHash,
+    chunkCount: version.chunkCount,
+  };
+}
+
+export function toAdminGuideline(
+  guideline: GuidelineRow,
+  versions: (GuidelineVersionRow & { chunkCount: number })[],
+): AdminGuidelineResponseDto {
+  return {
+    id: guideline.id,
+    title: guideline.title,
+    publisher: guideline.publisher,
+    versions: versions.map(toAdminGuidelineVersion),
   };
 }
 

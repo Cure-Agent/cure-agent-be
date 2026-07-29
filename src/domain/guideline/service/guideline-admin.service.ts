@@ -1,12 +1,27 @@
 import { Injectable } from '@nestjs/common';
+import { decodeCursor, encodeCursor } from '../../../global/common/cursor/cursor.util';
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { PageResult } from '../../../global/common/response/page-result';
+import { TransactionManager } from '../../../global/database/transaction-manager';
+import { PdfTextExtractor } from '../../../infrastructure/document/pdf-text.extractor';
 import { ListAdminGuidelinesQueryDto } from '../dto/request/list-admin-guidelines.query.dto';
 import { RunPipelineRequestDto } from '../dto/request/run-pipeline.request.dto';
 import { UpdateVersionStatusRequestDto } from '../dto/request/update-version-status.request.dto';
 import { AdminGuidelineVersionResponseDto } from '../dto/response/admin-guideline-version.response.dto';
 import { AdminGuidelineResponseDto } from '../dto/response/admin-guideline.response.dto';
 import { AdminIngestResponseDto } from '../dto/response/admin-ingest.response.dto';
+import { toAdminGuideline, toAdminGuidelineVersion } from '../mapper/guideline.mapper';
+import { GuidelineVersionRow } from '../persistence/guideline.schema';
+import { GuidelineRepository } from '../repository/guideline.repository';
+import { GuidelineAcquisitionService } from './guideline-acquisition.service';
+import { GuidelineIngestService } from './guideline-ingest.service';
+import { GuidelineParseService } from './guideline-parse.service';
+
+const DEFAULT_SIZE = 20;
+
+interface GuidelineCursor extends Record<string, unknown> {
+  id: string;
+}
 
 /**
  * 지침 코퍼스 관리 유스케이스 (docs/specs/21).
@@ -16,30 +31,126 @@ import { AdminIngestResponseDto } from '../dto/response/admin-ingest.response.dt
  */
 @Injectable()
 export class GuidelineAdminService {
+  constructor(
+    private readonly txManager: TransactionManager,
+    private readonly repository: GuidelineRepository,
+    private readonly acquisition: GuidelineAcquisitionService,
+    private readonly parseService: GuidelineParseService,
+    private readonly ingestService: GuidelineIngestService,
+    private readonly pdfExtractor: PdfTextExtractor,
+  ) {}
+
   /** 1건 수집→파싱→적재. PDF는 메모리에서 파싱하고 버린다 — 디스크에 쓰면 누적된다. */
-  // TODO(docs/specs/21): 스텁
-  runPipeline(_request: RunPipelineRequestDto): Promise<AdminIngestResponseDto> {
-    return Promise.reject(new ServiceException('INTERNAL_ERROR'));
+  async runPipeline(request: RunPipelineRequestDto): Promise<AdminIngestResponseDto> {
+    const acquired = await this.acquisition.acquireDocument(request.guideIdx);
+    // 원본 목록에 없는 문서와 못 가져온 문서를 구분한다
+    if (!acquired) throw new ServiceException('NOT_FOUND');
+    if (acquired.status === 'FAILED') throw new ServiceException('GUIDELINE_SOURCE_UNAVAILABLE');
+
+    // 첨부가 없는 문서는 에러가 아니다 — 수집 기록만 남기고 그 상태를 돌려준다
+    if (acquired.status === 'SKIPPED_NO_ATTACHMENT' || !acquired.body) {
+      return {
+        externalId: request.guideIdx,
+        sourceStatus: 'SKIPPED_NO_ATTACHMENT',
+        created: false,
+        guidelineId: null,
+        guidelineVersionId: null,
+        version: null,
+        revision: null,
+        status: null,
+        stats: null,
+      };
+    }
+
+    const pages = await this.pdfExtractor.extractPages(acquired.body);
+    // 구조 문제는 여기서 422로 막힌다 — 적재는 일어나지 않는다 (§20 가드)
+    const input = await this.parseService.parse({
+      pages,
+      externalId: request.guideIdx,
+      sourceSystem: this.acquisition.sourceSystem,
+    });
+    const result = await this.ingestService.ingest(input);
+
+    return {
+      externalId: request.guideIdx,
+      sourceStatus: 'FETCHED',
+      created: result.created,
+      guidelineId: result.guidelineId,
+      guidelineVersionId: result.guidelineVersionId,
+      version: result.version,
+      revision: result.revision,
+      status: result.status,
+      stats: result.stats,
+    };
   }
 
-  // TODO(docs/specs/21): 스텁
-  listGuidelines(
-    _query: ListAdminGuidelinesQueryDto,
+  async listGuidelines(
+    query: ListAdminGuidelinesQueryDto,
   ): Promise<PageResult<AdminGuidelineResponseDto>> {
-    return Promise.reject(new ServiceException('INTERNAL_ERROR'));
+    const size = query.size ?? DEFAULT_SIZE;
+    const afterId = query.cursor ? decodeCursor<GuidelineCursor>(query.cursor).id : undefined;
+
+    // limit+1로 다음 페이지 존재 여부 판단
+    const rows = await this.repository.listGuidelinesForAdmin({
+      query: query.query,
+      publisher: query.publisher,
+      afterId,
+      limit: size + 1,
+    });
+    const hasNext = rows.length > size;
+    const page = rows.slice(0, size);
+
+    // 버전은 서브리소스가 아니다 — 지침당 몇 행이라 한 번에 읽어 중첩한다
+    const versions = await this.repository.listVersionsWithChunkCount(page.map((g) => g.id));
+    const byGuideline = new Map<string, (GuidelineVersionRow & { chunkCount: number })[]>();
+    for (const version of versions) {
+      const bucket = byGuideline.get(version.guidelineId);
+      if (bucket) bucket.push(version);
+      else byGuideline.set(version.guidelineId, [version]);
+    }
+
+    return PageResult.of(
+      page.map((guideline) => toAdminGuideline(guideline, byGuideline.get(guideline.id) ?? [])),
+      {
+        size,
+        hasNext,
+        nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].id }) : null,
+      },
+    );
   }
 
-  // TODO(docs/specs/21): 스텁
-  updateVersionStatus(
-    _versionId: string,
-    _request: UpdateVersionStatusRequestDto,
+  /**
+   * 요청한 버전의 status만 바꾼다 — 승격이 같은 판본의 다른 revision을 내리지 않는다.
+   * 한 번의 PATCH가 명시하지 않은 행을 바꾸지 않는 편이 예측 가능하다 (docs/specs/21).
+   */
+  async updateVersionStatus(
+    versionId: string,
+    request: UpdateVersionStatusRequestDto,
   ): Promise<AdminGuidelineVersionResponseDto> {
-    return Promise.reject(new ServiceException('INTERNAL_ERROR'));
+    const version = await this.repository.findVersionById(versionId);
+    if (!version) throw new ServiceException('NOT_FOUND');
+
+    await this.repository.updateVersionStatus(versionId, request.status);
+    const chunkCount = await this.repository.countChunks(versionId);
+    return toAdminGuidelineVersion({ ...version, status: request.status, chunkCount });
   }
 
   /** 인용된 청크가 하나라도 있으면 409로 거부하고 아무것도 지우지 않는다 (부분 삭제 금지). */
-  // TODO(docs/specs/21): 스텁
-  deleteVersion(_versionId: string): Promise<void> {
-    return Promise.reject(new ServiceException('INTERNAL_ERROR'));
+  async deleteVersion(versionId: string): Promise<void> {
+    const version = await this.repository.findVersionById(versionId);
+    if (!version) throw new ServiceException('NOT_FOUND');
+
+    // 과거 답변은 실제로 그 청크로 생성됐다 — 지우면 인용이 거짓이 된다. 폐기가 기본 수단이다.
+    if ((await this.repository.countCitations(versionId)) > 0) {
+      throw new ServiceException('GUIDELINE_VERSION_CITED');
+    }
+
+    await this.txManager.run(async () => {
+      await this.repository.deleteVersionCascade(versionId);
+      // 마지막 버전이었다면 빈 지침 행을 남기지 않는다
+      if ((await this.repository.countVersions(version.guidelineId)) === 0) {
+        await this.repository.deleteGuideline(version.guidelineId);
+      }
+    });
   }
 }

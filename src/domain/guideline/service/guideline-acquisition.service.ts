@@ -72,6 +72,11 @@ export class GuidelineAcquisitionService {
     private readonly repository: SourceDocumentRepository,
   ) {}
 
+  /** source_documents.source_system에 기록되는 출처 식별자 — 메타 조회 시 같은 값을 써야 한다 */
+  get sourceSystem(): string {
+    return this.source.system;
+  }
+
   async acquire(options: AcquireOptions = {}): Promise<AcquireResult> {
     const items = await this.source.listGuidelines({
       limit: options.limit,
@@ -81,7 +86,13 @@ export class GuidelineAcquisitionService {
     const results: AcquireItemResult[] = [];
     for (const item of items) {
       // 개별 문서의 실패가 배치를 중단시키지 않는다 (수용 기준 7)
-      results.push(await this.acquireOne(item, options.outDir));
+      const acquired = await this.acquireOne(item, options.outDir);
+      // 본문은 배치 결과에 싣지 않는다 — 86건이면 수백 MB가 그대로 메모리에 남는다
+      results.push({
+        externalId: acquired.externalId,
+        status: acquired.status,
+        unchanged: acquired.unchanged,
+      });
     }
 
     return {
@@ -98,12 +109,24 @@ export class GuidelineAcquisitionService {
    * 문서 1건을 수집해 본문과 함께 돌려준다 (docs/specs/21). 파일은 쓰지 않는다.
    * 원본 목록에 그 externalId가 없으면 `null` — 못 가져온 것(FAILED)과 없는 것을 구분한다.
    */
-  // TODO(docs/specs/21): 스텁
-  acquireDocument(_externalId: string): Promise<AcquiredDocument | null> {
-    return Promise.reject(new Error('not implemented'));
+  async acquireDocument(externalId: string): Promise<AcquiredDocument | null> {
+    const [item] = await this.source.listGuidelines({ externalIds: [externalId] });
+    if (!item) return null;
+
+    // outDir을 주지 않으므로 디스크에 쓰지 않는다 — 파이프라인은 메모리에서 파싱하고 버린다
+    const result = await this.acquireOne(item);
+    return {
+      item,
+      status: result.status,
+      unchanged: result.unchanged,
+      body: result.body,
+    };
   }
 
-  private async acquireOne(item: SourceListItem, outDir?: string): Promise<AcquireItemResult> {
+  private async acquireOne(
+    item: SourceListItem,
+    outDir?: string,
+  ): Promise<AcquireItemResult & { body: Buffer | null }> {
     const fetchedAt = new Date();
 
     let body: Buffer;
@@ -130,7 +153,7 @@ export class GuidelineAcquisitionService {
         fetchedAt,
       });
       this.logger.warn(`수집 실패 ${item.externalId}: ${String(error)}`);
-      return { externalId: item.externalId, status: 'FAILED', unchanged: false };
+      return { externalId: item.externalId, status: 'FAILED', unchanged: false, body: null };
     }
 
     const verdict = judge(body, contentType);
@@ -145,7 +168,13 @@ export class GuidelineAcquisitionService {
     );
     if (existing) {
       await this.repository.touchFetchedAt(existing.id, fetchedAt);
-      return { externalId: item.externalId, status: verdict.status, unchanged: true };
+      // 행을 새로 만들지 않았을 뿐 본문은 받아왔다 — 재적재 판정은 호출자가 내용으로 한다
+      return {
+        externalId: item.externalId,
+        status: verdict.status,
+        unchanged: true,
+        body: verdict.persist ? body : null,
+      };
     }
 
     if (verdict.persist && outDir) {
@@ -168,7 +197,12 @@ export class GuidelineAcquisitionService {
       fetchedAt,
     });
 
-    return { externalId: item.externalId, status: verdict.status, unchanged: false };
+    return {
+      externalId: item.externalId,
+      status: verdict.status,
+      unchanged: false,
+      body: verdict.persist ? body : null,
+    };
   }
 
   private async writeFile(outDir: string, item: SourceListItem, body: Buffer): Promise<void> {
