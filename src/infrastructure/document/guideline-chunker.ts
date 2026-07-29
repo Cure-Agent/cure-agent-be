@@ -55,6 +55,12 @@ const MAX_HEADER_LENGTH = 40;
 
 /** 마커 뒤에 제목이 붙는 판본이 있다 (`【R1】 삶의 질 개선`) — 번호만 취하고 제목은 버린다 */
 const BLOCK_MARKER = /^【\s*(R[0-9-]+)\s*】\s*(.*)$/;
+/**
+ * 인제스트 대상 판정용 마커 (`containsRecommendationMarker`). `BLOCK_MARKER`와 두 가지가 다르다:
+ * 줄 시작에 **앵커하지 않고**(본문·표 안의 재인용도 증거다), 번호에 **숫자를 최소 하나 요구**한다
+ * (`【R】`·`【참고】`는 권고 마커가 아니다).
+ */
+const INGEST_TARGET_MARKER = /【\s*R\d[0-9-]*\s*】/;
 /** 표 헤더 — 컬럼 구성이 판본마다 다르다 (`권고안 번호 권고내용 권고등급/근거수준`) */
 const TABLE_HEADER = /^권고안(\s+번호)?\s+(권고내용\s+)?권고등급\s*\/\s*근거수준/;
 /**
@@ -216,8 +222,8 @@ export function chunkNckmGuideline(
  * 줄 어디에 있든 센다(`BLOCK_MARKER`는 줄 시작에 앵커돼 있다) — 목차·결과요약표의 재인용도
  * 「이 문서는 【R】 체계를 쓴다」는 증거이며, 넓게 잡을수록 조용한 건너뜀 대신 실패로 남는다.
  */
-export function containsRecommendationMarker(_pages: string[]): boolean {
-  throw new Error('not implemented');
+export function containsRecommendationMarker(pages: string[]): boolean {
+  return pages.some((page) => INGEST_TARGET_MARKER.test(page));
 }
 
 interface MarkerOccurrence {
