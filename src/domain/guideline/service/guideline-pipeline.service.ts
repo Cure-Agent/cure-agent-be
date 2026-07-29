@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { ErrorCode } from '../../../global/common/exception/error-code.registry';
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { MetricsService } from '../../../global/observability/metrics/metrics.service';
+import { containsRecommendationMarker } from '../../../infrastructure/document/guideline-chunker';
 import { PdfTextExtractor } from '../../../infrastructure/document/pdf-text.extractor';
 import {
   PipelineRunPhase,
@@ -140,6 +141,29 @@ export class GuidelinePipelineService {
       const parseStart = Date.now();
       // PDF 텍스트 추출도 PARSE 단계다 — stages.parse.pages가 그 산출이다
       const pages = await this.pdfExtractor.extractPages(body);
+
+      // 권고 마커를 쓰지 않는 문서는 에러가 아니다 — 인제스트 대상이 아니므로 SKIPPED로 종결한다.
+      // NCKM 목록에는 매뉴얼·가이드·권고안·표준 이전 세대 지침이 섞여 있고, §20이 계열 D를
+      // "인제스트 대상으로 삼을지부터 판단이 필요하다"며 미룬 판단이 이 자리다
+      // (§18이 첨부 없음을 ACQUIRE의 SKIPPED로 뺀 것과 같은 규칙).
+      //
+      // **판정은 청커 진단이 아니라 필터 이전 원본을 본다.** 진단의 uniqueNumbers가 0이라는 사실은
+      // 「문서에 마커가 없다」와 「장·페이지 판정이 마커 페이지를 전량 탈락시켰다」를 구분하지 못한다
+      // — 후자는 §20이 계열 B·C에서 겪은 파서 결함 그 자체라, 그것까지 건너뛰면 고쳐야 할 결함이
+      // 조용히 묻힌다. 마커가 하나라도 있으면 파싱을 시도하고 실패는 FAILED로 남긴다.
+      if (!containsRecommendationMarker(pages)) {
+        const skipMs = Date.now() - parseStart;
+        this.metrics.recordPipelineStage('parse', 'skipped', skipMs / 1000);
+        return {
+          run: await this.finish(options, run, {
+            status: 'SKIPPED',
+            phase,
+            // sections·chunks 0은 추측이 아니라 관측이다 — 파서를 부르지 않았고 산출도 없다
+            stages: { parse: { pages: pages.length, sections: 0, chunks: 0, ms: skipMs } },
+          }),
+        };
+      }
+
       const parsed = await this.parseService.parse({
         pages,
         externalId: options.externalId,
