@@ -205,6 +205,21 @@ export function chunkNckmGuideline(
   };
 }
 
+/**
+ * 원본 페이지에 권고 마커가 하나라도 있는가 — **인제스트 대상 판정용**이다 (docs/specs/20 계열 D).
+ *
+ * `chunkNckmGuideline`의 `uniqueNumbers`와 다른 것을 본다. 그쪽은 `collectTargetChapterLines`가
+ * 장·페이지를 걸러낸 **뒤**의 마커라, 0이어도 「문서에 마커가 없다」와 「장 판정이 마커 페이지를
+ * 전량 탈락시켰다」를 구분하지 못한다 — 후자는 §20이 계열 B·C에서 겪은 파서 결함 그 자체다.
+ * 이 함수는 필터 **이전** 원본을 보므로 그 둘을 가른다: 여기서 false여야만 대상 아님이다.
+ *
+ * 줄 어디에 있든 센다(`BLOCK_MARKER`는 줄 시작에 앵커돼 있다) — 목차·결과요약표의 재인용도
+ * 「이 문서는 【R】 체계를 쓴다」는 증거이며, 넓게 잡을수록 조용한 건너뜀 대신 실패로 남는다.
+ */
+export function containsRecommendationMarker(_pages: string[]): boolean {
+  throw new Error('not implemented');
+}
+
 interface MarkerOccurrence {
   index: number;
   number: string;
