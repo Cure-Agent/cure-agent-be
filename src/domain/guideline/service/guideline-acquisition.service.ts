@@ -47,6 +47,11 @@ export interface AcquiredDocument {
   body: Buffer | null;
   /** 응답이 실제로 준 타입 — docs/specs/22의 `stages.acquire.contentType`에 그대로 실린다 */
   contentType: string;
+  /**
+   * 실패 사유 상세 (FAILED일 때만). `source_documents.error`에 남는 것과 같은 문자열이며,
+   * 파이프라인이 이것을 `pipeline_runs.error`로 옮겨 단계 기록만 보고도 원인을 알 수 있게 한다.
+   */
+  error: string | null;
 }
 
 const PDF_MAGIC = '%PDF';
@@ -131,6 +136,7 @@ export class GuidelineAcquisitionService {
       unchanged: result.unchanged,
       body: result.body,
       contentType: result.contentType,
+      error: null, // 스텁 — 구현에서 채운다
     };
   }
 
