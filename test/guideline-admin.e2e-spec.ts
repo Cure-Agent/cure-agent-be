@@ -2,12 +2,15 @@
  * docs/specs/21-guideline-admin-api.md 수용 기준 동결 테스트.
  * 구현 중 이 파일 수정 금지 — 수정 필요 = 스펙 결함 → spec 개정 후 재동결.
  */
+// 디스크 쓰기 여부만 관찰한다 — 동작은 실제 구현에 위임해야 한다.
+// no-op으로 바꾸면 Testcontainers가 withFileLock에서 fs/promises.writeFile로 만드는
+// 락 파일이 생기지 않아 lstat ENOENT로 스위트 전체가 죽는다.
 jest.mock('node:fs/promises', () => {
   const actual = jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
   return {
     ...actual,
-    mkdir: jest.fn(async () => undefined),
-    writeFile: jest.fn(async () => undefined),
+    mkdir: jest.fn(actual.mkdir),
+    writeFile: jest.fn(actual.writeFile),
   };
 });
 
