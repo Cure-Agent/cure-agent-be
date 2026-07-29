@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
@@ -7,6 +17,7 @@ import {
 } from '../../../global/common/response/api-envelope.decorator';
 import { PageResult } from '../../../global/common/response/page-result';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
+import { AdminGuard } from '../../../global/security/admin.guard';
 import { CurrentClinician } from '../../../global/security/current-clinician.decorator';
 import { CreateGuidelineJobRequestDto } from '../dto/request/create-guideline-job.request.dto';
 import { ListGuidelineJobsQueryDto } from '../dto/request/list-guideline-jobs.query.dto';
@@ -16,14 +27,9 @@ import { GuidelineJobResponseDto } from '../dto/response/guideline-job.response.
 import { PipelineRunResponseDto } from '../dto/response/pipeline-run.response.dto';
 import { GuidelineJobService } from '../service/guideline-job.service';
 
-/**
- * 전건 파이프라인 잡 (docs/specs/22) — 전부 ADMIN 역할이 필요하다.
- *
- * **스텁 단계에서는 `@UseGuards(AdminGuard)`를 일부러 붙이지 않는다.**
- * 붙이면 수용 기준 1의 403 가지가 아무것도 구현하지 않은 상태에서 통과해 공허 테스트가 된다
- * (automation/freeze.md 5-③). 가드는 구현 커밋에서 부착한다.
- */
+/** 전건 파이프라인 잡 (docs/specs/22) — 전부 ADMIN 역할이 필요하다. */
 @ApiTags('Admin Guideline Job')
+@UseGuards(AdminGuard)
 @Controller('admin/guideline-jobs')
 export class AdminGuidelineJobController {
   constructor(private readonly jobService: GuidelineJobService) {}
@@ -81,6 +87,7 @@ export class AdminGuidelineJobController {
  * 잡에 속하지 않은 실행(§21 1건 동기 호출, §05 스크립트)까지 한 자리에서 본다.
  */
 @ApiTags('Admin Guideline Job')
+@UseGuards(AdminGuard)
 @Controller('admin/pipeline-runs')
 export class AdminPipelineRunController {
   constructor(private readonly jobService: GuidelineJobService) {}

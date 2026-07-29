@@ -16,6 +16,9 @@ export type LlmOutcome = 'success' | 'failure' | 'rate_limited' | 'skipped';
 /** SSE 스트림의 종료 사유 */
 export type SseOutcome = 'completed' | 'aborted' | 'failed';
 
+/** 지침 파이프라인 **단계 자체의 결말** — 실행 status enum과는 다른 축이다 (docs/specs/22) */
+export type PipelineStageOutcome = 'success' | 'failure' | 'skipped';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -91,9 +94,39 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 지침 파이프라인 단계별 소요 (docs/specs/22).
+   * `pipeline_runs`는 «무엇이 왜 실패했나»에 답하지만 추이는 답하지 못한다 — 단계별 소요·실패율을
+   * DB에 쌓으면 테이블이 시계열 DB 흉내를 내므로 그쪽은 여기로 보낸다.
+   */
+  private readonly pipelineStageDuration = new Histogram({
+    name: 'guideline_pipeline_stage_duration_seconds',
+    help: '지침 파이프라인 단계별 소요 시간',
+    labelNames: ['stage'] as const,
+    buckets: [0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
+    registers: [this.registry],
+  });
+
+  private readonly pipelineStages = new Counter({
+    name: 'guideline_pipeline_stage_total',
+    help: '지침 파이프라인 단계 종료 수',
+    labelNames: ['stage', 'status'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
+  }
+
+  /**
+   * 단계가 **끝날 때 1회만** 기록한다 — 그래서 RUNNING·INTERRUPTED에 대응하는 라벨 값이 없다
+   * (중단된 단계는 프로세스가 죽어 애초에 기록되지 않는다).
+   * `status`는 실행 status enum이 아니라 **그 단계 자체의 결말**이다.
+   */
+  recordPipelineStage(stage: string, status: PipelineStageOutcome, durationSec: number): void {
+    this.pipelineStageDuration.observe({ stage }, durationSec);
+    this.pipelineStages.inc({ stage, status });
   }
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
