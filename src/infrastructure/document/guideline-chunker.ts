@@ -18,6 +18,18 @@ export type GuidelineDocumentMeta = Omit<GuidelineIngestInput, 'sections'>;
 /** 인제스트 대상 장 — 이번 스펙은 비만 지침의 Ⅳ장(권고사항)만 다룬다 */
 /** 해설 청크 분할 임계값 — 누적 이 길이를 넘기 직전의 문단 경계에서 끊는다 */
 const EXPLANATION_MAX_CHARS = 2000;
+/**
+ * 임베딩 상한 안전망 — **모든** 청크가 이 길이 아래에 머문다 (docs/specs/19 「청크 길이 상한」).
+ *
+ * 경계 검출이 미지 판본에서 무너지면 청크가 블록 전체를 삼켜 임베딩 API가 400
+ * (`maximum input length is 8192 tokens`)을 뱉고 그 문서는 영영 적재되지 않는다.
+ * 실물 31건 2,881청크 실측에서 cl100k_base 토큰/문자 비율은 p50 0.921 · p99 1.234 · **max 1.313**이라
+ * 6,000자면 최악 7,878토큰으로 8,192 아래다. 토크나이저를 이 순수 함수에 들이지 않으려고
+ * 문자 수로 근사하며, 그 대가로 여유를 크게 잡는다.
+ *
+ * **정상 경로에서는 발동하지 않는다** — 경계가 제대로 잡힌 권고문·해설 청크는 이 길이에 한참 못 미친다.
+ */
+const CHUNK_MAX_CHARS = 6000;
 /** 마커 뒤 이 줄 수 안에 표 헤더나 등급이 오면 권고 블록이다 — 재인용과 구분한다 (docs/specs/20) */
 const BLOCK_EVIDENCE_WINDOW = 10;
 
@@ -45,7 +57,11 @@ const MAX_HEADER_LENGTH = 40;
 const BLOCK_MARKER = /^【\s*(R[0-9-]+)\s*】\s*(.*)$/;
 /** 표 헤더 — 컬럼 구성이 판본마다 다르다 (`권고안 번호 권고내용 권고등급/근거수준`) */
 const TABLE_HEADER = /^권고안(\s+번호)?\s+(권고내용\s+)?권고등급\s*\/\s*근거수준/;
-const CONSIDERATION_HEADING = '임상적 고려사항';
+/**
+ * 임상적 고려사항 제목. 대괄호를 두르는 판본이 있고(`[임상적 고려사항]`), 같은 블록에서
+ * 대괄호 줄과 평문 줄이 잇달아 나오기도 한다 — 둘 다 제목으로 받고 **먼저 오는 쪽**을 경계로 쓴다.
+ */
+const CONSIDERATION_HEADER = /^\[?\s*임상적\s*고려사항\s*\]?$/;
 /** 소절 마커: `(1)` 또는 `①`. 괄호 안이 숫자일 때만 마커다 — `(六君子湯)…` 같은 한자 줄바꿈과 구분한다 */
 const SUBSECTION_MARKER = /^(?:\(\d+\)|[①-⑳])/;
 const REFERENCES_MARKER = /^\[참고문헌\]$/;
@@ -354,18 +370,80 @@ function buildSections(lines: SourceLine[], blockStarts: MarkerOccurrence[]): In
   return sections;
 }
 
+/** 블록을 이루는 구간의 종류 (docs/specs/19 「블록 경계」) */
+type SegmentKind = 'statement' | 'consideration' | 'explanation' | 'references';
+
+interface BlockSegment {
+  kind: SegmentKind;
+  /** 반열림 구간 [start, end) */
+  start: number;
+  end: number;
+}
+
+/**
+ * 블록을 구간으로 분해한다 — **이 파서의 급소**다 (docs/specs/19 「블록 경계」).
+ *
+ * 예전에는 구간마다 기대하는 경계 하나를 찾고 못 찾으면 `block.length`로 떨어졌다. 그래서
+ * 판본이 그 경계를 안 쓰면 구간이 블록 전체를 삼켰다 — 권고문 청크에 해설 전문과 참고문헌 서지가
+ * 통째로 들어가(실물 671쌍 중 100쌍) 같은 텍스트가 두 번 적재됐고, 그중 13건은 임베딩 8192토큰
+ * 상한을 넘겨 문서째 적재에 실패했다.
+ *
+ * 그래서 **어느 경계가 먼저 오는지 가정하지 않는다.** 표지 줄을 만나는 순서대로 구간을 끊을 뿐이다.
+ * 실물에서 관측된 배치가 판본마다 다르기 때문이다:
+ * - 고려사항 제목이 아예 없음 (163·170·351)
+ * - 고려사항이 해설보다 **뒤**에 옴 (149)
+ * - 고려사항이 해설 **중간**에 끼어 해설이 두 동강 남 (149 R2·R4) — 뒷조각도 해설로 살린다
+ * - `[참고문헌]` 표지가 없음 (163·170·149)
+ */
+function splitBlockSegments(block: SourceLine[], bodyStart: number): BlockSegment[] {
+  const segments: BlockSegment[] = [];
+  const marks: { at: number; kind: SegmentKind }[] = [];
+  for (let index = bodyStart; index < block.length; index += 1) {
+    const { text } = block[index];
+    const kind: SegmentKind | null = CONSIDERATION_HEADER.test(text)
+      ? 'consideration'
+      : REFERENCES_MARKER.test(text)
+        ? 'references'
+        : SUBSECTION_MARKER.test(text)
+          ? 'explanation'
+          : null;
+    if (kind) marks.push({ at: index, kind });
+  }
+
+  // 첫 표지 앞이 권고 문장이다. 표지가 하나도 없으면 블록 전체가 권고 문장이다.
+  const firstMark = marks.length > 0 ? marks[0].at : block.length;
+  if (firstMark > bodyStart) {
+    segments.push({ kind: 'statement', start: bodyStart, end: firstMark });
+  }
+  marks.forEach((mark, order) => {
+    const end = order + 1 < marks.length ? marks[order + 1].at : block.length;
+    const previous = segments[segments.length - 1];
+    // 소절 마커가 잇달아 오거나 고려사항 제목이 두 표기로 겹쳐 나오면 한 구간이다
+    if (previous && previous.kind === mark.kind && previous.end === mark.at) {
+      previous.end = end;
+      return;
+    }
+    segments.push({ kind: mark.kind, start: mark.at, end });
+  });
+
+  // `[참고문헌]`부터 블록 끝까지는 버린다 (docs/specs/19 수용 기준 10)
+  const referencesAt = segments.findIndex((segment) => segment.kind === 'references');
+  return referencesAt === -1 ? segments : segments.slice(0, referencesAt);
+}
+
 /** 블록 하나 → 권고문 청크 1개 + 해설 청크 1개 이상 */
 function buildBlockChunks(block: SourceLine[]): IngestChunk[] {
   const recommendationNumber = BLOCK_MARKER.exec(block[0].text)?.[1];
   if (!recommendationNumber) return [];
 
   const bodyStart = TABLE_HEADER.test(block[1]?.text ?? '') ? 2 : 1;
-  const considerationAt = block.findIndex(
-    (line, index) => index >= bodyStart && line.text === CONSIDERATION_HEADING,
-  );
-  const statementEnd = considerationAt === -1 ? block.length : considerationAt;
+  const segments = splitBlockSegments(block, bodyStart);
+  const linesOf = (kind: SegmentKind): SourceLine[] =>
+    segments
+      .filter((segment) => segment.kind === kind)
+      .flatMap((segment) => block.slice(segment.start, segment.end));
 
-  const statementLines = block.slice(bodyStart, statementEnd);
+  const statementLines = linesOf('statement');
   const grades = extractGrades(statementLines);
 
   // 등급 토큰과 뒤따르는 참고문헌 번호는 본문에서 제거한다 — 등급은 메타데이터에 있고,
@@ -373,44 +451,34 @@ function buildBlockChunks(block: SourceLine[]): IngestChunk[] {
   const statement = toParagraphs(
     statementLines.map((line) => ({ ...line, text: line.text.replace(GRADE_TAIL, '') })),
   );
-
-  const explanationAt = block.findIndex(
-    (line, index) => index > considerationAt && SUBSECTION_MARKER.test(line.text),
-  );
-  const referencesAt = block.findIndex((line) => REFERENCES_MARKER.test(line.text));
-  const considerationEnd = explanationAt === -1 ? block.length : explanationAt;
-  const consideration =
-    considerationAt === -1 ? [] : toParagraphs(block.slice(considerationAt, considerationEnd));
+  const consideration = toParagraphs(linesOf('consideration'));
 
   const chunks: IngestChunk[] = [];
-  const recommendation = mergeParagraphs([...statement, ...consideration]);
-  if (recommendation) {
+  splitByLength([...statement, ...consideration], CHUNK_MAX_CHARS).forEach((part, index) => {
     chunks.push({
-      content: recommendation.text,
+      content: part.text,
       recommendationNumber,
-      recommendationGrade: grades.recommendationGrade,
-      evidenceLevel: grades.evidenceLevel,
-      pageStart: recommendation.pageStart,
-      pageEnd: recommendation.pageEnd,
+      // 등급은 **권고 문장**에 부여된 것이다. 안전망이 권고문을 쪼갠 뒤쪽 조각에까지 복사하면
+      // 같은 번호로 등급 있는 청크가 둘이 되어 §20의 duplicated 진단이 재인용 오인으로 오작동한다.
+      recommendationGrade: index === 0 ? grades.recommendationGrade : undefined,
+      evidenceLevel: index === 0 ? grades.evidenceLevel : undefined,
+      pageStart: part.pageStart,
+      pageEnd: part.pageEnd,
     });
-  }
+  });
 
-  if (explanationAt !== -1) {
-    const explanationEnd =
-      referencesAt !== -1 && referencesAt > explanationAt ? referencesAt : block.length;
-    const paragraphs = toParagraphs(block.slice(explanationAt, explanationEnd));
-    for (const part of splitByLength(paragraphs, EXPLANATION_MAX_CHARS)) {
-      chunks.push({
-        // 등급은 권고에 부여된 것이지 해설 문단에 부여된 것이 아니다 — 복사하면 인용의 근거가
-        // 실제보다 강해 보인다. 키를 명시해 "비어 있음"이 형태로도 드러나게 둔다.
-        content: part.text,
-        recommendationNumber,
-        recommendationGrade: undefined,
-        evidenceLevel: undefined,
-        pageStart: part.pageStart,
-        pageEnd: part.pageEnd,
-      });
-    }
+  const explanation = toParagraphs(linesOf('explanation'));
+  for (const part of splitByLength(explanation, EXPLANATION_MAX_CHARS)) {
+    chunks.push({
+      // 등급은 권고에 부여된 것이지 해설 문단에 부여된 것이 아니다 — 복사하면 인용의 근거가
+      // 실제보다 강해 보인다. 키를 명시해 "비어 있음"이 형태로도 드러나게 둔다.
+      content: part.text,
+      recommendationNumber,
+      recommendationGrade: undefined,
+      evidenceLevel: undefined,
+      pageStart: part.pageStart,
+      pageEnd: part.pageEnd,
+    });
   }
   return chunks;
 }
@@ -477,7 +545,7 @@ function toParagraphs(lines: SourceLine[]): Paragraph[] {
 
 function isStructuralLine(text: string): boolean {
   return (
-    text === CONSIDERATION_HEADING ||
+    CONSIDERATION_HEADER.test(text) ||
     SUBSECTION_MARKER.test(text) ||
     REFERENCES_MARKER.test(text) ||
     BLOCK_MARKER.test(text) ||
@@ -531,7 +599,13 @@ function mergeParagraphs(paragraphs: Paragraph[]): Paragraph | null {
   };
 }
 
-/** 누적 길이가 상한을 넘기 직전의 문단 경계에서 끊는다 */
+/**
+ * 누적 길이가 상한을 넘기 직전의 문단 경계에서 끊는다.
+ *
+ * 문단 경계가 **없을 수도 있다** — 종결부호가 오지 않는 표·목록 줄이 길게 이어지면 하드 랩 복원이
+ * 그것을 한 문단으로 잇는다. 그래서 문단 자체를 먼저 상한 이하로 쪼갠 뒤 묶는다. 예전에는 버퍼가
+ * 비어 있으면 길이를 보지 않고 담아, 문단 하나가 상한을 넘으면 그대로 통과시켰다.
+ */
 function splitByLength(paragraphs: Paragraph[], maxChars: number): Paragraph[] {
   const parts: Paragraph[] = [];
   let buffer: Paragraph[] = [];
@@ -545,12 +619,47 @@ function splitByLength(paragraphs: Paragraph[], maxChars: number): Paragraph[] {
   };
 
   for (const paragraph of paragraphs) {
-    if (buffer.length > 0 && length + paragraph.text.length > maxChars) flush();
-    buffer.push(paragraph);
-    length += paragraph.text.length + 1;
+    for (const piece of splitOversizedParagraph(paragraph, maxChars)) {
+      if (buffer.length > 0 && length + piece.text.length > maxChars) flush();
+      buffer.push(piece);
+      length += piece.text.length + 1;
+    }
   }
   flush();
   return parts;
+}
+
+/**
+ * 상한을 넘는 문단 하나를 문장 경계로, 그마저 없으면 상한 위치에서 강제로 쪼갠다 (안전망).
+ *
+ * 조각들은 원 문단의 페이지 범위를 그대로 물려받는다 — 문단 안쪽 어디서 페이지가 넘어갔는지는
+ * 하드 랩 복원이 이미 지워버려서 알 수 없다. 좁혀 말하는 것보다 넓게 말하는 편이 인용에 안전하다.
+ */
+function splitOversizedParagraph(paragraph: Paragraph, maxChars: number): Paragraph[] {
+  if (paragraph.text.length <= maxChars) return [paragraph];
+
+  const pieces: Paragraph[] = [];
+  const at = (text: string): Paragraph => ({
+    text,
+    pageStart: paragraph.pageStart,
+    pageEnd: paragraph.pageEnd,
+  });
+  let rest = paragraph.text;
+  while (rest.length > maxChars) {
+    const cut = lastSentenceEnd(rest.slice(0, maxChars)) || maxChars;
+    pieces.push(at(rest.slice(0, cut)));
+    rest = rest.slice(cut);
+  }
+  if (rest.length > 0) pieces.push(at(rest));
+  return pieces;
+}
+
+/** 문자열 안 마지막 종결부호 **다음** 위치. 없으면 0 */
+function lastSentenceEnd(text: string): number {
+  for (let index = text.length - 1; index > 0; index -= 1) {
+    if ('.!?。'.includes(text[index])) return index + 1;
+  }
+  return 0;
 }
 
 function samePath(left: string[], right: string[]): boolean {
