@@ -3,7 +3,6 @@ import { decodeCursor, encodeCursor } from '../../../global/common/cursor/cursor
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { PageResult } from '../../../global/common/response/page-result';
 import { TransactionManager } from '../../../global/database/transaction-manager';
-import { PdfTextExtractor } from '../../../infrastructure/document/pdf-text.extractor';
 import { ListAdminGuidelinesQueryDto } from '../dto/request/list-admin-guidelines.query.dto';
 import { RunPipelineRequestDto } from '../dto/request/run-pipeline.request.dto';
 import { UpdateVersionStatusRequestDto } from '../dto/request/update-version-status.request.dto';
@@ -13,9 +12,7 @@ import { AdminIngestResponseDto } from '../dto/response/admin-ingest.response.dt
 import { toAdminGuideline, toAdminGuidelineVersion } from '../mapper/guideline.mapper';
 import { GuidelineVersionRow } from '../persistence/guideline.schema';
 import { GuidelineRepository } from '../repository/guideline.repository';
-import { GuidelineAcquisitionService } from './guideline-acquisition.service';
-import { GuidelineIngestService } from './guideline-ingest.service';
-import { GuidelineParseService } from './guideline-parse.service';
+import { GuidelinePipelineService } from './guideline-pipeline.service';
 
 const DEFAULT_SIZE = 20;
 
@@ -34,21 +31,30 @@ export class GuidelineAdminService {
   constructor(
     private readonly txManager: TransactionManager,
     private readonly repository: GuidelineRepository,
-    private readonly acquisition: GuidelineAcquisitionService,
-    private readonly parseService: GuidelineParseService,
-    private readonly ingestService: GuidelineIngestService,
-    private readonly pdfExtractor: PdfTextExtractor,
+    // 1건 동기 경로와 전건 잡이 같은 실행기를 공유한다 (docs/specs/22)
+    private readonly pipeline: GuidelinePipelineService,
   ) {}
 
-  /** 1건 수집→파싱→적재. PDF는 메모리에서 파싱하고 버린다 — 디스크에 쓰면 누적된다. */
+  /**
+   * 1건 수집→파싱→적재. PDF는 메모리에서 파싱하고 버린다 — 디스크에 쓰면 누적된다.
+   *
+   * **§22의 실행기에 위임한다.** 그래서 이 동기 호출도 `jobId=null` 실행 행으로 남아
+   * `GET /admin/pipeline-runs`에 전건 잡의 실행들과 함께 조회된다 — 1건 경로와 전건 경로가
+   * 같은 기록 구조를 쓴다는 §22의 전제가 여기서 성립한다.
+   *
+   * 실패는 실행 행에 기록된 뒤 **원래 예외 그대로** 다시 던진다 — 동기 계약은 HTTP 상태로
+   * 답해야 하고, §20 가드가 `data`에 실은 문제 권고 번호도 그래야 보존된다.
+   */
   async runPipeline(request: RunPipelineRequestDto): Promise<AdminIngestResponseDto> {
-    const acquired = await this.acquisition.acquireDocument(request.guideIdx);
-    // 원본 목록에 없는 문서와 못 가져온 문서를 구분한다
-    if (!acquired) throw new ServiceException('NOT_FOUND');
-    if (acquired.status === 'FAILED') throw new ServiceException('GUIDELINE_SOURCE_UNAVAILABLE');
+    const { run, error } = await this.pipeline.runOne({
+      externalId: request.guideIdx,
+      jobId: null,
+      order: 0,
+    });
+    if (error) throw error;
 
     // 첨부가 없는 문서는 에러가 아니다 — 수집 기록만 남기고 그 상태를 돌려준다
-    if (acquired.status === 'SKIPPED_NO_ATTACHMENT' || !acquired.body) {
+    if (run.status === 'SKIPPED') {
       return {
         externalId: request.guideIdx,
         sourceStatus: 'SKIPPED_NO_ATTACHMENT',
@@ -62,25 +68,29 @@ export class GuidelineAdminService {
       };
     }
 
-    const pages = await this.pdfExtractor.extractPages(acquired.body);
-    // 구조 문제는 여기서 422로 막힌다 — 적재는 일어나지 않는다 (§20 가드)
-    const input = await this.parseService.parse({
-      pages,
-      externalId: request.guideIdx,
-      sourceSystem: this.acquisition.sourceSystem,
-    });
-    const result = await this.ingestService.ingest(input);
+    // 판본·상태는 행이 아니라 버전에서 읽는다 — 재적재 skip이면 기존 버전을 그대로 가리키므로
+    // 그 버전이 이미 폐기됐을 수도 있다(하드코딩하면 거짓이 된다)
+    const version = run.guidelineVersionId
+      ? await this.repository.findVersionById(run.guidelineVersionId)
+      : null;
+    const ingest = run.stages.ingest;
 
     return {
       externalId: request.guideIdx,
       sourceStatus: 'FETCHED',
-      created: result.created,
-      guidelineId: result.guidelineId,
-      guidelineVersionId: result.guidelineVersionId,
-      version: result.version,
-      revision: result.revision,
-      status: result.status,
-      stats: result.stats,
+      created: run.created ?? false,
+      guidelineId: run.guidelineId,
+      guidelineVersionId: run.guidelineVersionId,
+      version: version?.version ?? null,
+      revision: run.revision,
+      status: version?.status ?? null,
+      stats: ingest
+        ? {
+            sections: ingest.sections,
+            chunks: ingest.chunks,
+            skippedChunks: ingest.skippedChunks,
+          }
+        : null,
     };
   }
 

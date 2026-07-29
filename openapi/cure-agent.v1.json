@@ -682,6 +682,322 @@
         ]
       }
     },
+    "/api/v1/admin/guideline-jobs": {
+      "post": {
+        "operationId": "AdminGuidelineJobController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGuidelineJobRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/GuidelineJobResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "전건 수집→파싱→임베딩→적재 잡 시작 (202, 즉시 반환)",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      },
+      "get": {
+        "operationId": "AdminGuidelineJobController_list",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/GuidelineJobResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "잡 이력 — 최신순 커서",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      }
+    },
+    "/api/v1/admin/guideline-jobs/{jobId}": {
+      "get": {
+        "operationId": "AdminGuidelineJobController_detail",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/GuidelineJobDetailResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "잡 1건 + 문서별 실행 전체 중첩",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      }
+    },
+    "/api/v1/admin/guideline-jobs/{jobId}/stream": {
+      "get": {
+        "description": "job.snapshot → run.stage(단계마다) → job.completed. 모든 이벤트가 job 카운터를 함께 싣는다. GET이라 EventSource를 그대로 쓴다.",
+        "operationId": "AdminGuidelineJobController_stream",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "잡 진행 SSE (§8 — 봉투 미적용)",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      }
+    },
+    "/api/v1/admin/guideline-jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "AdminGuidelineJobController_cancel",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/GuidelineJobResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "취소 요청 — CANCELLING 표시 후 현재 문서를 마치고 중단",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      }
+    },
+    "/api/v1/admin/pipeline-runs": {
+      "get": {
+        "operationId": "AdminPipelineRunController_list",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": false,
+            "in": "query",
+            "description": "특정 잡의 실행만",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "externalId",
+            "required": false,
+            "in": "query",
+            "description": "이 문서가 그동안 어떻게 처리돼 왔나 — 잡을 가로지르는 조회",
+            "schema": {
+              "example": "325",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RUNNING",
+                "SUCCEEDED",
+                "SKIPPED",
+                "FAILED",
+                "INTERRUPTED"
+              ]
+            }
+          },
+          {
+            "name": "phase",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACQUIRE",
+                "PARSE",
+                "EMBED",
+                "INGEST"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PipelineRunResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "단계별 실행 이력 — 최신순 커서, jobId=null 실행 포함",
+        "tags": [
+          "Admin Guideline Job"
+        ]
+      }
+    },
     "/api/v1/conversations": {
       "post": {
         "operationId": "ConversationController_create",
@@ -2103,6 +2419,373 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "GuidelineJobResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "COMPLETED",
+              "CANCELLING",
+              "CANCELLED",
+              "INTERRUPTED",
+              "FAILED"
+            ],
+            "description": "POST 응답은 항상 RUNNING이다 — 생성한 행을 그대로 돌려주므로"
+          },
+          "requestedBy": {
+            "type": "string",
+            "description": "잡을 시작한 ADMIN"
+          },
+          "total": {
+            "type": "number",
+            "description": "러너가 원본 목록을 받은 직후 채운다 — POST 응답 시점엔 0"
+          },
+          "processed": {
+            "type": "number",
+            "description": "succeeded + skipped + failed"
+          },
+          "succeeded": {
+            "type": "number",
+            "description": "재적재로 created=false인 실행도 포함"
+          },
+          "skipped": {
+            "type": "number",
+            "description": "첨부가 없어 파이프라인에 들어가지 못한 문서"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "러너 자체가 죽어 남은 문서를 시도하지 못한 경우의 사유 (status=FAILED)"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "requestedBy",
+          "total",
+          "processed",
+          "succeeded",
+          "skipped",
+          "failed",
+          "startedAt",
+          "finishedAt",
+          "error"
+        ]
+      },
+      "CreateGuidelineJobRequestDto": {
+        "type": "object",
+        "properties": {
+          "externalIds": {
+            "example": [
+              "325",
+              "326"
+            ],
+            "description": "생략하면 원본 목록 전건. 실패한 문서만 다시 돌리는 것이 이 필드의 용도다",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PipelineStageAcquireDto": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "number",
+            "description": "받은 본문 크기"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bytes",
+          "contentType",
+          "ms"
+        ]
+      },
+      "PipelineStageParseDto": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "number"
+          },
+          "sections": {
+            "type": "number"
+          },
+          "chunks": {
+            "type": "number",
+            "description": "dedupe **전** 파서 출력 그대로"
+          },
+          "ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pages",
+          "sections",
+          "chunks",
+          "ms"
+        ]
+      },
+      "PipelineStageEmbedDto": {
+        "type": "object",
+        "properties": {
+          "vectors": {
+            "type": "number",
+            "description": "임베딩을 실제로 호출한 청크 수 (dedupe 후)"
+          },
+          "model": {
+            "type": "string",
+            "example": "fake-embedding-v1"
+          },
+          "ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "vectors",
+          "model",
+          "ms"
+        ]
+      },
+      "PipelineStageIngestDto": {
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "number"
+          },
+          "chunks": {
+            "type": "number"
+          },
+          "skippedChunks": {
+            "type": "number",
+            "description": "버전 내 중복 콘텐츠로 건너뛴 청크 수"
+          },
+          "ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "sections",
+          "chunks",
+          "skippedChunks",
+          "ms"
+        ]
+      },
+      "PipelineRunStagesDto": {
+        "type": "object",
+        "properties": {
+          "acquire": {
+            "$ref": "#/components/schemas/PipelineStageAcquireDto"
+          },
+          "parse": {
+            "$ref": "#/components/schemas/PipelineStageParseDto"
+          },
+          "embed": {
+            "$ref": "#/components/schemas/PipelineStageEmbedDto"
+          },
+          "ingest": {
+            "$ref": "#/components/schemas/PipelineStageIngestDto"
+          }
+        }
+      },
+      "PipelineRunResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string",
+            "nullable": true,
+            "description": "null이면 잡 밖의 단건 실행 (docs/specs/21 동기 pipeline, docs/specs/05 스크립트)"
+          },
+          "order": {
+            "type": "number",
+            "description": "잡 안의 처리 순서. 잡 밖 실행은 0"
+          },
+          "sourceSystem": {
+            "type": "string",
+            "nullable": true,
+            "example": "NCKM"
+          },
+          "externalId": {
+            "type": "string",
+            "nullable": true,
+            "example": "325"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "SUCCEEDED",
+              "SKIPPED",
+              "FAILED",
+              "INTERRUPTED"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "ACQUIRE",
+              "PARSE",
+              "EMBED",
+              "INGEST"
+            ],
+            "description": "가장 멀리 도달한 단계"
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "실패한 **단계**로 정한다 — 던져진 예외의 타입이 아니다"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "guidelineId": {
+            "type": "string",
+            "nullable": true
+          },
+          "guidelineVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "number",
+            "nullable": true
+          },
+          "created": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "새 revision을 만들었는가 — 동일 contentHash 재적재면 false (docs/specs/21)"
+          },
+          "stages": {
+            "$ref": "#/components/schemas/PipelineRunStagesDto"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "order",
+          "sourceSystem",
+          "externalId",
+          "status",
+          "phase",
+          "errorCode",
+          "error",
+          "guidelineId",
+          "guidelineVersionId",
+          "revision",
+          "created",
+          "stages",
+          "startedAt",
+          "finishedAt"
+        ]
+      },
+      "GuidelineJobDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "COMPLETED",
+              "CANCELLING",
+              "CANCELLED",
+              "INTERRUPTED",
+              "FAILED"
+            ],
+            "description": "POST 응답은 항상 RUNNING이다 — 생성한 행을 그대로 돌려주므로"
+          },
+          "requestedBy": {
+            "type": "string",
+            "description": "잡을 시작한 ADMIN"
+          },
+          "total": {
+            "type": "number",
+            "description": "러너가 원본 목록을 받은 직후 채운다 — POST 응답 시점엔 0"
+          },
+          "processed": {
+            "type": "number",
+            "description": "succeeded + skipped + failed"
+          },
+          "succeeded": {
+            "type": "number",
+            "description": "재적재로 created=false인 실행도 포함"
+          },
+          "skipped": {
+            "type": "number",
+            "description": "첨부가 없어 파이프라인에 들어가지 못한 문서"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "러너 자체가 죽어 남은 문서를 시도하지 못한 경우의 사유 (status=FAILED)"
+          },
+          "runs": {
+            "description": "`order` 오름차순 — 뒤이어 오는 run.stage를 그대로 이어붙일 수 있어야 한다",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PipelineRunResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "requestedBy",
+          "total",
+          "processed",
+          "succeeded",
+          "skipped",
+          "failed",
+          "startedAt",
+          "finishedAt",
+          "error",
+          "runs"
         ]
       },
       "ConversationSummaryResponseDto": {

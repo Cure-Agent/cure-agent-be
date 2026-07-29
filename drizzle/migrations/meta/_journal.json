@@ -64,6 +64,13 @@
       "when": 1785259444540,
       "tag": "0008_guideline_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785326052120,
+      "tag": "0009_guideline_bulk_job",
+      "breakpoints": true
     }
   ]
 }

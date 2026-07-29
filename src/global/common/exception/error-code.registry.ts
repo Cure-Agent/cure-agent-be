@@ -75,6 +75,16 @@ export const ErrorCodes = {
   // data에 §20 가드가 잡은 권고 번호를 싣는다 — 없으면 어디를 고쳐야 하는지 알 수 없다.
   GUIDELINE_PARSE_FAILED: { status: 422, message: '지침을 파싱하지 못했습니다.' },
   GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: '지침 원본을 가져오지 못했습니다.' },
+
+  // 지침 전건 잡 (docs/specs/22)
+  GUIDELINE_JOB_ALREADY_RUNNING: { status: 409, message: '이미 실행 중인 지침 잡이 있습니다.' },
+  GUIDELINE_JOB_NOT_RUNNING: {
+    status: 409,
+    message: '실행 중이 아닌 잡은 취소할 수 없습니다.',
+  },
+  // 상류 실패라 502다 (§10.1) — 지금은 임베딩 실패가 INTERNAL_ERROR(500)로 흘러
+  // 우리 코드의 결함과 구분되지 않는다.
+  GUIDELINE_EMBEDDING_FAILED: { status: 502, message: '지침 임베딩에 실패했습니다.' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;

@@ -65,7 +65,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
   const server = () => app.getHttpServer();
   const authedGet = (url: string) => request(server()).get(url).set('Cookie', authCookie);
 
-  it('기준 1: 인제스트 → guideline/version/section/chunk/IngestionRun 저장 + 1536차원 임베딩', async () => {
+  it('기준 1: 인제스트 → guideline/version/section/chunk/PipelineRun 저장 + 1536차원 임베딩', async () => {
     const result = await ingestService.ingest(yotongGuideline);
     yotongId = result.guidelineId;
 
@@ -78,7 +78,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
         (SELECT count(*)::int FROM guideline_versions) AS versions,
         (SELECT count(*)::int FROM guideline_sections) AS sections,
         (SELECT count(*)::int FROM evidence_chunks) AS chunks,
-        (SELECT count(*)::int FROM ingestion_runs) AS runs
+        (SELECT count(*)::int FROM pipeline_runs) AS runs
     `);
     expect(counts.rows[0]).toEqual({ guidelines: 1, versions: 1, sections: 2, chunks: 3, runs: 1 });
 
@@ -88,7 +88,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
     expect(dims.rows).toEqual([{ dims: 1536 }]);
   });
 
-  it('기준 2: 같은 입력 재인제스트 → chunk 중복 없음(멱등) + IngestionRun 신규 기록', async () => {
+  it('기준 2: 같은 입력 재인제스트 → chunk 중복 없음(멱등) + PipelineRun 신규 기록', async () => {
     const result = await ingestService.ingest(yotongGuideline);
     expect(result.created).toBe(false);
     expect(result.guidelineId).toBe(yotongId);
@@ -96,7 +96,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
     const counts = await pool.query(`
       SELECT
         (SELECT count(*)::int FROM evidence_chunks) AS chunks,
-        (SELECT count(*)::int FROM ingestion_runs) AS runs
+        (SELECT count(*)::int FROM pipeline_runs) AS runs
     `);
     expect(counts.rows[0]).toEqual({ chunks: 3, runs: 2 });
   });

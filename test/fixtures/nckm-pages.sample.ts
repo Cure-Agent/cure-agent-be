@@ -1,3 +1,7 @@
+/**
+ * 정상 파싱되는 NCKM 지침 페이지 샘플 (docs/specs/19·20).
+ * 아래 §20 가드 샘플들은 이 문서에서 한 축씩만 무너뜨린 것이다.
+ */
 export const nckmSamplePages: string[] = [
   [
     '목차',
@@ -106,4 +110,80 @@ export const nckmSamplePages: string[] = [
     '(1) 배경',
     '후속 장은 인제스트 대상이 아니다.',
   ].join('\n'),
+];
+
+/**
+ * §20 파싱 가드(`GuidelineParseService.assertParsable`)에 걸리는 페이지 샘플 —
+ * docs/specs/22 수용 기준 4의 「3건 중 1건이 파싱 가드에 걸린다」에 쓴다.
+ *
+ * 가드는 `chunkNckmGuideline`의 진단 4축(`uniqueNumbers` 0건 / `missing` / `duplicated` /
+ * `gradeMissing`) 중 하나라도 서면 던진다. 아래 네 상수는 각 축을 **실제로 청커에 돌려 확인한**
+ * 입력이다(추측이 아니다) — 괄호 안이 관측된 진단이다.
+ */
+
+/** 정상 권고 블록 1개 — 가드 샘플이 "한 축만" 무너뜨렸음을 보이기 위한 대조군 페이지 */
+const healthyBlockPage = [
+  '56',
+  'IV 권고사항',
+  '1 한의 단독 치료',
+  '【 R1 】',
+  '권고안 권고등급/근거수준 참고문헌',
+  '성인은 별빛탕을 우선 사용할 것을 권고한다. A/High 5-12)',
+  '임상적 고려사항',
+  '열감이 심한 경우 용량을 조절한다.',
+  '(1) 배경',
+  '가상 체질 변화는 천천히 진행된다.',
+].join('\n');
+
+/**
+ * 등급 토큰을 지운 판본 → `gradeMissing: ['R1']`.
+ * 표 헤더가 남아 있어 블록 판정 자체는 통과하고 등급 추출만 실패한다 — 가장 흔한 실패 모양이며
+ * spec 21 동결 테스트가 쓰는 것과 같은 변형이다.
+ */
+export const nckmGradeMissingPages: string[] = nckmSamplePages.map((page) =>
+  page.replace('A/High', '등급 미기재'),
+);
+
+/**
+ * 마커는 있으나 뒤 10줄(`BLOCK_EVIDENCE_WINDOW`)에 표 헤더도 등급도 없는 재인용 →
+ * `missing: ['R7']`. 고유 번호로는 관측되지만 권고문 청크가 만들어지지 않는 축이다.
+ */
+export const nckmMissingBlockPages: string[] = [
+  healthyBlockPage,
+  [
+    '57',
+    'IV 권고사항',
+    '【 R7 】',
+    ...Array.from(
+      { length: 12 },
+      (_, index) => `재인용 뒤에는 표 헤더도 등급도 오지 않는다 (${index + 1}).`,
+    ),
+  ].join('\n'),
+];
+
+/** 같은 번호의 권고 블록이 두 번 나오는 판본 → `duplicated: ['R1']` */
+export const nckmDuplicatedBlockPages: string[] = [
+  healthyBlockPage,
+  [
+    '57',
+    'IV 권고사항',
+    '1 한의 단독 치료',
+    '【 R1 】',
+    '권고안 권고등급/근거수준 참고문헌',
+    '성인은 별빛탕을 우선 사용할 것을 권고한다. A/High 5-12)',
+    '임상적 고려사항',
+    '같은 번호의 블록이 한 번 더 나온다.',
+  ].join('\n'),
+];
+
+/**
+ * 권고 블록 마커(`【R…】`)가 하나도 없는 판본 → 진단 세 목록이 모두 비어 있고
+ * `uniqueNumbers`가 0건이라 가드가 던진다(조용한 0청크 적재 차단). 세 목록이 비므로 §21의
+ * 에러 `data`는 `{ missing: [], duplicated: [], gradeMissing: [] }`가 된다.
+ */
+export const nckmNoMarkerPages: string[] = [
+  ['56', 'IV 권고사항', '1 한의 단독 치료', '이 판본에서는 권고 블록 마커를 찾지 못한다.'].join(
+    '\n',
+  ),
+  ['57', 'IV 권고사항', '본문만 이어지고 표도 등급도 없다.'].join('\n'),
 ];

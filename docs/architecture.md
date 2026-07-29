@@ -163,6 +163,7 @@ cure-agent-be/
 │   │   │   │   ├── service.exception.ts
 │   │   │   │   └── api-exception.filter.ts   # 레지스트리만 참조해 봉투 생성
 │   │   │   ├── cursor/               # 불투명 base64url 커서 인코딩/디코딩
+│   │   │   ├── sse/                  # SSE 전송 헬퍼 (conversation·guideline 공용)
 │   │   │   ├── guard/ decorator/ pipe/
 │   │   ├── security/
 │   │   │   ├── auth-cookie.factory.ts        # 쿠키 발급·만료 팩토리
@@ -719,6 +720,24 @@ type ConversationStreamEventDto =
 4. 클라이언트 abort 감지 시 서버는 LLM 호출을 취소하고 메시지를 `CANCELLED`로 정리한다.
 5. LLM 응답 타임아웃(권장 60~120s) 초과 시 `error(retryable: true)` 발행 후 `FAILED` 처리.
 
+### 잡 진행 스트림 (docs/specs/22)
+
+전건 지침 파이프라인 잡의 진행은 별도 계약을 쓴다. `GET /admin/guideline-jobs/{jobId}/stream`.
+
+```ts
+type GuidelineJobStreamEventDto =
+  | { eventType: "job.snapshot"; job: GuidelineJobResponseDto; runs: PipelineRunResponseDto[] }
+  | { eventType: "run.stage";     job: GuidelineJobResponseDto; run: PipelineRunResponseDto }
+  | { eventType: "job.completed"; job: GuidelineJobResponseDto }
+  | { eventType: "error"; code: string; message: string; retryable: boolean; traceId: string };
+```
+
+- **`seq`도 `Last-Event-ID` 재생 버퍼도 두지 않는다.** 대화 스트림의 델타는 누적되어야 완성되는 텍스트라 순서·중복 감지가 필요했지만, 잡 진행은 그 자체가 누적 상태다 — 다시 연결해 현재 카운트를 받으면 복구가 끝난다.
+- **첫 이벤트는 항상 `job.snapshot`**이고 그때까지의 `runs`를 전부 싣는다. 최초 연결과 재연결이 같은 경로를 쓴다. 이미 끝난 잡을 열면 스냅샷 + 종결 이벤트를 즉시 보내고 닫는다.
+- **모든 이벤트가 `job` 카운터를 함께 싣는다.** 진행률이 항상 최신이라 클라이언트가 이벤트를 누적할 필요가 없다.
+- **`job.completed`가 유일한 정상 종결**이다. 취소·중단·전건 실패도 여기로 오고 `job.status`로 구분한다 — 종결을 이벤트 타입으로 쪼개면 소비자가 「어떤 이벤트가 끝인가」를 상태 수만큼 알아야 한다.
+- **GET이라 브라우저 `EventSource`를 그대로 쓴다.** POST 스트림인 대화와 달리 자동 재연결이 붙고, 그 재연결이 위의 스냅샷 규약과 맞물려 복구가 된다.
+
 **OpenAPI 표현**: oneOf + discriminator(`eventType`). Nest Swagger 생성기가 완전히 표현하지 못하는 부분은 `@ApiProduces('text/event-stream')` + 수동 schema 또는 OpenAPI overlay로 보완한다.
 
 ---
@@ -854,6 +873,10 @@ export const ErrorCodes = {
   GUIDELINE_VERSION_CITED:    { status: 409, message: "이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요." },
   GUIDELINE_PARSE_FAILED:     { status: 422, message: "지침을 파싱하지 못했습니다." },
   GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: "지침 원본을 가져오지 못했습니다." },
+  // 지침 전건 잡 (docs/specs/22)
+  GUIDELINE_JOB_ALREADY_RUNNING: { status: 409, message: "이미 실행 중인 지침 잡이 있습니다." },
+  GUIDELINE_JOB_NOT_RUNNING:  { status: 409, message: "실행 중이 아닌 잡은 취소할 수 없습니다." },
+  GUIDELINE_EMBEDDING_FAILED: { status: 502, message: "지침 임베딩에 실패했습니다." },   // 상류 실패라 502 (§10.1)
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;

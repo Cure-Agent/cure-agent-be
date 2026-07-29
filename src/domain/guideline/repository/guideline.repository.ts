@@ -11,7 +11,6 @@ import {
   guidelineSections,
   guidelineVersions,
   guidelines,
-  ingestionRuns,
 } from '../persistence/guideline.schema';
 
 export interface ListGuidelinesFilter {
@@ -163,10 +162,6 @@ export class GuidelineRepository {
   ): Promise<void> {
     if (rows.length === 0) return;
     await this.txManager.conn.insert(evidenceChunks).values(rows);
-  }
-
-  async insertIngestionRun(row: typeof ingestionRuns.$inferInsert): Promise<void> {
-    await this.txManager.conn.insert(ingestionRuns).values(row);
   }
 
   // ── 조회 ─────────────────────────────────────────────
