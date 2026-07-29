@@ -34,7 +34,12 @@ export interface GuidelineIngestInput {
 export interface GuidelineIngestResult {
   guidelineId: string;
   guidelineVersionId: string;
-  /** 이번 실행에서 버전 콘텐츠를 새로 저장했는지 (기존 버전이면 false = skip) */
+  /** 이번 실행에서 새 revision을 만들었는지 (동일 내용이면 false = skip) */
   created: boolean;
+  /** 원문 판본 */
+  version: string;
+  /** 같은 판본을 다시 파싱한 처리 회차 (docs/specs/21) */
+  revision: number;
+  status: 'ACTIVE' | 'SUPERSEDED';
   stats: { sections: number; chunks: number; skippedChunks: number };
 }

@@ -224,7 +224,7 @@ cure-agent-be/
 │       ├── retrieval/                        # 포트 없음 — DB 검색이라 실물로 검증
 │       ├── guideline-source/                 # 포트 (NCKM HTTP — fake 치환) §18
 │       ├── document/                         # pdf-parser, guideline-chunker §19
-│       └── scheduler/                        # 지침 개정 감지 크론 §21
+│       └── scheduler/                        # 지침 개정 감지 크론 (별도 spec)
 │
 ├── test/
 │   ├── contract/                     # OpenAPI 재생성 diff + breaking change 검사
@@ -813,7 +813,8 @@ class PageMetaDto {
 
 운영 규칙:
 
-- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/403/404/409/422/429/500/503 사용.
+- 실패를 HTTP 200으로 반환하지 않는다. `success=false`와 함께 실제 400/401/403/404/409/422/429/500/502/503 사용.
+  - **502는 상류(upstream) 실패 전용**이다 — 우리가 호출한 외부 시스템이 응답을 주지 않은 경우이며, 우리 코드의 결함(500)과 구분된다 (첫 사례: `GUIDELINE_SOURCE_UNAVAILABLE`, docs/specs/21).
 - code는 FE 분기용으로 안정적으로 유지, message는 사용자 표시용, traceId는 로그·응답 연결용.
 - 목록은 `data: T[]` + `page: PageMetaDto`. 생성 API는 HTTP 201 + envelope.
 - SSE·파일 다운로드에는 envelope 미적용.
@@ -848,6 +849,10 @@ export const ErrorCodes = {
   SERVICE_NOT_READY:          { status: 503, message: "서비스가 아직 준비되지 않았습니다." },
   // Guidance
   GUIDANCE_ALREADY_REVIEWED:  { status: 409, message: "이미 검토가 완료된 항목입니다." },
+  // Guideline 코퍼스 관리 (docs/specs/21)
+  GUIDELINE_VERSION_CITED:    { status: 409, message: "이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요." },
+  GUIDELINE_PARSE_FAILED:     { status: 422, message: "지침을 파싱하지 못했습니다." },
+  GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: "지침 원본을 가져오지 못했습니다." },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;
@@ -944,6 +949,8 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 ### 5단계 이후 작업 규칙 (SDD)
 
 각 스텝은 구현 전에 `docs/specs/NN-<이름>.md`를 작성한다. 스펙은 1페이지를 유지하고, 이 문서와 중복되는 내용은 §링크로만 참조한다.
+
+**아직 쓰지 않은 스펙에 번호를 예약하지 않는다.** 번호는 실제로 그 문서를 쓸 때 다음 번호로 받고, 그전에는 이름으로 참조한다(`개정 감지 스케줄러(별도 spec)`). 예약해두면 앞에 스펙이 하나 끼어들 때마다 기존 문서의 참조를 전부 고쳐야 한다 — 실제로 개정 감지 스케줄러가 §20 → §21 → §22 → §23으로 세 번 밀리며 매번 4~6곳을 수정했다. 번호가 실행 순서를 따르는 관례는 이대로도 유지된다(쓰는 시점에 다음 번호를 받으므로).
 
 **12단계 이후 — 두 하네스의 역할 분리**: 구현 순서는 12단계로 끝나지만 변경은 계속된다. 판단 기준은 "새 기능인가"가 아니라 **"6개월 뒤 누군가 이 결정의 근거를 찾을 것인가"** 다 — 영속 문서가 자산이 되는 변경만 spec을 쓴다.
 

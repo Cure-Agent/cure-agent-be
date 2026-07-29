@@ -489,6 +489,199 @@
         ]
       }
     },
+    "/api/v1/admin/guidelines/pipeline": {
+      "post": {
+        "operationId": "AdminGuidelineController_runPipeline",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunPipelineRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AdminIngestResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "문서 1건 수집→파싱→적재 (동기)",
+        "tags": [
+          "Admin Guideline"
+        ]
+      }
+    },
+    "/api/v1/admin/guidelines": {
+      "get": {
+        "operationId": "AdminGuidelineController_list",
+        "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "제목 부분일치 검색",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "publisher",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "불투명 커서 (§10.4)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminGuidelineResponseDto"
+                          }
+                        },
+                        "page": {
+                          "$ref": "#/components/schemas/PageMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "지침 목록 — 버전 이력 중첩 (커서 기반)",
+        "tags": [
+          "Admin Guideline"
+        ]
+      }
+    },
+    "/api/v1/admin/guideline-versions/{versionId}": {
+      "patch": {
+        "operationId": "AdminGuidelineVersionController_updateStatus",
+        "parameters": [
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVersionStatusRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AdminGuidelineVersionResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "버전 폐기·복구 (ACTIVE ↔ SUPERSEDED)",
+        "tags": [
+          "Admin Guideline"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminGuidelineVersionController_delete",
+        "parameters": [
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "버전·섹션·청크 삭제 — 인용이 있으면 409",
+        "tags": [
+          "Admin Guideline"
+        ]
+      }
+    },
     "/api/v1/conversations": {
       "post": {
         "operationId": "ConversationController_create",
@@ -1718,6 +1911,198 @@
           "sectionPath",
           "excerpt",
           "sourceUrl"
+        ]
+      },
+      "AdminIngestStatsDto": {
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "number"
+          },
+          "chunks": {
+            "type": "number"
+          },
+          "skippedChunks": {
+            "type": "number",
+            "description": "버전 내 중복 콘텐츠로 건너뛴 청크 수"
+          }
+        },
+        "required": [
+          "sections",
+          "chunks",
+          "skippedChunks"
+        ]
+      },
+      "AdminIngestResponseDto": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "example": "325",
+            "description": "NCKM guide_idx"
+          },
+          "sourceStatus": {
+            "type": "string",
+            "enum": [
+              "FETCHED",
+              "SKIPPED_NO_ATTACHMENT"
+            ],
+            "description": "첨부가 없는 문서는 에러가 아니라 SKIPPED_NO_ATTACHMENT로 200 응답이다"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "새 revision을 만들었는가 — 동일 contentHash 재적재면 false"
+          },
+          "guidelineId": {
+            "type": "string",
+            "nullable": true
+          },
+          "guidelineVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string",
+            "nullable": true,
+            "example": "2024-07"
+          },
+          "revision": {
+            "type": "number",
+            "nullable": true,
+            "example": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUPERSEDED"
+            ],
+            "nullable": true
+          },
+          "stats": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminIngestStatsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "externalId",
+          "sourceStatus",
+          "created",
+          "guidelineId",
+          "guidelineVersionId",
+          "version",
+          "revision",
+          "status",
+          "stats"
+        ]
+      },
+      "RunPipelineRequestDto": {
+        "type": "object",
+        "properties": {
+          "guideIdx": {
+            "type": "string",
+            "example": "325",
+            "description": "NCKM 문서 식별자 (guide_idx)"
+          }
+        },
+        "required": [
+          "guideIdx"
+        ]
+      },
+      "AdminGuidelineVersionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "example": "2024-07",
+            "description": "원문 판본"
+          },
+          "revision": {
+            "type": "number",
+            "example": 2,
+            "description": "같은 판본을 다시 파싱한 처리 회차"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUPERSEDED"
+            ]
+          },
+          "publishedAt": {
+            "type": "string",
+            "description": "발행일 (ISO 8601)"
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "인제스트 입력 전문 해시 — 재적재 변경 감지 기준"
+          },
+          "chunkCount": {
+            "type": "number",
+            "example": 152,
+            "description": "이 버전에 적재된 근거 청크 수"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "revision",
+          "status",
+          "publishedAt",
+          "contentHash",
+          "chunkCount"
+        ]
+      },
+      "AdminGuidelineResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "example": "요통 한의표준임상진료지침"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "한국한의약진흥원"
+          },
+          "versions": {
+            "description": "판본 내림차순 → 같은 판본 안에서 revision 내림차순",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminGuidelineVersionResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "publisher",
+          "versions"
+        ]
+      },
+      "UpdateVersionStatusRequestDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUPERSEDED"
+            ]
+          }
+        },
+        "required": [
+          "status"
         ]
       },
       "ConversationSummaryResponseDto": {

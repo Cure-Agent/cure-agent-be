@@ -55,6 +55,9 @@ export class RetrievalService {
       // 좌표계가 다른 벡터는 코사인 거리가 무의미하다 — 같은 모델로 만든 청크만 본다 (docs/specs/14).
       // 모델을 바꾸면 재인제스트 전까지 근거 0건(abstain)이 되며, 이것이 조용한 오답보다 안전하다.
       eq(evidenceChunks.embeddingModel, this.embeddingProvider.model),
+      // 폐기된 판본·회차는 새 답변에 인용되지 않는다 (docs/specs/21).
+      // 과거 인용은 message_citations로 계속 조회되므로 역사적 정확성은 유지된다.
+      eq(guidelineVersions.status, 'ACTIVE'),
       filters?.guidelineIds?.length
         ? inArray(guidelineVersions.guidelineId, filters.guidelineIds)
         : undefined,

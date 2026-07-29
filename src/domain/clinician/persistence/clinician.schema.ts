@@ -4,6 +4,12 @@ import { clinics } from './clinic.schema';
 
 export const verificationStatus = pgEnum('verification_status', ['PENDING', 'VERIFIED', 'REJECTED']);
 export const oauthProvider = pgEnum('oauth_provider', ['GOOGLE', 'KAKAO', 'NAVER']);
+/**
+ * 관리 엔드포인트 접근 권한 (docs/specs/21).
+ * 토큰 페이로드에 넣지 않는다 — 박으면 권한 회수가 access TTL만큼 지연된다.
+ * 최초 ADMIN 지정은 수동 UPDATE다 (역할 관리 API는 Out of scope).
+ */
+export const clinicianRole = pgEnum('clinician_role', ['ADMIN', 'MEMBER']);
 
 export const clinicians = pgTable(
   'clinicians',
@@ -20,6 +26,7 @@ export const clinicians = pgTable(
     // 면허번호는 AES-GCM 암호문으로만 저장한다 (architecture.md §4.5)
     licenseNumberEncrypted: text('license_number_encrypted').notNull(),
     verificationStatus: verificationStatus('verification_status').notNull().default('PENDING'),
+    role: clinicianRole('role').notNull().default('MEMBER'),
     ...baseColumns,
   },
   (table) => [

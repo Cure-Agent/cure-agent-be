@@ -22,6 +22,11 @@ export interface RatingValue {
 
 export const guidelineStatus = pgEnum('guideline_status', ['ACTIVE', 'SUPERSEDED']);
 export const ingestionStatus = pgEnum('ingestion_status', ['SUCCEEDED', 'FAILED']);
+/**
+ * 버전 단위 폐기 (docs/specs/21). guideline_status와 값은 같지만 대상이 다르다 —
+ * 지침 단위로는 "이 판본만 내린다"를 표현할 수 없어 별도 enum을 둔다.
+ */
+export const guidelineVersionStatus = pgEnum('guideline_version_status', ['ACTIVE', 'SUPERSEDED']);
 
 export const guidelines = pgTable(
   'guidelines',
@@ -42,13 +47,25 @@ export const guidelineVersions = pgTable(
     guidelineId: text('guideline_id')
       .notNull()
       .references(() => guidelines.id),
-    version: text('version').notNull(),
+    version: text('version').notNull(), // 원문 판본 ("2024-07")
+    /**
+     * 같은 판본을 다시 파싱한 **우리 처리 회차** (docs/specs/21).
+     * 지침이 개정되면 version이 바뀌고, 파서가 좋아지면 revision이 오른다 — 둘을 섞지 않는다.
+     */
+    revision: integer('revision').notNull().default(1),
+    status: guidelineVersionStatus('status').notNull().default('ACTIVE'),
     publishedAt: timestamp('published_at', { withTimezone: true }).notNull(),
     sourceUrl: text('source_url').notNull(),
     contentHash: text('content_hash').notNull(), // 입력 전문 해시 (재현성·변경 감지)
     ...baseColumns,
   },
-  (table) => [uniqueIndex('uq_guideline_versions_version').on(table.guidelineId, table.version)],
+  (table) => [
+    uniqueIndex('uq_guideline_versions_revision').on(
+      table.guidelineId,
+      table.version,
+      table.revision,
+    ),
+  ],
 );
 
 export const guidelineSections = pgTable(

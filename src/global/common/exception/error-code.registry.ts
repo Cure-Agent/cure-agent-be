@@ -66,6 +66,15 @@ export const ErrorCodes = {
 
   // Guidance
   GUIDANCE_ALREADY_REVIEWED: { status: 409, message: '이미 검토가 완료된 항목입니다.' },
+
+  // Guideline 코퍼스 관리 (docs/specs/21)
+  GUIDELINE_VERSION_CITED: {
+    status: 409,
+    message: '이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요.',
+  },
+  // data에 §20 가드가 잡은 권고 번호를 싣는다 — 없으면 어디를 고쳐야 하는지 알 수 없다.
+  GUIDELINE_PARSE_FAILED: { status: 422, message: '지침을 파싱하지 못했습니다.' },
+  GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: '지침 원본을 가져오지 못했습니다.' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;
