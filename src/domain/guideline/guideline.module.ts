@@ -5,6 +5,10 @@ import { GuidelineSourceModule } from '../../infrastructure/guideline-source/gui
 import { AdminGuard } from '../../global/security/admin.guard';
 import { ClinicianModule } from '../clinician/clinician.module';
 import {
+  AdminGuidelineJobController,
+  AdminPipelineRunController,
+} from './controller/admin-guideline-job.controller';
+import {
   AdminGuidelineController,
   AdminGuidelineVersionController,
 } from './controller/admin-guideline.controller';
@@ -15,6 +19,7 @@ import { SourceDocumentRepository } from './repository/source-document.repositor
 import { GuidelineAcquisitionService } from './service/guideline-acquisition.service';
 import { GuidelineAdminService } from './service/guideline-admin.service';
 import { GuidelineIngestService } from './service/guideline-ingest.service';
+import { GuidelineJobService } from './service/guideline-job.service';
 import { GuidelineParseService } from './service/guideline-parse.service';
 import { GuidelineService } from './service/guideline.service';
 
@@ -26,6 +31,9 @@ import { GuidelineService } from './service/guideline.service';
     EvidenceController,
     AdminGuidelineController,
     AdminGuidelineVersionController,
+    // 전건 파이프라인 잡 (docs/specs/22)
+    AdminGuidelineJobController,
+    AdminPipelineRunController,
   ],
   providers: [
     GuidelineService,
@@ -38,6 +46,8 @@ import { GuidelineService } from './service/guideline.service';
     GuidelineParseService,
     // 코퍼스 관리 API (docs/specs/21)
     GuidelineAdminService,
+    // 전건 파이프라인 잡 (docs/specs/22)
+    GuidelineJobService,
     PdfTextExtractor,
     AdminGuard,
   ],
