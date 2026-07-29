@@ -27,8 +27,25 @@
 
 - `CreateGuidelineJobRequestDto { externalIds?: string[] }` — 생략하면 원본 목록 전건.
   **실패한 문서만 다시 돌리는 것이 이 필드의 용도다**(아래 「재시작으로 끊긴 잡·실행」).
+- **원본 목록에 없는 `externalId`가 섞여 있어도 POST는 거절하지 않는다** — 잡은 202로 뜨고 `total`은
+  준 개수 그대로이며, 그 문서는 `FAILED`·`phase=ACQUIRE`·`errorCode=NOT_FOUND` 실행 행으로 남아
+  `failed`에 합산되고 잡은 `COMPLETED`가 된다. §21이 세운 「없는 것」과 「못 가져온
+  것(`GUIDELINE_SOURCE_UNAVAILABLE`)」의 구분을 잡 경로에서도 유지한다. 대상 문서는 언제나 실행 행을
+  하나씩 가지므로 잡이 정상 종료하면 `processed`가 `total`과 같아진다.
 - 잡 상세는 실행을 **중첩해 담는다** — §21이 버전 이력을 서브리소스로 쪼개지 않은 것과 같은 판단이다.
   전건이어도 86행이라 페이지네이션이 필요할 만큼 커지지 않는다.
+- **정렬**: `GET /admin/pipeline-runs`는 잡 목록과 같이 **최신순**(`id` ULID 내림차순)이며 어떤 필터를
+  걸어도 정렬 축은 바뀌지 않는다. 반면 잡 상세와 `job.snapshot`에 중첩되는 `runs`만 **`order`
+  오름차순**이다 — 스냅샷 뒤에 이어지는 `run.stage`가 같은 진행 순서라, 클라이언트가 스냅샷 배열에
+  이벤트를 그대로 이어붙일 수 있어야 한다.
+- `POST`는 SSE를 제외한 일반 JSON API와 같이 **공통 봉투를 적용**하고(§10.1의 봉투 미적용은 SSE·파일
+  다운로드뿐) `@HttpCode(202)` + 기본 성공코드 `SUCCESS`로 응답한다 — 202용 `ACCEPTED`를 성공코드
+  레지스트리에 신설하지 않는다(§21 `POST /admin/guidelines/pipeline`과 같은 선택). **`Location` 헤더는
+  두지 않는다** — `jobId`는 `data`로만 전달하고 상세·스트림 경로는 클라이언트가 조립한다.
+- **POST는 원본 목록을 조회하지 않는다.** 잡 행을 `status=RUNNING` · 카운터 전부 0(`total` 포함)으로
+  만들어 **그대로** 반환하므로, 잡이 아무리 빨리 끝나도 POST 응답의 status는 항상 `RUNNING`이다.
+  `total`은 러너가 원본 목록을 받은 직후 채운다 — 수용 기준 2·10의 `total` 단언은 POST 응답이 아니라
+  **잡 종료 후 조회(또는 스냅샷 이후의 스트림 이벤트)**에서 성립한다.
 - `pipeline-runs`는 `jobId`·`externalId`·`status`·`phase` 필터를 받는다. 잡에 속하지 않은 실행
   (§21의 1건 동기 호출, §05 JSON 인제스트 스크립트)까지 한 자리에서 보는 것이 이 목록의 존재 이유다.
 - SSE는 GET이라 `EventSource`가 쿠키를 실어 보내고 CSRF 가드(§4.1)의 안전 메서드를 통과한다.
@@ -149,6 +166,15 @@ stages = {
 }
 ```
 
+각 키는 그 단계가 **실제로 낸 산출**이다 — `acquire.bytes`·`contentType`은 받은 본문 기준(§18은 첨부가
+없어도 본문을 받았으면 기록한다), `parse.{pages,sections,chunks}`는 파서 출력 그대로(**dedupe 전** 청크
+수), `embed.vectors`는 임베딩을 **실제로 호출한** 청크 수(dedupe 후 = `ingest.chunks`),
+`ingest.{sections,chunks,skippedChunks}`는 기존 `stats` 정의 그대로다(재적재 skip이면 `{0, 0, 전체 청크 수}`).
+
+**키는 그 단계를 마쳤을 때만 생긴다** — 도달하지 못했거나 실패한 단계의 키는 0으로 채우지 않고 아예
+없다. `SKIPPED` 실행은 `{acquire}`, EMBED 실패는 `{acquire, parse}`, `created=false` 실행은 임베딩을
+호출하지 않으므로 `embed` 없이 `{acquire, parse, ingest}`다.
+
 **단계 세부는 jsonb 하나로 둔다.** 단계마다 필드가 이질적이라 컬럼으로 펴면 대부분 null인 16개
 컬럼이 된다. 자주 필터에 거는 축(`status`·`phase`·`errorCode`·`externalId`·`jobId`)만 컬럼으로
 뺀다 — 기존 `stats` jsonb가 이미 쓰던 관례다.
@@ -174,6 +200,11 @@ Postgres에는 아무것도 아니다. 이 증분 저장이 곧 `run.stage` 이�
 
 - 신규 enum `guideline_job_status`: `RUNNING` / `COMPLETED` / `CANCELLING` / `CANCELLED` / `INTERRUPTED` / `FAILED`
 - 컬럼: id, status, requestedBy(→`clinicians.id`), total, processed, succeeded, skipped, failed, startedAt, finishedAt, error
+- **카운터 산식**: `succeeded`·`skipped`·`failed`는 그 잡에 속한 `pipeline_runs`의 종결 상태를 그대로
+  집계한 값이고(§21 재적재로 `created=false`인 실행도 `succeeded`다), `processed = succeeded +
+  skipped + failed`라 진행 중(`RUNNING`)인 실행은 세지 않으며 `INTERRUPTED`는 어느 카운터에도 들어가지
+  않는다. `total`은 잡 시작 시점에 정해져 도중에 변하지 않으므로, 취소·중단으로 시도하지 못한 문서가
+  있으면 `processed < total`로 끝난다.
 - **동시 실행 1개 강제**: partial unique index — `WHERE status IN ('RUNNING','CANCELLING')`
 
 `PENDING`을 두지 않는다 — 큐가 없어 생성 즉시 시작하므로 대기 상태가 존재하지 않는다.
@@ -197,6 +228,16 @@ INTERRUPTED`). 남은 문서는 `externalIds`로 다시 부른다.
 빠져나오며 `CANCELLED`가 된다. 다운로드·파싱 중간에 끊으면 부분 적재를 만들 수 있고, 1건은
 10~20초(§21)라 기다릴 만하다.
 
+러너는 **첫 문서를 포함해 매 문서를 시작하기 직전에** 잡 상태를 다시 읽어, `CANCELLING`이면 그 문서의
+`pipeline_runs` 행을 만들지 않고 루프를 빠져나온다 — 수용 기준 9의 「남은 문서」는 이 검사 시점에 아직
+시작하지 않아 실행 행이 없는 문서를 뜻한다. 목록 조회 중이나 첫 문서 시작 전에 취소가 들어오면
+**실행 행 0건 · `processed=0`인 `CANCELLED` 잡**이 정상 결과이고, 진행 중이던 문서는 언제나 끝까지 마친다.
+
+이미 `CANCELLING`인 잡에 `cancel`을 다시 호출하면 **200 + 현재 상태**다 — 취소는 표시만 하는 멱등
+연산이고, 여기서 「실행 중」은 partial unique index·부팅 시 정리가 쓰는 것과 같은
+`status IN ('RUNNING','CANCELLING')`을 뜻한다. 409 `GUIDELINE_JOB_NOT_RUNNING`은 종결
+상태(`COMPLETED`·`CANCELLED`·`INTERRUPTED`·`FAILED`)의 잡에만 적용된다.
+
 ### 메트릭 — 「느려졌나」는 DB로 답할 수 없다
 
 `pipeline_runs`는 «무엇이 왜 실패했나»에 답하지만 추이는 답하지 못한다. 단계별 소요·실패율을 DB에
@@ -207,6 +248,11 @@ INTERRUPTED`). 남은 문서는 `externalIds`로 다시 부른다.
 guideline_pipeline_stage_duration_seconds{stage}      # Histogram
 guideline_pipeline_stage_total{stage,status}          # Counter
 ```
+
+라벨 값은 소문자로 고정한다 — `stage`는 `stages` jsonb 키와 같은 `acquire`·`parse`·`embed`·`ingest`이고,
+`status`는 실행 status enum이 아니라 **그 단계 자체의 결말**인 `success`·`failure`·`skipped`다
+(`MetricsService`의 `LlmOutcome`·`SseOutcome`과 같은 관례). 둘 다 단계가 끝날 때 1회만 기록하므로
+`RUNNING`·`INTERRUPTED`에 대응하는 라벨 값은 없다.
 
 ## 추가 에러코드
 
@@ -223,6 +269,15 @@ guideline_pipeline_stage_total{stage,status}          # Counter
 **문서별 실패는 에러 응답이 아니라 실행 행이다**: 위 코드와 §21의
 `GUIDELINE_SOURCE_UNAVAILABLE`·`GUIDELINE_PARSE_FAILED`를 `pipeline_runs.errorCode`에 기록한다.
 같은 실패를 잡 문맥에서는 데이터로, 1건 동기 호출에서는 HTTP 상태로 표현하는 것이 각 계약에 맞다.
+
+**`errorCode`는 던져진 예외의 타입이 아니라 실패한 단계로 정한다.** 러너가 각 단계의 외부 호출을 감싸
+ACQUIRE→`GUIDELINE_SOURCE_UNAVAILABLE`, PARSE(PDF 텍스트 추출 포함 — `stages.parse.pages`가 그
+산출이다)→`GUIDELINE_PARSE_FAILED`, EMBED→`GUIDELINE_EMBEDDING_FAILED`로 매핑하며, 임베딩 프로바이더가
+`EmbeddingProviderError`가 아닌 평범한 `Error`를 던져도 결과는 같다 — §18 수집이 `GuidelineSourceError`
+타입을 보지 않고 다운로드 실패를 전부 `FAILED`로 기록하는 것과 같은 규칙이다. 그 밖의 실패(INGEST 단계
+실패, 각 단계의 외부 호출 밖에서 터진 우리 코드 결함)는 `ServiceException`이면 그 코드를, 아니면
+`INTERNAL_ERROR`를 기록하고 `phase`는 죽은 단계를 그대로 남긴다. §21의 1건 동기 경로는 그 코드에
+대응하는 상태코드를 돌려준다.
 
 ## 수용 기준 (= 동결할 e2e 시나리오, Definition of Done)
 
