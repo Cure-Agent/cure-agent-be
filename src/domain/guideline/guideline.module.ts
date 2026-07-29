@@ -5,17 +5,28 @@ import { GuidelineSourceModule } from '../../infrastructure/guideline-source/gui
 import { AdminGuard } from '../../global/security/admin.guard';
 import { ClinicianModule } from '../clinician/clinician.module';
 import {
+  AdminGuidelineJobController,
+  AdminPipelineRunController,
+} from './controller/admin-guideline-job.controller';
+import {
   AdminGuidelineController,
   AdminGuidelineVersionController,
 } from './controller/admin-guideline.controller';
 import { EvidenceController } from './controller/evidence.controller';
 import { GuidelineController } from './controller/guideline.controller';
+import { GuidelineJobRepository } from './repository/guideline-job.repository';
 import { GuidelineRepository } from './repository/guideline.repository';
+import { PipelineRunRepository } from './repository/pipeline-run.repository';
 import { SourceDocumentRepository } from './repository/source-document.repository';
 import { GuidelineAcquisitionService } from './service/guideline-acquisition.service';
 import { GuidelineAdminService } from './service/guideline-admin.service';
 import { GuidelineIngestService } from './service/guideline-ingest.service';
+import { GuidelineJobRecoveryService } from './service/guideline-job-recovery.service';
+import { GuidelineJobRunner } from './service/guideline-job.runner';
+import { GuidelineJobService } from './service/guideline-job.service';
+import { GuidelinePipelineService } from './service/guideline-pipeline.service';
 import { GuidelineParseService } from './service/guideline-parse.service';
+import { GuidelineJobEventBus } from './sse/guideline-job-event.bus';
 import { GuidelineService } from './service/guideline.service';
 
 @Module({
@@ -26,6 +37,9 @@ import { GuidelineService } from './service/guideline.service';
     EvidenceController,
     AdminGuidelineController,
     AdminGuidelineVersionController,
+    // 전건 파이프라인 잡 (docs/specs/22)
+    AdminGuidelineJobController,
+    AdminPipelineRunController,
   ],
   providers: [
     GuidelineService,
@@ -38,6 +52,14 @@ import { GuidelineService } from './service/guideline.service';
     GuidelineParseService,
     // 코퍼스 관리 API (docs/specs/21)
     GuidelineAdminService,
+    // 전건 파이프라인 잡 (docs/specs/22)
+    GuidelineJobService,
+    GuidelineJobRunner,
+    GuidelinePipelineService,
+    GuidelineJobRecoveryService,
+    GuidelineJobEventBus,
+    GuidelineJobRepository,
+    PipelineRunRepository,
     PdfTextExtractor,
     AdminGuard,
   ],

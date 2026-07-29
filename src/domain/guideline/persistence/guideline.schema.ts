@@ -21,6 +21,11 @@ export interface RatingValue {
 }
 
 export const guidelineStatus = pgEnum('guideline_status', ['ACTIVE', 'SUPERSEDED']);
+/**
+ * @deprecated docs/specs/22 — `pipeline_run_status`로 승격됐다. **선언을 지우지 마라**:
+ * drizzle-kit은 DB가 아니라 이 파일을 진실로 삼으므로, 지우는 순간 `DROP TYPE`이 생성되어
+ * 2단계 배포 원칙(automation/pipeline.md)을 위반한다. 2차 배포에서 함께 제거한다.
+ */
 export const ingestionStatus = pgEnum('ingestion_status', ['SUCCEEDED', 'FAILED']);
 /**
  * 버전 단위 폐기 (docs/specs/21). guideline_status와 값은 같지만 대상이 다르다 —
@@ -113,6 +118,12 @@ export const evidenceChunks = pgTable(
   ],
 );
 
+/**
+ * @deprecated docs/specs/22 — `pipeline_runs`가 수집·파싱·임베딩까지 담아 이 테이블을 대체했다.
+ * **2단계 배포의 1차**라 선언과 테이블을 남긴다: 앱은 더 이상 쓰지 않지만, 지우면 drizzle-kit이
+ * `DROP TABLE`을 생성해 이미지 롤백 시 구버전 앱이 사라진 테이블을 참조하게 된다.
+ * 2차 배포(`0010_drop_ingestion_runs.sql`)에서 이 선언과 함께 제거한다.
+ */
 export const ingestionRuns = pgTable('ingestion_runs', {
   id: text('id').primaryKey(),
   status: ingestionStatus('status').notNull(),

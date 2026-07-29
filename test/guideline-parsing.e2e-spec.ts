@@ -121,6 +121,8 @@ describe('spec 19: 지침 PDF 파싱·청킹', () => {
         guideline_sections,
         guideline_versions,
         guidelines,
+        pipeline_runs,
+        guideline_jobs,
         ingestion_runs,
         source_documents
       CASCADE

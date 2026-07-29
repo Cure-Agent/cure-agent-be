@@ -29,7 +29,7 @@ import { SendMessageRequestDto } from '../dto/request/send-message.request.dto';
 import { toCitationDto, toMessageDto } from '../mapper/conversation.mapper';
 import { MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
-import { SseStream } from '../sse/sse-stream';
+import { SseStream } from '../../../global/common/sse/sse-stream';
 
 /** 프로바이더가 모델을 보고하지 않는 경우(fake·테스트 프로바이더)의 기록값 */
 const MODEL_LABEL = 'gateway-routed';

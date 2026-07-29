@@ -243,6 +243,8 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
         guideline_sections,
         guideline_versions,
         guidelines,
+        pipeline_runs,
+        guideline_jobs,
         ingestion_runs,
         source_documents
       CASCADE
@@ -511,7 +513,7 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
     expect(after.rows[0].count).toBe(before.rows[0].count);
   });
 
-  it('기준 4: 같은 내용을 재실행하면 revision은 늘지 않고 created=false이며 ingestion_runs만 1건 늘어난다', async () => {
+  it('기준 4: 같은 내용을 재실행하면 revision은 늘지 않고 created=false이며 pipeline_runs만 1건 늘어난다', async () => {
     const externalId = 'pipeline-idempotent';
     planPdfDocument(externalId, {
       title: '멱등성 지침',
@@ -537,7 +539,7 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
       [guidelineId],
     );
     const beforeRuns = await pool.query(
-      'SELECT count(*)::int AS count FROM ingestion_runs',
+      'SELECT count(*)::int AS count FROM pipeline_runs',
     );
     const beforeGraph = await versionGraph(versionId);
 
@@ -562,7 +564,7 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
       [guidelineId],
     );
     const afterRuns = await pool.query(
-      'SELECT count(*)::int AS count FROM ingestion_runs',
+      'SELECT count(*)::int AS count FROM pipeline_runs',
     );
     expect(afterVersions.rows[0].count).toBe(beforeVersions.rows[0].count);
     expect(afterRuns.rows[0].count).toBe(beforeRuns.rows[0].count + 1);

@@ -45,6 +45,8 @@ export interface AcquiredDocument {
   unchanged: boolean;
   /** FETCHED일 때만 채워진다 */
   body: Buffer | null;
+  /** 응답이 실제로 준 타입 — docs/specs/22의 `stages.acquire.contentType`에 그대로 실린다 */
+  contentType: string;
 }
 
 const PDF_MAGIC = '%PDF';
@@ -106,6 +108,14 @@ export class GuidelineAcquisitionService {
   }
 
   /**
+   * 원본 목록만 조회한다 (docs/specs/22) — 전건 잡이 처리 대상을 정할 때 쓴다.
+   * 다운로드는 하지 않으므로 목록 크기와 무관하게 싸다.
+   */
+  listDocuments(externalIds?: string[]): Promise<SourceListItem[]> {
+    return this.source.listGuidelines({ externalIds });
+  }
+
+  /**
    * 문서 1건을 수집해 본문과 함께 돌려준다 (docs/specs/21). 파일은 쓰지 않는다.
    * 원본 목록에 그 externalId가 없으면 `null` — 못 가져온 것(FAILED)과 없는 것을 구분한다.
    */
@@ -120,13 +130,14 @@ export class GuidelineAcquisitionService {
       status: result.status,
       unchanged: result.unchanged,
       body: result.body,
+      contentType: result.contentType,
     };
   }
 
   private async acquireOne(
     item: SourceListItem,
     outDir?: string,
-  ): Promise<AcquireItemResult & { body: Buffer | null }> {
+  ): Promise<AcquireItemResult & { body: Buffer | null; contentType: string }> {
     const fetchedAt = new Date();
 
     let body: Buffer;
@@ -153,7 +164,13 @@ export class GuidelineAcquisitionService {
         fetchedAt,
       });
       this.logger.warn(`수집 실패 ${item.externalId}: ${String(error)}`);
-      return { externalId: item.externalId, status: 'FAILED', unchanged: false, body: null };
+      return {
+        externalId: item.externalId,
+        status: 'FAILED',
+        unchanged: false,
+        body: null,
+        contentType: '',
+      };
     }
 
     const verdict = judge(body, contentType);
@@ -174,6 +191,7 @@ export class GuidelineAcquisitionService {
         status: verdict.status,
         unchanged: true,
         body: verdict.persist ? body : null,
+        contentType,
       };
     }
 
@@ -202,6 +220,7 @@ export class GuidelineAcquisitionService {
       status: verdict.status,
       unchanged: false,
       body: verdict.persist ? body : null,
+      contentType,
     };
   }
 
