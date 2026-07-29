@@ -8,6 +8,9 @@
  * (`openSseStream`), 이미 끝난 스트림은 기존처럼 본문 문자열을 한 번에 파싱한다(`parseSseEvents`).
  */
 
+/** 연결(헤더 수신) 데드라인 기본값 — 다른 대기(waitFor 10s, untilClosed 30s)와 같은 자릿수로 맞춘다 */
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+
 export interface SseEvent {
   eventType: string;
   [key: string]: unknown;
@@ -40,7 +43,7 @@ export function parseSseEvents(body: string): SseEvent[] {
 export interface OpenSseOptions {
   /** 인증 쿠키 — SSE는 GET이라 EventSource와 같은 경로로 쿠키만 실으면 된다 (§22) */
   cookie?: string;
-  /** 연결(헤더 수신)까지의 상한 */
+  /** 연결(헤더 수신)까지의 상한. 생략하면 10초 */
   timeoutMs?: number;
 }
 
@@ -69,13 +72,23 @@ export async function openSseStream(
   options: OpenSseOptions = {},
 ): Promise<SseStream> {
   const controller = new AbortController();
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'text/event-stream',
-      ...(options.cookie === undefined ? {} : { Cookie: options.cookie }),
-    },
-    signal: controller.signal,
-  });
+  // 연결 데드라인. 헤더가 오기 전에는 아직 SseStream이 없어 호출측 finally의 close()가 걸리지
+  // 않으므로, 여기서 끊지 않으면 자력 탈출 경로가 없어 jest 타임아웃까지 매달린다.
+  // abort는 소켓도 함께 정리하므로 뒤따르는 app.close() 지연도 같이 사라진다.
+  const connectTimeoutMs = options.timeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  const connectTimer = setTimeout(() => controller.abort(), connectTimeoutMs);
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: 'text/event-stream',
+        ...(options.cookie === undefined ? {} : { Cookie: options.cookie }),
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(connectTimer);
+  }
 
   const events: SseEvent[] = [];
   const waiters: (() => void)[] = [];
