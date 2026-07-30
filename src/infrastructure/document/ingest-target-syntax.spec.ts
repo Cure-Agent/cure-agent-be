@@ -40,9 +40,14 @@ const flattenChunks = (input: GuidelineIngestInput): LocatedChunk[] =>
     section.chunks.map((chunk) => ({ sectionPath: section.path, chunk })),
   );
 
+/**
+ * 권고문 청크만 고른다 — **해설 청크에도 같은 `recommendationNumber`가 붙는다**(§19).
+ * 등급을 가진 쪽이 권고문이라는 것이 이 저장소의 확립된 판별이다
+ * (`block-layout.spec.ts`·`guideline-chunker.spec.ts`·`verify-templates.ts`의 `recommendations` 산정).
+ */
 const recommendationChunks = (input: GuidelineIngestInput): LocatedChunk[] =>
   flattenChunks(input).filter(
-    ({ chunk }) => chunk.recommendationNumber !== undefined,
+    ({ chunk }) => chunk.recommendationGrade !== undefined,
   );
 
 const firstRecommendations = (input: GuidelineIngestInput): LocatedChunk[] => {
