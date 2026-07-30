@@ -18,6 +18,10 @@ import {
   TemplateExpectation,
 } from '../src/infrastructure/document/template-verification';
 import { applyKnownSourceDefects } from '../src/domain/guideline/service/known-source-defects';
+import {
+  findNotIngestTarget,
+  NOT_INGEST_TARGETS,
+} from '../src/domain/guideline/service/not-ingest-targets';
 
 const DEFAULT_DIR = '.cure-data/survey';
 const EXPECTATIONS_PATH = 'test/fixtures/nckm-template-expectations.json';
@@ -64,9 +68,14 @@ function loadVersions(dir: string): Record<string, string> {
 
 async function collectActual(
   dir: string,
-): Promise<{ actual: Record<string, TemplateActual>; waived: string[] }> {
+): Promise<{
+  actual: Record<string, TemplateActual>;
+  waived: string[];
+  notTargets: string[];
+}> {
   const actual: Record<string, TemplateActual> = {};
   const waived: string[] = [];
+  const notTargets: string[] = [];
   const versions = loadVersions(dir);
 
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.pdf')).sort()) {
@@ -77,21 +86,28 @@ async function collectActual(
       .flatMap((section) => section.chunks)
       .filter((chunk) => chunk.recommendationGrade !== undefined).length;
 
-    // 파이프라인과 **같은 판정**을 쓴다 — 갈라지면 CLI가 통과시킨 문서가 운영에서 실패한다
-    const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, {
+    const identity = {
       sourceSystem: 'NCKM',
       externalId: documentId,
       version: versions[documentId] ?? '',
-    });
+    };
+    // 파이프라인과 **같은 판정**을 쓴다 — 갈라지면 CLI가 통과시킨 문서가 운영에서 실패한다
+    const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, identity);
     for (const defect of applied) {
       waived.push(`${documentId} ${defect.diagnostic}=[${defect.numbers.join(', ')}] — ${defect.reason}`);
     }
+    // 대상 아님 판정도 같은 모듈을 참조한다 (docs/specs/24 기준 17)
+    if (findNotIngestTarget(identity)) notTargets.push(documentId);
     actual[documentId] = { diagnostics: effective, recommendations };
   }
-  return { actual, waived };
+  return { actual, waived, notTargets };
 }
 
-function toExpectations(actual: Record<string, TemplateActual>): Record<string, TemplateExpectation> {
+function toExpectations(
+  actual: Record<string, TemplateActual>,
+  notTargets: string[],
+): Record<string, TemplateExpectation> {
+  const listed = new Set(notTargets);
   const expectations: Record<string, TemplateExpectation> = {};
   for (const [documentId, observed] of Object.entries(actual)) {
     const unparsed = [
@@ -102,13 +118,19 @@ function toExpectations(actual: Record<string, TemplateActual>): Record<string, 
       ]),
     ].sort();
     const unknownEvidenceLevels = observed.diagnostics.unknownEvidenceLevels;
+    const { notDerived } = observed.diagnostics;
+    // 「대상 아님」과 「0건 성공」을 가른다 (docs/specs/24 기준 15) — 0건을 OK로 적으면
+    // 파서가 망가져 0건을 내도 통과하고, 실제로 145·219가 그 위장 아래 숨어 있었다
+    const status = listed.has(documentId) ? 'NOT_TARGET' : unparsed.length === 0 ? 'OK' : 'PARTIAL';
     expectations[documentId] = {
       uniqueNumbers: observed.diagnostics.uniqueNumbers.length,
       recommendations: observed.recommendations,
-      status: unparsed.length === 0 ? 'OK' : 'PARTIAL',
-      ...(unparsed.length > 0 ? { unparsed } : {}),
+      status,
+      ...(status !== 'NOT_TARGET' && unparsed.length > 0 ? { unparsed } : {}),
       // 미상 근거수준은 status를 바꾸지 않는다 — 알려진 상태로만 고정한다 (docs/specs/23 기준 8)
       ...(unknownEvidenceLevels.length > 0 ? { unknownEvidenceLevels } : {}),
+      // 비도출도 같은 규약이다 (docs/specs/24 기준 5)
+      ...(notDerived.length > 0 ? { notDerived: [...notDerived].sort() } : {}),
     };
   }
   return expectations;
@@ -121,11 +143,23 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { actual, waived } = await collectActual(args.dir);
+  const { actual, waived, notTargets } = await collectActual(args.dir);
   // 면제는 조용히 통과시키지 않는다 (docs/specs/23 기준 12)
   for (const line of waived) console.log(`  알려진 원문 결함 면제: ${line}`);
+  // 대상 아님도 조용히 넘기지 않는다 (docs/specs/24 기준 13)
+  for (const documentId of notTargets) {
+    const listed = findNotIngestTarget({
+      sourceSystem: 'NCKM',
+      externalId: documentId,
+      version: loadVersions(args.dir)[documentId] ?? '',
+    });
+    console.log(`  인제스트 대상 아님: ${documentId} — ${listed?.reason ?? ''}`);
+  }
   if (args.update) {
-    writeFileSync(EXPECTATIONS_PATH, `${JSON.stringify(toExpectations(actual), null, 2)}\n`);
+    writeFileSync(
+      EXPECTATIONS_PATH,
+      `${JSON.stringify(toExpectations(actual, notTargets), null, 2)}\n`,
+    );
     console.log(`${EXPECTATIONS_PATH} 갱신 — 문서 ${Object.keys(actual).length}건`);
     return;
   }
@@ -134,9 +168,15 @@ async function main(): Promise<void> {
     string,
     TemplateExpectation
   >;
-  const report = compareToExpectations(actual, expected);
+  // 커밋된 목록 전체를 넘긴다 — 디렉토리에 PDF가 없는 항목도 기대치와 대조돼야 한다
+  const report = compareToExpectations(
+    actual,
+    expected,
+    NOT_INGEST_TARGETS.map((target) => target.externalId),
+  );
   console.log(
-    `대조 ${report.checked}건 — OK ${report.ok} / PARTIAL ${report.partial} / 불일치 ${report.mismatches.length}`,
+    `대조 ${report.checked}건 — OK ${report.ok} / PARTIAL ${report.partial} / ` +
+      `대상아님 ${report.notTarget} / 불일치 ${report.mismatches.length}`,
   );
   for (const { documentId, reason } of report.mismatches) {
     console.error(`  불일치 ${documentId}: ${reason}`);

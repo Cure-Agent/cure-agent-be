@@ -1,10 +1,10 @@
 /**
- * 이슈 #106(2차): 인제스트 대상 판정 수용 기준 7~12.
+ * docs/specs/24 수용 기준 10·13·14.
  *
- * 원본 전체에 권고 마커가 없는 문서와, 원본에는 마커가 있지만 페이지 판정에서
- * 마커 페이지가 탈락한 문서를 같은 잡에 넣어 두 경우가 서로 다르게 종결되는지 검증한다.
+ * 원본 마커 부재 자체가 아니라 커밋된 대상 아님 목록이 PARSE/SKIPPED의 근거인지,
+ * 목록 사유가 로그에 남는지, 마커가 관측되면 목록보다 정상 파싱이 우선하는지 검증한다.
  */
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   PostgreSqlContainer,
@@ -20,23 +20,26 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { NOT_INGEST_TARGETS } from '../src/domain/guideline/service/not-ingest-targets';
+import {
+  NOT_INGEST_TARGETS,
+  type NotIngestTarget,
+} from '../src/domain/guideline/service/not-ingest-targets';
 import { PdfTextExtractor } from '../src/infrastructure/document/pdf-text.extractor';
 import { EMBEDDING_PROVIDER } from '../src/infrastructure/embedding/embedding-provider.port';
 import {
   GUIDELINE_SOURCE,
-  SourceListItem,
+  type SourceListItem,
 } from '../src/infrastructure/guideline-source/guideline-source.port';
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FailingEmbeddingProvider } from './fixtures/failing-embedding.provider';
 import { FakeGuidelineSource } from './fixtures/fake-guideline-source';
+import {
+  parenthesizedCoordinatePages,
+  pipelineNoMarkerPages,
+} from './fixtures/nckm-ingest-target-samples';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { FakePdfExtractor } from './fixtures/fake-pdf-extractor';
-import {
-  nckmNoMarkerPages,
-  nckmSamplePages,
-} from './fixtures/nckm-pages.sample';
-import { socialSignUp, TestSession } from './fixtures/social-auth';
+import { socialSignUp, type TestSession } from './fixtures/social-auth';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const JOB_TIMEOUT_MS = 30_000;
@@ -80,30 +83,16 @@ interface ParseStageDto extends Record<string, unknown> {
   ms: number;
 }
 
-/**
- * 두 번째 페이지에만 권고 마커가 있다.
- *
- * 첫 페이지는 인쇄 번호와 대상 장 헤더를 가져 장 판정 자체는 가능하다. 반면 마커가 있는
- * 페이지의 첫 줄은 인쇄 번호가 아니어서 parsePageHeader()가 null을 반환하고 청킹 대상에서
- * 통째로 탈락한다. 따라서 원본 마커 탐색은 true지만 청커 진단의 uniqueNumbers는 0이어야 한다.
- */
-const nckmMarkerOnRejectedPageOnly: string[] = [
-  [
-    '56',
-    'IV 권고사항',
-    '1 한의 단독 치료',
-    '이 페이지에는 권고 마커가 없다.',
-  ].join('\n'),
-  [
-    '인쇄 번호가 아닌 페이지 머리말',
-    'IV 권고사항',
-    '【 R1 】',
-    '권고안 권고등급/근거수준 참고문헌',
-    '이 문장은 청킹 전에 페이지와 함께 탈락해야 한다. A/High 1)',
-  ].join('\n'),
-];
+const renderLogValue = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
 
-describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
+describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () => {
   jest.setTimeout(180_000);
 
   let postgresContainer: StartedPostgreSqlContainer;
@@ -121,14 +110,26 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     return app;
   };
 
+  const committedTarget = (externalId: string): NotIngestTarget => {
+    const listed = NOT_INGEST_TARGETS.find(
+      (target) => target.externalId === externalId,
+    );
+    if (!listed) {
+      throw new Error(
+        `수용 기준 fixture에 필요한 대상 아님 목록 항목 ${externalId}가 없습니다.`,
+      );
+    }
+    return listed;
+  };
+
   const sourceItem = (
     externalId: string,
-    releaseDate = '2024-07',
+    version = '2026-07',
   ): SourceListItem => ({
     externalId,
-    title: `테스트 지침 ${externalId}`,
-    publisher: '대한테스트학회',
-    releaseDate,
+    title: `합성 테스트 지침 ${externalId}`,
+    publisher: '가상별빛학회',
+    releaseDate: version,
     sourceUrl: `https://example.test/guidelines/${externalId}`,
     fileName: `${externalId}.pdf`,
   });
@@ -136,11 +137,11 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
   const addPdf = (
     externalId: string,
     pages: string[],
-    releaseDate = '2024-07',
+    version = '2026-07',
   ): void => {
     const marker = `DOC:${externalId}`;
-    fakeSource.addDocument(sourceItem(externalId, releaseDate), {
-      body: Buffer.from(`%PDF-1.7\n${marker}\nfixture`),
+    fakeSource.addDocument(sourceItem(externalId, version), {
+      body: Buffer.from(`%PDF-1.7\n${marker}\nsynthetic fixture`),
       contentType: 'application/pdf',
     });
     fakePdfExtractor.setPagesFor(marker, pages);
@@ -204,6 +205,20 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     );
   };
 
+  const runFor = (
+    completed: JobDetailDto,
+    externalId: string,
+  ): RunDto => {
+    const run = completed.runs.find(
+      (candidate) => candidate.externalId === externalId,
+    );
+    expect(run).toBeDefined();
+    if (!run) {
+      throw new Error(`pipeline_run을 찾지 못했습니다: ${externalId}`);
+    }
+    return run;
+  };
+
   beforeAll(async () => {
     [postgresContainer, redisContainer] = await Promise.all([
       new PostgreSqlContainer('pgvector/pgvector:pg17').start(),
@@ -238,8 +253,8 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     await app.listen(0);
 
     admin = await socialSignUp(currentApp(), {
-      email: 'guideline-ingest-target-admin@clinic.kr',
-      providerId: 'guideline-ingest-target-admin',
+      email: 'guideline-ingest-target-list-admin@clinic.kr',
+      providerId: 'guideline-ingest-target-list-admin',
     });
     await pool.query(`UPDATE clinicians SET role = 'ADMIN' WHERE id = $1`, [
       admin.clinicianId,
@@ -276,87 +291,121 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     await redisContainer?.stop();
   });
 
-  it('기준 7~12: 원본 마커 유무로 PARSE SKIPPED와 파싱 결함을 구분하고 잡 카운터에 반영한다', async () => {
-    // docs/specs/24 기준 10이 SKIPPED의 근거를 「마커 부재」에서 **커밋된 대상 아님 목록**으로
-    // 옮겼다. 그래서 마커 없는 문서로 이 경로를 타려면 목록 항목과 (externalId, version)이
-    // 맞아야 한다 — 목록에 없는 마커 없는 문서는 이제 FAILED다(그 분기는 spec 24의 e2e가 덮는다).
-    const noMarkerTarget = NOT_INGEST_TARGETS[0];
-    addPdf(noMarkerTarget.externalId, nckmNoMarkerPages, noMarkerTarget.version);
-    addPdf('marker-on-rejected-page', nckmMarkerOnRejectedPageOnly);
-    addPdf('parse-success', nckmSamplePages);
+  it('기준 10a: 마커가 없고 대상 아님 목록에 있는 문서는 SKIPPED/PARSE로 종결한다', async () => {
+    const listed = committedTarget('90');
+    addPdf(listed.externalId, pipelineNoMarkerPages, listed.version);
 
     const created = await startJob();
     const completed = await waitForJob(created.id);
+    const run = runFor(completed, listed.externalId);
 
-    // 기준 12: PARSE 단계 SKIPPED는 skipped에만 포함되고 failed에는 포함되지 않는다.
-    expect(completed).toMatchObject({
-      id: created.id,
-      status: 'COMPLETED',
-      total: 3,
-      processed: 3,
-      succeeded: 1,
-      skipped: 1,
-      failed: 1,
-    });
-    expect(completed.processed).toBe(
-      completed.succeeded + completed.skipped + completed.failed,
-    );
-    expect(completed.runs).toHaveLength(3);
-
-    const noMarker = completed.runs.find(
-      (run) => run.externalId === noMarkerTarget.externalId,
-    );
-    expect(noMarker).toBeDefined();
-
-    // 기준 7~8: 마커가 원본 어디에도 없으면 실패 정보 없이 PARSE에서 건너뛴다.
-    expect(noMarker).toMatchObject({
+    expect(run).toMatchObject({
       status: 'SKIPPED',
       phase: 'PARSE',
       errorCode: null,
       error: null,
     });
-
-    // 기준 9: ACQUIRE와 0건 PARSE 관측값만 남기며 추출된 페이지 수는 보존한다.
-    expect(Object.keys(noMarker?.stages ?? {}).sort()).toEqual([
-      'acquire',
-      'parse',
-    ]);
-    const noMarkerParse = noMarker?.stages.parse as
-      | ParseStageDto
-      | undefined;
-    expect(noMarkerParse).toBeDefined();
-    expect(Object.keys(noMarkerParse ?? {}).sort()).toEqual([
-      'chunks',
-      'ms',
-      'pages',
-      'sections',
-    ]);
-    expect(noMarkerParse).toMatchObject({
-      pages: nckmNoMarkerPages.length,
-      sections: 0,
-      chunks: 0,
-      ms: expect.any(Number),
+    expect(completed).toMatchObject({
+      total: 1,
+      processed: 1,
+      succeeded: 0,
+      skipped: 1,
+      failed: 0,
     });
-    expect(noMarkerParse?.pages).toBeGreaterThan(0);
+  });
 
-    // 기준 10: 원본에 마커가 있으면 청킹 결과가 0건이어도 파서 결함을 숨기지 않는다.
-    const rejectedMarker = completed.runs.find(
-      (run) => run.externalId === 'marker-on-rejected-page',
-    );
-    expect(rejectedMarker).toMatchObject({
+  it('기준 10b: 마커가 없고 대상 아님 목록에도 없는 문서는 FAILED로 종결한다', async () => {
+    // 파이프라인이 이미 "목록 밖이면 FAILED"만 선반영한 경우에도 빈 목록 스텁은 죽인다.
+    expect(committedTarget('90').reason).toEqual(expect.stringMatching(/\S/));
+
+    const externalId = 'synthetic-unlisted-no-marker';
+    addPdf(externalId, pipelineNoMarkerPages);
+
+    const created = await startJob();
+    const completed = await waitForJob(created.id);
+    const run = runFor(completed, externalId);
+
+    expect(run).toMatchObject({
+      status: 'FAILED',
+      phase: 'PARSE',
+    });
+    expect(run.status).not.toBe('SKIPPED');
+    expect(completed).toMatchObject({
+      total: 1,
+      processed: 1,
+      skipped: 0,
+      failed: 1,
+    });
+  });
+
+  it('기준 10c: 목록 밖의 마커 없는 문서 실행에 파싱 실패 에러를 기록한다', async () => {
+    expect(committedTarget('90').reason).toEqual(expect.stringMatching(/\S/));
+
+    const externalId = 'synthetic-unlisted-parse-error';
+    addPdf(externalId, pipelineNoMarkerPages);
+
+    const created = await startJob();
+    const completed = await waitForJob(created.id);
+    const run = runFor(completed, externalId);
+
+    expect(run).toMatchObject({
       status: 'FAILED',
       phase: 'PARSE',
       errorCode: 'GUIDELINE_PARSE_FAILED',
+      error: expect.stringMatching(/\S/),
       guidelineVersionId: null,
     });
+  });
 
-    // 기준 11: 정상 마커 문서는 기존과 같이 적재까지 성공한다.
-    const succeeded = completed.runs.find(
-      (run) => run.externalId === 'parse-success',
+  it('기준 13a: 목록에 따라 SKIPPED로 끝낼 때 커밋된 사유를 Logger에 남긴다', async () => {
+    const listed = committedTarget('91');
+    const logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      addPdf(listed.externalId, pipelineNoMarkerPages, listed.version);
+
+      const created = await startJob();
+      const completed = await waitForJob(created.id);
+      const run = runFor(completed, listed.externalId);
+
+      expect(run).toMatchObject({
+        status: 'SKIPPED',
+        phase: 'PARSE',
+      });
+
+      const logged = [...logSpy.mock.calls, ...warnSpy.mock.calls]
+        .flat()
+        .map(renderLogValue)
+        .join('\n');
+      expect(logged).toContain(listed.reason);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('기준 14a: 목록 항목과 일치해도 마커가 있는 문서는 SKIPPED하지 않고 정상 파싱한다', async () => {
+    const listed = committedTarget('92');
+    addPdf(
+      listed.externalId,
+      parenthesizedCoordinatePages,
+      listed.version,
     );
-    expect(succeeded).toMatchObject({
-      status: 'SUCCEEDED',
-      phase: 'INGEST',
-    });
+
+    const created = await startJob();
+    const completed = await waitForJob(created.id);
+    const run = runFor(completed, listed.externalId);
+    const parse = run.stages.parse as ParseStageDto | undefined;
+
+    expect(run.status).not.toBe('SKIPPED');
+    expect(['SUCCEEDED', 'FAILED']).toContain(run.status);
+    expect(parse).toBeDefined();
+    expect(parse?.pages).toBe(parenthesizedCoordinatePages.length);
+    expect(parse?.chunks).toBeGreaterThan(0);
   });
 });

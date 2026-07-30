@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { ErrorCode } from '../../../global/common/exception/error-code.registry';
 import { ServiceException } from '../../../global/common/exception/service.exception';
@@ -14,6 +14,7 @@ import { PipelineRunRepository } from '../repository/pipeline-run.repository';
 import { GuidelineAcquisitionService } from './guideline-acquisition.service';
 import { GuidelineIngestService } from './guideline-ingest.service';
 import { GuidelineParseService } from './guideline-parse.service';
+import { findNotIngestTarget } from './not-ingest-targets';
 
 /** 단계 진입·종결마다 호출된다 — 러너가 SSE로 중계한다. 잡 밖 실행은 넘기지 않는다 */
 export type RunStageListener = (run: PipelineRunRow) => void | Promise<void>;
@@ -61,6 +62,8 @@ const PHASE_FAILURE: Record<PipelineRunPhase, ErrorCode> = {
  */
 @Injectable()
 export class GuidelinePipelineService {
+  private readonly logger = new Logger(GuidelinePipelineService.name);
+
   constructor(
     private readonly runs: PipelineRunRepository,
     private readonly acquisition: GuidelineAcquisitionService,
@@ -142,18 +145,45 @@ export class GuidelinePipelineService {
       // PDF 텍스트 추출도 PARSE 단계다 — stages.parse.pages가 그 산출이다
       const pages = await this.pdfExtractor.extractPages(body);
 
-      // 권고 마커를 쓰지 않는 문서는 에러가 아니다 — 인제스트 대상이 아니므로 SKIPPED로 종결한다.
-      // NCKM 목록에는 매뉴얼·가이드·권고안·표준 이전 세대 지침이 섞여 있고, §20이 계열 D를
-      // "인제스트 대상으로 삼을지부터 판단이 필요하다"며 미룬 판단이 이 자리다
-      // (§18이 첨부 없음을 ACQUIRE의 SKIPPED로 뺀 것과 같은 규칙).
+      // **마커 부재는 SKIPPED의 근거가 아니다** (docs/specs/24 기준 10).
+      //
+      // 이슈 #106은 마커를 못 찾은 문서를 곧 「인제스트 대상 아님」으로 읽어 SKIPPED로 뺐고,
+      // 그 추론이 145 현훈·219 골다공증에서 틀렸다 — 마커 표기만 다른 현역 표준지침 2건이
+      // 조용히 건너뛰어졌다. §20 기준 3이 막으려던 통과가 그 자리에서 일어난 것이다.
+      //
+      // 그래서 판정을 **사람이 명시한 목록**으로 옮긴다: 목록에 있으면 SKIPPED, 없으면 FAILED다.
+      // 새 매뉴얼류가 등록되면 잡이 실패하고 사람이 판단해야 하는데, 그 부담이 이 설계의 목적이다.
       //
       // **판정은 청커 진단이 아니라 필터 이전 원본을 본다.** 진단의 uniqueNumbers가 0이라는 사실은
       // 「문서에 마커가 없다」와 「장·페이지 판정이 마커 페이지를 전량 탈락시켰다」를 구분하지 못한다
       // — 후자는 §20이 계열 B·C에서 겪은 파서 결함 그 자체라, 그것까지 건너뛰면 고쳐야 할 결함이
-      // 조용히 묻힌다. 마커가 하나라도 있으면 파싱을 시도하고 실패는 FAILED로 남긴다.
+      // 조용히 묻힌다. 마커가 하나라도 있으면 목록에 있어도 파싱을 시도한다(기준 14).
       if (!containsRecommendationMarker(pages)) {
+        const sourceSystem = this.acquisition.sourceSystem;
+        const version = acquired.item.releaseDate ?? '';
+        const listed = findNotIngestTarget({ sourceSystem, externalId: options.externalId, version });
+        if (!listed) {
+          // 목록에 없다 — 대상인지 아닌지 아직 아무도 판단하지 않은 문서다 (§20 기준 3 복귀)
+          return await this.fail(
+            options,
+            run,
+            phase,
+            new ServiceException(
+              'GUIDELINE_PARSE_FAILED',
+              undefined,
+              `권고 마커를 찾지 못했고 인제스트 대상 아님 목록에도 없습니다 ` +
+                `(${sourceSystem} ${options.externalId}@${version}). ` +
+                `진짜 지침이면 파서를 넓히고, 대상이 아니면 not-ingest-targets.ts에 사유와 함께 추가하세요.`,
+            ),
+          );
+        }
+
         const skipMs = Date.now() - parseStart;
         this.metrics.recordPipelineStage('parse', 'skipped', skipMs / 1000);
+        // 조용히 건너뛰지 않는다 — 무엇을 왜 뺐는지가 기록에 남아야 한다 (기준 13)
+        this.logger.warn(
+          `인제스트 대상 아님으로 건너뜁니다: ${sourceSystem} ${options.externalId}@${version} — ${listed.reason}`,
+        );
         return {
           run: await this.finish(options, run, {
             status: 'SKIPPED',

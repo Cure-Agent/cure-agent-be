@@ -83,6 +83,8 @@ export function applyKnownSourceDefects(
       duplicated: without(diagnostics.duplicated, 'duplicated'),
       gradeMissing: without(diagnostics.gradeMissing, 'gradeMissing'),
       unknownEvidenceLevels: diagnostics.unknownEvidenceLevels.map((entry) => ({ ...entry })),
+      // 비도출은 면제 대상이 아니다 — 원문 결함이 아니라 원문의 의도이므로 그대로 나른다
+      notDerived: [...diagnostics.notDerived],
     },
     applied,
   };
