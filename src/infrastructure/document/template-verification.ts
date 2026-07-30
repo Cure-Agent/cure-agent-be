@@ -15,6 +15,14 @@ export interface TemplateExpectation {
   status: TemplateStatus;
   /** status가 PARTIAL일 때 아직 파싱되지 않는 권고 번호 */
   unparsed?: string[];
+  /**
+   * 등급 문자는 읽었으나 근거수준이 정규형에 없던 원문 표기 (docs/specs/23 기준 8).
+   *
+   * **`status`에는 넣지 않는다** — 미상 근거수준은 파싱 실패가 아니다. 알려진 1건이 있는 문서도
+   * `OK`이며, 여기 고정된 집합이 달라질 때만 불일치로 드러난다. 개별 1건은 조치할 것이 없지만
+   * 집계가 늘면 어휘 노후·추출 드리프트의 신호이므로, 그 **변화**를 잡는 것이 목적이다.
+   */
+  unknownEvidenceLevels?: { recommendationNumber: string; raw: string }[];
 }
 
 export interface TemplateActual {
@@ -97,7 +105,20 @@ function describeMismatches(
   if (!sameSet(unparsed, target.unparsed ?? [])) {
     reasons.push(`미파싱 번호 [${(target.unparsed ?? []).join(', ')}] → [${unparsed.join(', ')}]`);
   }
+
+  const unknown = describeUnknownEvidence(observed.diagnostics.unknownEvidenceLevels);
+  const targetUnknown = describeUnknownEvidence(target.unknownEvidenceLevels ?? []);
+  if (!sameSet(unknown, targetUnknown)) {
+    reasons.push(`미상 근거수준 [${targetUnknown.join(', ')}] → [${unknown.join(', ')}]`);
+  }
   return reasons;
+}
+
+/** 집합 비교용 정규화 — `R5-1=Vey Low` 형태로 눌러 순서에 의존하지 않게 한다 */
+function describeUnknownEvidence(
+  entries: { recommendationNumber: string; raw: string }[],
+): string[] {
+  return entries.map((entry) => `${entry.recommendationNumber}=${entry.raw}`);
 }
 
 function isFullyParsed(diagnostics: ChunkDiagnostics): boolean {
