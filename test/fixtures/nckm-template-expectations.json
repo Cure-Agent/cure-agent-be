@@ -17,7 +17,13 @@
   "143": {
     "uniqueNumbers": 24,
     "recommendations": 24,
-    "status": "OK"
+    "status": "OK",
+    "unknownEvidenceLevels": [
+      {
+        "recommendationNumber": "R5-1",
+        "raw": "Vey Low"
+      }
+    ]
   },
   "149": {
     "uniqueNumbers": 17,
