@@ -186,6 +186,8 @@ export const knownDefectIdentitySample = {
   sourceSystem: 'NCKM-SYNTHETIC',
   externalId: 'residual-fixture-document',
   version: '2026-07',
+  // docs/specs/25가 판정 축에 본문 해시를 더했다 — 합성 문서라 값 자체에 의미는 없다
+  fileHash: 'residual-fixture-hash',
 };
 
 export const makeKnownDefectDiagnosticsSample = () => ({

@@ -45,6 +45,13 @@ export interface AcquiredDocument {
   unchanged: boolean;
   /** FETCHED일 때만 채워진다 */
   body: Buffer | null;
+  /**
+   * 본문 sha256 — `source_documents.file_hash`에 기록한 **바로 그 값**이다 (docs/specs/25 기준 11).
+   *
+   * 파이프라인의 면제·제외 판정이 이 값을 쓰므로, 다시 계산하지 않고 여기 실어 나른다.
+   * 본문을 못 받은 실패에서는 null이다(해시할 것이 없다).
+   */
+  fileHash: string | null;
   /** 응답이 실제로 준 타입 — docs/specs/22의 `stages.acquire.contentType`에 그대로 실린다 */
   contentType: string;
   /**
@@ -136,6 +143,7 @@ export class GuidelineAcquisitionService {
       unchanged: result.unchanged,
       body: result.body,
       contentType: result.contentType,
+      fileHash: result.fileHash,
       error: result.error,
     };
   }
@@ -144,7 +152,13 @@ export class GuidelineAcquisitionService {
     item: SourceListItem,
     outDir?: string,
   ): Promise<
-    AcquireItemResult & { body: Buffer | null; contentType: string; error: string | null }
+    AcquireItemResult & {
+      body: Buffer | null;
+      contentType: string;
+      error: string | null;
+      /** 본문 sha256 — source_documents.file_hash에 기록한 그 값 (docs/specs/25 기준 11) */
+      fileHash: string | null;
+    }
   > {
     const fetchedAt = new Date();
 
@@ -179,6 +193,7 @@ export class GuidelineAcquisitionService {
         unchanged: false,
         body: null,
         contentType: '',
+        fileHash: null,
         // 같은 문자열이 source_documents.error에도 들어간다 — 파이프라인이 이걸 실행 기록으로 옮긴다
         error: reason,
       };
@@ -203,6 +218,7 @@ export class GuidelineAcquisitionService {
         unchanged: true,
         body: verdict.persist ? body : null,
         contentType,
+        fileHash,
         error: verdict.error,
       };
     }
@@ -234,6 +250,7 @@ export class GuidelineAcquisitionService {
       error: verdict.error,
       body: verdict.persist ? body : null,
       contentType,
+      fileHash,
     };
   }
 

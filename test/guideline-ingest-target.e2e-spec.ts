@@ -20,7 +20,12 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { NOT_INGEST_TARGETS } from '../src/domain/guideline/service/not-ingest-targets';
+import { createHash } from 'node:crypto';
+import { GuidelineListProvider } from '../src/domain/guideline/service/guideline-list.provider';
+import {
+  NOT_INGEST_TARGETS,
+  type NotIngestTarget,
+} from '../src/domain/guideline/service/not-ingest-targets';
 import { PdfTextExtractor } from '../src/infrastructure/document/pdf-text.extractor';
 import { EMBEDDING_PROVIDER } from '../src/infrastructure/embedding/embedding-provider.port';
 import {
@@ -133,6 +138,16 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     fileName: `${externalId}.pdf`,
   });
 
+  /** 주입 목록 — docs/specs/25가 fileHash를 축에 넣어 합성 본문으로는 커밋 항목에 매칭할 수 없다 */
+  const injectedTargets: NotIngestTarget[] = [];
+  const fakeListProvider = {
+    knownSourceDefects: () => [],
+    notIngestTargets: () => injectedTargets,
+  };
+
+  const syntheticBody = (externalId: string): Buffer =>
+    Buffer.from(`%PDF-1.7\nDOC:${externalId}\nfixture`);
+
   const addPdf = (
     externalId: string,
     pages: string[],
@@ -140,7 +155,7 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
   ): void => {
     const marker = `DOC:${externalId}`;
     fakeSource.addDocument(sourceItem(externalId, releaseDate), {
-      body: Buffer.from(`%PDF-1.7\n${marker}\nfixture`),
+      body: syntheticBody(externalId),
       contentType: 'application/pdf',
     });
     fakePdfExtractor.setPagesFor(marker, pages);
@@ -230,6 +245,8 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
       .useValue(failingEmbedding)
       .overrideProvider(PdfTextExtractor)
       .useValue(fakePdfExtractor)
+      .overrideProvider(GuidelineListProvider)
+      .useValue(fakeListProvider)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -266,6 +283,7 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     fakeSource.reset();
     fakePdfExtractor.reset();
     failingEmbedding.reset();
+    injectedTargets.length = 0;
   });
 
   afterAll(async () => {
@@ -280,7 +298,15 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     // docs/specs/24 기준 10이 SKIPPED의 근거를 「마커 부재」에서 **커밋된 대상 아님 목록**으로
     // 옮겼다. 그래서 마커 없는 문서로 이 경로를 타려면 목록 항목과 (externalId, version)이
     // 맞아야 한다 — 목록에 없는 마커 없는 문서는 이제 FAILED다(그 분기는 spec 24의 e2e가 덮는다).
-    const noMarkerTarget = NOT_INGEST_TARGETS[0];
+    const committed = NOT_INGEST_TARGETS[0];
+    // 사유·버전은 커밋된 항목 그대로 쓰고 해시만 이 본문의 것으로 바꾼다 (docs/specs/25 기준 15)
+    const noMarkerTarget = {
+      ...committed,
+      fileHash: createHash('sha256')
+        .update(syntheticBody(committed.externalId))
+        .digest('hex'),
+    };
+    injectedTargets.push(noMarkerTarget);
     addPdf(noMarkerTarget.externalId, nckmNoMarkerPages, noMarkerTarget.version);
     addPdf('marker-on-rejected-page', nckmMarkerOnRejectedPageOnly);
     addPdf('parse-success', nckmSamplePages);
