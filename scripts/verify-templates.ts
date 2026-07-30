@@ -101,11 +101,14 @@ function toExpectations(actual: Record<string, TemplateActual>): Record<string, 
         ...observed.diagnostics.gradeMissing,
       ]),
     ].sort();
+    const unknownEvidenceLevels = observed.diagnostics.unknownEvidenceLevels;
     expectations[documentId] = {
       uniqueNumbers: observed.diagnostics.uniqueNumbers.length,
       recommendations: observed.recommendations,
       status: unparsed.length === 0 ? 'OK' : 'PARTIAL',
       ...(unparsed.length > 0 ? { unparsed } : {}),
+      // 미상 근거수준은 status를 바꾸지 않는다 — 알려진 상태로만 고정한다 (docs/specs/23 기준 8)
+      ...(unknownEvidenceLevels.length > 0 ? { unknownEvidenceLevels } : {}),
     };
   }
   return expectations;
