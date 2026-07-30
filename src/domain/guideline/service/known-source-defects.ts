@@ -71,7 +71,7 @@ export const KNOWN_SOURCE_DEFECTS: KnownSourceDefect[] = [
     sourceSystem: 'NCKM',
     externalId: '306',
     version: '2026-06',
-    fileHash: '',
+    fileHash: '46af04040905427fa1d78070a3c28d3be53ced2bd57fb813974f878100f8716d',
     diagnostic: 'duplicated',
     numbers: ['R20'],
     reason:
@@ -124,12 +124,46 @@ export function applyKnownSourceDefects(
 
 /**
  * 문서는 맞는데 축이 어긋나 적용되지 않은 면제 항목을 고른다 (docs/specs/25 기준 1~3).
- *
- * 구현에서 채운다 — 스텁은 빈 목록이다.
  */
 export function findExpiredSourceDefects(
-  _identity: SourceDocumentIdentity,
-  _defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
+  identity: SourceDocumentIdentity,
+  defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
 ): ExpiredListEntry<KnownSourceDefect>[] {
-  return [];
+  return defects
+    .map((entry) => ({ entry, mismatches: expiryMismatches(entry, identity) }))
+    .filter((candidate) => candidate.mismatches.length > 0);
+}
+
+/**
+ * 항목이 이 문서에서 만료된 축들을 고른다 — **같은 문서일 때만** 의미가 있다.
+ *
+ * `sourceSystem`·`externalId`가 다르면 만료가 아니라 애초에 **다른 문서**이므로 빈 배열이다
+ * (docs/specs/25 기준 2d). 그 구분이 없으면 목록의 모든 항목이 매 문서마다 만료로 보고된다.
+ */
+export function expiryMismatches(
+  entry: { sourceSystem: string; externalId: string; version: string; fileHash: string },
+  identity: SourceDocumentIdentity,
+): ExpiryMismatch[] {
+  if (
+    entry.sourceSystem !== identity.sourceSystem ||
+    entry.externalId !== identity.externalId
+  ) {
+    return [];
+  }
+
+  const mismatches: ExpiryMismatch[] = [];
+  if (entry.version !== identity.version) {
+    mismatches.push({ axis: 'version', recorded: entry.version, current: identity.version });
+  }
+  if (entry.fileHash !== identity.fileHash) {
+    mismatches.push({ axis: 'fileHash', recorded: entry.fileHash, current: identity.fileHash });
+  }
+  return mismatches;
+}
+
+/** 만료 사유를 사람이 읽을 한 줄로 (진단 detail·알림 공용) */
+export function describeExpiry(mismatches: ExpiryMismatch[]): string {
+  return mismatches
+    .map(({ axis, recorded, current }) => `${axis} 기록 ${recorded || '(빈 값)'} → 현재 ${current || '(빈 값)'}`)
+    .join(', ');
 }

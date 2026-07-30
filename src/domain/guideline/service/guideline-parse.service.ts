@@ -7,7 +7,13 @@ import {
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
 import { GuidelineIngestInput } from './guideline-ingest.input';
-import { applyKnownSourceDefects } from './known-source-defects';
+import {
+  applyKnownSourceDefects,
+  describeExpiry,
+  findExpiredSourceDefects,
+} from './known-source-defects';
+import { GuidelineListProvider } from './guideline-list.provider';
+import { RealTimeAlertSender } from '../../../global/observability/real-time-alert.sender';
 
 const DEFAULT_SOURCE_SYSTEM = 'NCKM';
 
@@ -37,7 +43,11 @@ export interface ParseGuidelineOptions {
 export class GuidelineParseService {
   private readonly logger = new Logger(GuidelineParseService.name);
 
-  constructor(private readonly sourceDocuments: SourceDocumentRepository) {}
+  constructor(
+    private readonly sourceDocuments: SourceDocumentRepository,
+    private readonly lists: GuidelineListProvider,
+    private readonly alerts: RealTimeAlertSender,
+  ) {}
 
   /**
    * 페이지 텍스트 + 조회한 메타 → 인제스트 입력.
@@ -53,13 +63,19 @@ export class GuidelineParseService {
     // 파서가 고칠 수 없는 **원문 결함**은 명시 항목으로만 면제한다 (docs/specs/23 기준 9~13).
     // 가드를 넓히지 않고 예외를 좁히는 자리다 — 술어를 완화하면 앞으로 들어올 모든 문서에 적용된다.
     const sourceSystem = options.sourceSystem ?? DEFAULT_SOURCE_SYSTEM;
-    const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, {
+    const identity = {
       sourceSystem,
       externalId: options.externalId,
       version: meta.version,
-      // §18이 그 다운로드에 기록한 해시 (docs/specs/25 기준 11) — 구현에서 원천을 연결한다
+      // §18이 그 다운로드에 기록한 해시 (docs/specs/25 기준 11)
       fileHash: options.fileHash ?? '',
-    });
+    };
+    const defects = this.lists.knownSourceDefects();
+    const { diagnostics: effective, applied } = applyKnownSourceDefects(
+      diagnostics,
+      identity,
+      defects,
+    );
     for (const defect of applied) {
       // 조용히 통과시키지 않는다 — 무엇을 왜 면제했는지가 기록에 남아야 한다 (기준 12)
       this.logger.warn(
@@ -68,7 +84,26 @@ export class GuidelineParseService {
       );
     }
 
-    assertParsable(effective);
+    // 면제가 만료됐으면 가드 실패의 원인을 짚어준다 (docs/specs/25 기준 6) —
+    // 번호 열거만으로는 「면제 만료」와 「파서 회귀」를 구분할 수 없다.
+    const expired = findExpiredSourceDefects(identity, defects);
+    for (const candidate of expired) {
+      this.logger.warn(
+        `원문 결함 면제 만료: ${sourceSystem} ${options.externalId} ` +
+          `${describeExpiry(candidate.mismatches)} — ${candidate.entry.reason}`,
+      );
+      try {
+        this.alerts.send({
+          title: `원문 결함 면제 만료: ${sourceSystem} ${options.externalId}`,
+          detail: `${describeExpiry(candidate.mismatches)} — ${candidate.entry.reason}`,
+        });
+      } catch (error) {
+        // 알림 실패가 파싱 결과를 바꾸지 않는다 (기준 9)
+        this.logger.warn(`만료 알림 발송 실패: ${String(error)}`);
+      }
+    }
+
+    assertParsable(effective, expired);
     return input;
   }
 
@@ -117,7 +152,10 @@ export class GuidelineParseService {
  * 어떤 번호가 문제인지 **data에 실어** 던진다 — 열거가 없으면 어디를 고쳐야 하는지 알 수 없다
  * (docs/specs/21). CLI도 같은 예외를 받지만 message가 사람이 읽을 요약을 담는다.
  */
-function assertParsable(diagnostics: ChunkDiagnostics): void {
+function assertParsable(
+  diagnostics: ChunkDiagnostics,
+  expired: ReturnType<typeof findExpiredSourceDefects> = [],
+): void {
   const { missing, duplicated, gradeMissing } = diagnostics;
   // 마커를 하나도 못 찾은 문서는 세 목록이 모두 비어 있어도 실패다 — 조용한 0청크 적재를 막는다
   const parsable =
@@ -139,6 +177,15 @@ function assertParsable(diagnostics: ChunkDiagnostics): void {
   }
   if (gradeMissing.length > 0) {
     problems.push(`등급을 추출하지 못한 번호: ${gradeMissing.join(', ')}`);
+  }
+
+  // 만료된 면제가 있으면 그 사실을 함께 싣는다 (docs/specs/25 기준 6)
+  for (const candidate of expired) {
+    problems.push(
+      `알려진 원문 결함 면제가 **만료**됐습니다 (${describeExpiry(candidate.mismatches)}) — ` +
+        `원문이 바뀌었으니 결함이 고쳐졌는지 확인하고 known-source-defects.ts의 항목을 ` +
+        `갱신하거나 지우세요. 기존 사유: ${candidate.entry.reason}`,
+    );
   }
 
   // data는 세 목록으로 고정한다 (docs/specs/21 「추가 에러코드」) — FE 분기가 형태에 의존한다.

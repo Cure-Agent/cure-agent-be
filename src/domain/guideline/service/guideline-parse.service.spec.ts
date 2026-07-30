@@ -1,5 +1,6 @@
 import { familyAPages, noMarkerPages } from '../../../../test/fixtures/nckm-template-samples';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
+import { GuidelineListProvider } from './guideline-list.provider';
 import { GuidelineParseService } from './guideline-parse.service';
 
 const repository = {
@@ -13,7 +14,15 @@ const repository = {
     sourceUrl: 'https://example.invalid/guide',
   }),
 } as unknown as SourceDocumentRepository;
-const service = new GuidelineParseService(repository);
+// docs/specs/25가 목록 주입점과 알림을 더했다 — 이 spec은 §20 가드만 보므로 빈 목록·무동작 sender다
+const lists = {
+  knownSourceDefects: () => [],
+  notIngestTargets: () => [],
+} as unknown as GuidelineListProvider;
+const alerts = { send: jest.fn() } as unknown as import(
+  '../../../global/observability/real-time-alert.sender'
+).RealTimeAlertSender;
+const service = new GuidelineParseService(repository, lists, alerts);
 
 describe('spec 20: 지침 템플릿 실패 가드', () => {
   it('양성 대조군: 정상 fixture는 결과를 반환한다', async () => {

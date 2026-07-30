@@ -5,6 +5,7 @@
  * 원문 PDF를 커밋하지 않으므로 CI에는 대상 디렉토리가 없다 — 없으면 **스킵하고 0으로 종료**한다.
  * `--update`는 현재 산출을 기대치 파일에 다시 쓴다(개선을 반영할 때만 의도적으로 쓴다).
  */
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
@@ -80,7 +81,11 @@ async function collectActual(
 
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.pdf')).sort()) {
     const documentId = file.replace(/\.pdf$/, '');
-    const pages = await extractPdfPages(join(dir, file));
+    const path = join(dir, file);
+    const pages = await extractPdfPages(path);
+    // 파이프라인이 §18 기록으로 판정하는 그 해시를, CLI는 실물 파일에서 직접 계산한다
+    // (docs/specs/25 기준 12) — 커밋된 상수가 실제 원문과 맞는지 여기서 드러난다
+    const fileHash = createHash('sha256').update(readFileSync(path)).digest('hex');
     const { input, diagnostics } = chunkNckmGuideline(pages, PLACEHOLDER_META);
     const recommendations = input.sections
       .flatMap((section) => section.chunks)
@@ -90,6 +95,7 @@ async function collectActual(
       sourceSystem: 'NCKM',
       externalId: documentId,
       version: versions[documentId] ?? '',
+      fileHash,
     };
     // 파이프라인과 **같은 판정**을 쓴다 — 갈라지면 CLI가 통과시킨 문서가 운영에서 실패한다
     const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, identity);
@@ -152,6 +158,9 @@ async function main(): Promise<void> {
       sourceSystem: 'NCKM',
       externalId: documentId,
       version: loadVersions(args.dir)[documentId] ?? '',
+      fileHash: createHash('sha256')
+        .update(readFileSync(join(args.dir, `${documentId}.pdf`)))
+        .digest('hex'),
     });
     console.log(`  인제스트 대상 아님: ${documentId} — ${listed?.reason ?? ''}`);
   }

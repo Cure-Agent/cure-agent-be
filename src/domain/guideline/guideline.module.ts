@@ -26,6 +26,7 @@ import { GuidelineJobRunner } from './service/guideline-job.runner';
 import { GuidelineJobService } from './service/guideline-job.service';
 import { GuidelinePipelineService } from './service/guideline-pipeline.service';
 import { GuidelineParseService } from './service/guideline-parse.service';
+import { GuidelineListProvider } from './service/guideline-list.provider';
 import { GuidelineJobEventBus } from './sse/guideline-job-event.bus';
 import { GuidelineService } from './service/guideline.service';
 
@@ -50,6 +51,7 @@ import { GuidelineService } from './service/guideline.service';
     SourceDocumentRepository,
     // 지침 PDF 파싱 (docs/specs/19)
     GuidelineParseService,
+    GuidelineListProvider,
     // 코퍼스 관리 API (docs/specs/21)
     GuidelineAdminService,
     // 전건 파이프라인 잡 (docs/specs/22)

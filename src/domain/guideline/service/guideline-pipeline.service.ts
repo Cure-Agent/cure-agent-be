@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { ErrorCode } from '../../../global/common/exception/error-code.registry';
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { MetricsService } from '../../../global/observability/metrics/metrics.service';
+import { RealTimeAlertSender } from '../../../global/observability/real-time-alert.sender';
 import { containsRecommendationMarker } from '../../../infrastructure/document/guideline-chunker';
 import { PdfTextExtractor } from '../../../infrastructure/document/pdf-text.extractor';
 import {
@@ -14,7 +15,12 @@ import { PipelineRunRepository } from '../repository/pipeline-run.repository';
 import { GuidelineAcquisitionService } from './guideline-acquisition.service';
 import { GuidelineIngestService } from './guideline-ingest.service';
 import { GuidelineParseService } from './guideline-parse.service';
-import { findNotIngestTarget } from './not-ingest-targets';
+import { GuidelineListProvider } from './guideline-list.provider';
+import { describeExpiry } from './known-source-defects';
+import {
+  findExpiredNotIngestTarget,
+  findNotIngestTarget,
+} from './not-ingest-targets';
 
 /** 단계 진입·종결마다 호출된다 — 러너가 SSE로 중계한다. 잡 밖 실행은 넘기지 않는다 */
 export type RunStageListener = (run: PipelineRunRow) => void | Promise<void>;
@@ -71,7 +77,27 @@ export class GuidelinePipelineService {
     private readonly ingestService: GuidelineIngestService,
     private readonly pdfExtractor: PdfTextExtractor,
     private readonly metrics: MetricsService,
+    private readonly lists: GuidelineListProvider,
+    private readonly alerts: RealTimeAlertSender,
   ) {}
+
+  /**
+   * 만료된 목록 항목을 알린다 (docs/specs/25 기준 8~10).
+   *
+   * 만료는 **사람이 목록을 갱신해야 한다**는 신호라 잡 기록 밖으로 나가야 한다 — 일반 실패는
+   * `pipeline_runs`가 담당한다. 알림 실패가 실행 결과를 바꾸지 않도록 삼킨다(기준 9,
+   * §15의 fire-and-forget과 같은 규칙).
+   */
+  private alertExpiry(list: string, identity: { sourceSystem: string; externalId: string }, expiry: { mismatches: Parameters<typeof describeExpiry>[0]; reason: string }): void {
+    try {
+      this.alerts.send({
+        title: `${list} 만료: ${identity.sourceSystem} ${identity.externalId}`,
+        detail: `${describeExpiry(expiry.mismatches)} — ${expiry.reason}`,
+      });
+    } catch (error) {
+      this.logger.warn(`만료 알림 발송 실패: ${String(error)}`);
+    }
+  }
 
   async runOne(options: RunPipelineOptions): Promise<PipelineRunOutcome> {
     // ACQUIRE 진입 — 아직 산출이 없어 stages는 비어 있다
@@ -168,20 +194,31 @@ export class GuidelinePipelineService {
           // 수집이 실어 온 해시가 곧 source_documents.file_hash다 (docs/specs/25 기준 11)
           fileHash: acquired.fileHash ?? '',
         };
-        const listed = findNotIngestTarget(identity);
+        const targets = this.lists.notIngestTargets();
+        const listed = findNotIngestTarget(identity, targets);
         if (!listed) {
-          // 목록에 없다 — 대상인지 아닌지 아직 아무도 판단하지 않은 문서다 (§20 기준 3 복귀)
+          // **만료와 미등재를 구분한다** (docs/specs/25 기준 5·7). 항목이 있는데 축만 어긋난
+          // 경우까지 "목록에도 없습니다"라고 하면 진단이 거짓 방향을 가리킨다.
+          const expired = findExpiredNotIngestTarget(identity, targets);
+          if (expired) {
+            this.alertExpiry('인제스트 대상 아님 목록', identity, {
+              mismatches: expired.mismatches,
+              reason: expired.entry.reason,
+            });
+          }
+          const detail = expired
+            ? `권고 마커를 찾지 못했고, 인제스트 대상 아님 목록의 항목이 **만료**됐습니다 ` +
+              `(${sourceSystem} ${options.externalId}: ${describeExpiry(expired.mismatches)}). ` +
+              `원문이 바뀌었으니 판정을 다시 하고 not-ingest-targets.ts의 항목을 갱신하거나 지우세요. ` +
+              `기존 사유: ${expired.entry.reason}`
+            : `권고 마커를 찾지 못했고 인제스트 대상 아님 목록에도 없습니다 ` +
+              `(${sourceSystem} ${options.externalId}@${version}). ` +
+              `진짜 지침이면 파서를 넓히고, 대상이 아니면 not-ingest-targets.ts에 사유와 함께 추가하세요.`;
           return await this.fail(
             options,
             run,
             phase,
-            new ServiceException(
-              'GUIDELINE_PARSE_FAILED',
-              undefined,
-              `권고 마커를 찾지 못했고 인제스트 대상 아님 목록에도 없습니다 ` +
-                `(${sourceSystem} ${options.externalId}@${version}). ` +
-                `진짜 지침이면 파서를 넓히고, 대상이 아니면 not-ingest-targets.ts에 사유와 함께 추가하세요.`,
-            ),
+            new ServiceException('GUIDELINE_PARSE_FAILED', undefined, detail),
           );
         }
 
@@ -205,6 +242,8 @@ export class GuidelinePipelineService {
         pages,
         externalId: options.externalId,
         sourceSystem: this.acquisition.sourceSystem,
+        // 수집이 실어 온 해시를 그대로 넘긴다 — 면제 판정이 §18 기록과 어긋나지 않게 한다
+        fileHash: acquired.fileHash ?? '',
       });
       const parseMs = Date.now() - parseStart;
       this.metrics.recordPipelineStage('parse', 'success', parseMs / 1000);
