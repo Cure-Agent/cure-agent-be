@@ -13,6 +13,7 @@ const diagnostics = (
   missing: values.missing ?? [],
   duplicated: values.duplicated ?? [],
   gradeMissing: values.gradeMissing ?? [],
+  unknownEvidenceLevels: values.unknownEvidenceLevels ?? [],
 });
 
 describe('spec 20: 지침 템플릿 일반화', () => {

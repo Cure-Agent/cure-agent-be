@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   ChunkDiagnostics,
   chunkNckmGuideline,
@@ -7,6 +7,7 @@ import {
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { SourceDocumentRepository } from '../repository/source-document.repository';
 import { GuidelineIngestInput } from './guideline-ingest.input';
+import { applyKnownSourceDefects } from './known-source-defects';
 
 const DEFAULT_SOURCE_SYSTEM = 'NCKM';
 
@@ -29,6 +30,8 @@ export interface ParseGuidelineOptions {
  */
 @Injectable()
 export class GuidelineParseService {
+  private readonly logger = new Logger(GuidelineParseService.name);
+
   constructor(private readonly sourceDocuments: SourceDocumentRepository) {}
 
   /**
@@ -41,7 +44,24 @@ export class GuidelineParseService {
   async parse(options: ParseGuidelineOptions): Promise<GuidelineIngestInput> {
     const meta = await this.resolveMeta(options);
     const { input, diagnostics } = chunkNckmGuideline(options.pages, meta);
-    assertParsable(diagnostics);
+
+    // 파서가 고칠 수 없는 **원문 결함**은 명시 항목으로만 면제한다 (docs/specs/23 기준 9~13).
+    // 가드를 넓히지 않고 예외를 좁히는 자리다 — 술어를 완화하면 앞으로 들어올 모든 문서에 적용된다.
+    const sourceSystem = options.sourceSystem ?? DEFAULT_SOURCE_SYSTEM;
+    const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, {
+      sourceSystem,
+      externalId: options.externalId,
+      version: meta.version,
+    });
+    for (const defect of applied) {
+      // 조용히 통과시키지 않는다 — 무엇을 왜 면제했는지가 기록에 남아야 한다 (기준 12)
+      this.logger.warn(
+        `알려진 원문 결함 면제: ${sourceSystem} ${options.externalId}@${meta.version} ` +
+          `${defect.diagnostic}=[${defect.numbers.join(', ')}] — ${defect.reason}`,
+      );
+    }
+
+    assertParsable(effective);
     return input;
   }
 
