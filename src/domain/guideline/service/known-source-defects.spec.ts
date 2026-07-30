@@ -113,6 +113,7 @@ describe('spec 23: 알려진 원문 결함 면제', () => {
       unknownEvidenceLevels: diagnostics.unknownEvidenceLevels.map((entry) => ({
         ...entry,
       })),
+      notDerived: [...diagnostics.notDerived],
     };
 
     const result = applyKnownSourceDefects(diagnostics, identity(), [defect()]);

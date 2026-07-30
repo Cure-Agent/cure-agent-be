@@ -53,16 +53,44 @@ const MAX_HEADER_LINES = 3;
  */
 const MAX_HEADER_LENGTH = 40;
 
-/** 마커 뒤에 제목이 붙는 판본이 있다 (`【R1】 삶의 질 개선`) — 번호만 취하고 제목은 버린다 */
-const BLOCK_MARKER = /^【\s*(R[0-9-]+)\s*】\s*(.*)$/;
 /**
- * 인제스트 대상 판정용 마커 (`containsRecommendationMarker`). `BLOCK_MARKER`와 두 가지가 다르다:
+ * 권고 번호 표기 (docs/specs/24 기준 1·2).
+ *
+ * `R1`·`R5-1` 외에 **괄호 복합 좌표**가 있다 — 145는 임상질문과 권고안에 같은 좌표를 쓰므로
+ * `R(Ⅰ-A-1)`·`R(Ⅲc-E-3)`·`R(Ⅱa-B-1-1)`처럼 전각 로마숫자·소문자 접미·다단 하이픈이 온다.
+ * **번호는 원문 표기 그대로 담는다** — 재작성하면 원본 추적성이 깨진다(§23 기준 13과 같은 이유).
+ */
+const NUMBER_PATTERN = '(R(?:\\([^)]*\\d[^)]*\\)|\\d[0-9-]*))';
+/** 마커 뒤에 제목이 붙는 판본이 있다 (`【R1】 삶의 질 개선`) — 번호만 취하고 제목은 버린다 */
+const BRACKET_MARKER = new RegExp(`^【\\s*${NUMBER_PATTERN}\\s*】\\s*(.*)$`);
+/**
+ * 괄호(`【 】`)를 **아예 쓰지 않는** 판본의 마커 (docs/specs/24 기준 6·7).
+ *
+ * 219는 문서 전체에 `【 】`가 0건이고 본문 마커가 `R1`이다. 그런데 줄머리 `R1`은 **기존 성공
+ * 문서에도 대량으로 있다** — 289(168건)·306(113건)·326(112건) 등 12건이 요약문에서
+ * `R1 …권고문… B/Moderate` 형태로 권고를 재수록한다. 그 문서들이 파싱되는 이유는 본문이
+ * `【R1】`을 쓰고 요약문은 장 판정 밖이라 버려지기 때문이다.
+ *
+ * 그래서 이 패턴은 **문서에 `【R…】`가 하나도 없을 때만** 유효하다(`markerPatternFor`) —
+ * §20이 못박은 "문서에서 관측한 패턴으로 판정한다"의 직접 적용이다.
+ */
+const BARE_MARKER = new RegExp(`^${NUMBER_PATTERN}\\.?(?:\\s+(.*))?$`);
+/**
+ * 인제스트 대상 판정용 마커 (`containsRecommendationMarker`). 블록 마커와 두 가지가 다르다:
  * 줄 시작에 **앵커하지 않고**(본문·표 안의 재인용도 증거다), 번호에 **숫자를 최소 하나 요구**한다
  * (`【R】`·`【참고】`는 권고 마커가 아니다).
+ *
+ * 괄호 없는 판본(219)도 대상이므로 줄머리 형태를 함께 본다 — 여기서 false여야만 대상 아님이고,
+ * 그 판정이 `SKIPPED`/`FAILED`를 가르므로 **넓게 잡을수록 조용한 건너뜀 대신 실패로 남는다**.
  */
-const INGEST_TARGET_MARKER = /【\s*R\d[0-9-]*\s*】/;
-/** 표 헤더 — 컬럼 구성이 판본마다 다르다 (`권고안 번호 권고내용 권고등급/근거수준`) */
-const TABLE_HEADER = /^권고안(\s+번호)?\s+(권고내용\s+)?권고등급\s*\/\s*근거수준/;
+const INGEST_TARGET_MARKER = new RegExp(`【\\s*${NUMBER_PATTERN}\\s*】`);
+/**
+ * 표 헤더 — 컬럼 구성이 판본마다 다르다 (docs/specs/24 기준 3·9).
+ *
+ * `권고안 번호 권고내용 권고등급/근거수준`(350) 외에 어절 사이 공백이 든 `권고 내용`과 뒤따르는
+ * `참고문헌` 컬럼(219), `번호`·`권고내용` 컬럼이 아예 없는 형태(145)가 있다.
+ */
+const TABLE_HEADER = /^권고안(\s+번호)?\s+(권고\s*내용\s+)?권고등급\s*\/\s*근거수준/;
 /**
  * 임상적 고려사항 제목. 대괄호를 두르는 판본이 있고(`[임상적 고려사항]`), 같은 블록에서
  * 대괄호 줄과 평문 줄이 잇달아 나오기도 한다 — 둘 다 제목으로 받고 **먼저 오는 쪽**을 경계로 쓴다.
@@ -90,6 +118,15 @@ const REFERENCES_SECTION = /^(?:\[?\s*참고문헌\s*\]?|\(\d+\)\s*참고문헌)
  * 복원이 격조사 기반 추정이다. 공백을 지우면 어디서 잘렸든 같은 문자열이 되어 추정에 기대지 않는다.
  */
 const CONSENSUS_STATEMENT = /합의를통해권고한다/;
+/**
+ * 권고 비도출 문구 (docs/specs/24 기준 4).
+ *
+ * 145의 `R(Ⅲa-D-11)`은 표 헤더도 등급도 권고문도 없고, 그 블록의 「권고안 도출에 대한 설명」이
+ * 사유를 밝힌다 — "통계적 유의성이 없어서 **권고안 도출에 반영하지 않았다**". 원문 결함이 아니라
+ * 원문의 의도이므로 면제(§23)가 아니라 배제로 다룬다. `CONSENSUS_STATEMENT`와 같게 **공백을 지운
+ * 문자열**에 대고 본다 — 지면 줄바꿈이 문구 중간을 자르는데 그 경계 공백은 PDF에 없다.
+ */
+const NOT_DERIVED_STATEMENT = /권고안도출에반영하지않/;
 /**
  * 해설 구간을 여는 소절 헤더 (docs/specs/23 기준 3).
  *
@@ -225,6 +262,15 @@ export interface ChunkDiagnostics {
    * §14의 등급 필터가 「Moderate 이상」을 거를 때 어디에도 속하지 않는 값이 끼어든다.
    */
   unknownEvidenceLevels: { recommendationNumber: string; raw: string }[];
+  /**
+   * 번호는 발급됐으나 원문이 **권고를 내지 않은** 번호 (docs/specs/24 기준 4·5).
+   *
+   * 145는 임상질문과 권고안에 같은 좌표를 쓰므로(`Q(Ⅲa-D-11)` ↔ `R(Ⅲa-D-11)`), 통계적 유의성이
+   * 없어 권고안 도출에 반영하지 않은 항목도 마커가 자리를 지킨다. 원문 결함이 아니라 원문의 의도라
+   * `uniqueNumbers`에서 빼되, **그냥 버리면 조용한 유실**이 되므로 여기 모아 기대치에 동결한다 —
+   * 1건이 40건이 되면 원문 성격의 변화나 배제 규칙의 드리프트 신호다 (§23 기준 8과 같은 이유).
+   */
+  notDerived: string[];
 }
 
 export interface ChunkResult {
@@ -245,10 +291,12 @@ export function chunkNckmGuideline(
   pages: string[],
   meta: GuidelineDocumentMeta,
 ): ChunkResult {
+  // 문서가 쓰는 마커 문법은 **관측으로** 정한다 (docs/specs/24 기준 6·7)
+  const marker = markerPatternFor(pages);
   const lines = collectTargetChapterLines(pages);
-  const occurrences = findMarkerOccurrences(lines);
-  const blockStarts = occurrences.filter((o) => isBlockStart(lines, o.index));
-  const { sections, unknownEvidenceLevels } = buildSections(lines, blockStarts);
+  const occurrences = findMarkerOccurrences(lines, marker);
+  const blockStarts = occurrences.filter((o) => isBlockStart(lines, o.index, marker));
+  const { sections, unknownEvidenceLevels } = buildSections(lines, blockStarts, marker);
 
   const chunks = sections.flatMap((section) => section.chunks);
   const recommendationCounts = new Map<string, number>();
@@ -265,7 +313,8 @@ export function chunkNckmGuideline(
     }
   }
 
-  const uniqueNumbers = countableNumbers(lines, occurrences, blockStarts);
+  const { counted, notDerived } = countableNumbers(lines, occurrences, blockStarts);
+  const uniqueNumbers = counted;
   const produced = new Set(blockStarts.map((o) => o.number));
   return {
     input: { ...meta, sections },
@@ -277,8 +326,20 @@ export function chunkNckmGuideline(
         .map(([number]) => number),
       gradeMissing: [...produced].filter((n) => !graded.has(n)),
       unknownEvidenceLevels,
+      notDerived,
     },
   };
+}
+
+/**
+ * 문서가 쓰는 마커 문법을 **관측으로** 고른다 (docs/specs/24 기준 6·7).
+ *
+ * `【R…】`가 한 번이라도 보이면 그 문서는 괄호 판본이므로 괄호 없는 줄머리 `R1`은 마커가 아니다 —
+ * 요약문 재수록이기 때문이다. 필터 **이전** 원본을 보는 이유는 `containsRecommendationMarker`와
+ * 같다: 장 판정이 마커 페이지를 전량 탈락시킨 경우와 구분해야 한다.
+ */
+function markerPatternFor(pages: string[]): RegExp {
+  return pages.some((page) => INGEST_TARGET_MARKER.test(page)) ? BRACKET_MARKER : BARE_MARKER;
 }
 
 /**
@@ -289,11 +350,21 @@ export function chunkNckmGuideline(
  * 전량 탈락시켰다」를 구분하지 못한다 — 후자는 §20이 계열 B·C에서 겪은 파서 결함 그 자체다.
  * 이 함수는 필터 **이전** 원본을 보므로 그 둘을 가른다: 여기서 false여야만 대상 아님이다.
  *
- * 줄 어디에 있든 센다(`BLOCK_MARKER`는 줄 시작에 앵커돼 있다) — 목차·결과요약표의 재인용도
+ * 줄 어디에 있든 센다(블록 마커는 줄 시작에 앵커돼 있다) — 목차·결과요약표의 재인용도
  * 「이 문서는 【R】 체계를 쓴다」는 증거이며, 넓게 잡을수록 조용한 건너뜀 대신 실패로 남는다.
  */
 export function containsRecommendationMarker(pages: string[]): boolean {
-  return pages.some((page) => INGEST_TARGET_MARKER.test(page));
+  if (pages.some((page) => INGEST_TARGET_MARKER.test(page))) return true;
+  // 괄호를 아예 쓰지 않는 판본(219) — 줄머리 마커 뒤에 표 헤더나 등급이 따라오는 줄이 있어야
+  // 「이 문서는 권고 체계를 쓴다」의 증거다. 줄머리 `R1`만으로 받으면 서지·수식이 오탐된다.
+  return pages.some((page) => {
+    const lines = page.split('\n').map((line) => line.trim());
+    return lines.some((line, index) => {
+      if (!BARE_MARKER.test(line)) return false;
+      const window = lines.slice(Math.max(0, index - 1), index + 1 + BLOCK_EVIDENCE_WINDOW);
+      return window.some((near) => TABLE_HEADER.test(near) || GRADE_TOKEN.test(near));
+    });
+  });
 }
 
 /**
@@ -308,9 +379,10 @@ function countableNumbers(
   lines: SourceLine[],
   occurrences: MarkerOccurrence[],
   blockStarts: MarkerOccurrence[],
-): string[] {
+): { counted: string[]; notDerived: string[] } {
   const startIndexes = new Set(blockStarts.map((o) => o.index));
   const numberAt = new Map(occurrences.map((o) => [o.index, o.number]));
+  const notDerived = notDerivedNumbers(lines, occurrences, startIndexes);
   const counted = new Set<string>();
   let insideExplanation = false;
 
@@ -327,10 +399,38 @@ function countableNumbers(
 
     const number = numberAt.get(index);
     if (number === undefined) return;
+    if (notDerived.includes(number)) return;
     if (startIndexes.has(index) || !insideExplanation) counted.add(number);
   });
 
-  return [...counted];
+  return { counted: [...counted], notDerived };
+}
+
+/**
+ * 번호는 발급됐으나 원문이 **권고를 내지 않은** 번호를 고른다 (docs/specs/24 기준 4·5).
+ *
+ * 판정은 **두 조건의 결합**이다 — ⑴ 그 마커가 블록이 아니고 ⑵ 그 마커 구간에 비도출 문구가 있다.
+ * 어느 한쪽만으로는 정상 권고를 잘라낸다: 141·352는 표 헤더·등급을 갖춘 **정상 블록의 해설 안**에
+ * 같은 문구를 두고도 현행 `status:"OK"`다.
+ */
+function notDerivedNumbers(
+  lines: SourceLine[],
+  occurrences: MarkerOccurrence[],
+  startIndexes: Set<number>,
+): string[] {
+  const numbers: string[] = [];
+  occurrences.forEach((occurrence, order) => {
+    if (startIndexes.has(occurrence.index)) return;
+    const end = occurrences[order + 1]?.index ?? lines.length;
+    // 지면 줄바꿈이 문구 중간을 자르므로 **공백을 지운 문자열**에 대고 본다 (§23 합의 문구와 같은 이유)
+    const segment = lines
+      .slice(occurrence.index, end)
+      .map((line) => line.text)
+      .join('')
+      .replace(/\s+/g, '');
+    if (NOT_DERIVED_STATEMENT.test(segment)) numbers.push(occurrence.number);
+  });
+  return [...new Set(numbers)];
 }
 
 interface MarkerOccurrence {
@@ -338,10 +438,10 @@ interface MarkerOccurrence {
   number: string;
 }
 
-function findMarkerOccurrences(lines: SourceLine[]): MarkerOccurrence[] {
+function findMarkerOccurrences(lines: SourceLine[], marker: RegExp): MarkerOccurrence[] {
   const occurrences: MarkerOccurrence[] = [];
   lines.forEach((line, index) => {
-    const number = BLOCK_MARKER.exec(line.text)?.[1];
+    const number = marker.exec(line.text)?.[1];
     if (number) occurrences.push({ index, number });
   });
   return occurrences;
@@ -353,12 +453,22 @@ function findMarkerOccurrences(lines: SourceLine[]): MarkerOccurrence[] {
  * 본문·결과요약표가 `【R】`를 다시 인용하므로 출현 수는 블록 수가 아니다(편두통: 출현 44 / 고유 37).
  * 실제 블록은 뒤에 표 헤더나 등급이 따라오고, 재인용은 둘 다 없다.
  */
-function isBlockStart(lines: SourceLine[], index: number): boolean {
-  const window = lines.slice(index + 1, index + 1 + BLOCK_EVIDENCE_WINDOW);
+function isBlockStart(lines: SourceLine[], index: number, marker: RegExp): boolean {
+  // 괄호 없는 판본은 표 헤더가 마커 **앞**에 오고 권고문·등급이 마커 줄에 이어붙는다 —
+  // 그래서 그 판본에서만 마커 줄 자신을 증거에 넣는다 (docs/specs/24 기준 8·9).
+  // 괄호 판본까지 넓히면 마커 줄에 등급이 붙은 재인용이 블록으로 오인돼 §20 기준 2가 무력해진다.
+  const from = marker === BARE_MARKER ? index : index + 1;
+  // **다음 마커에서 자른다** — 넘어가면 뒤 블록의 표 헤더·등급을 자기 증거로 쓴다.
+  // 권고 없는 마커 바로 뒤에 정상 블록이 붙는 배치(145의 비도출 항목)가 그 함정이다.
+  const window: SourceLine[] = [];
+  for (let at = from; at < Math.min(lines.length, index + 1 + BLOCK_EVIDENCE_WINDOW); at += 1) {
+    if (at !== index && marker.test(lines[at].text)) break;
+    window.push(lines[at]);
+  }
   if (window.some((line) => TABLE_HEADER.test(line.text) || GRADE_TOKEN.test(line.text))) {
     return true;
   }
-  return isConsensusBlock(lines.slice(index, index + 1 + BLOCK_EVIDENCE_WINDOW));
+  return isConsensusBlock(lines.slice(index, index + 1 + BLOCK_EVIDENCE_WINDOW), marker);
 }
 
 /**
@@ -367,17 +477,17 @@ function isBlockStart(lines: SourceLine[], index: number): boolean {
  * 마커 줄에 권고 문장이 이어붙는 판본이라 마커 줄의 뒤 텍스트부터 이어 붙이고, 문장이 끝나거나
  * 다음 마커를 만나면 멈춘다. 해설 전체를 훑으면 근거 서술에 나온 「합의」까지 걸린다.
  */
-function isConsensusBlock(block: SourceLine[]): boolean {
-  const marker = BLOCK_MARKER.exec(block[0]?.text ?? '');
-  if (!marker) return false;
+function isConsensusBlock(block: SourceLine[], marker: RegExp): boolean {
+  const matched = marker.exec(block[0]?.text ?? '');
+  if (!matched) return false;
 
   const hasConsensus = (text: string): boolean =>
     CONSENSUS_STATEMENT.test(text.replace(/\s+/g, ''));
 
-  let sentence = marker[2] ?? '';
+  let sentence = matched[2] ?? '';
   if (hasConsensus(sentence)) return true;
   for (const line of block.slice(1)) {
-    if (BLOCK_MARKER.test(line.text)) break;
+    if (marker.test(line.text)) break;
     sentence = `${sentence}${line.text}`;
     if (hasConsensus(sentence)) return true;
     if (SENTENCE_END.test(line.text)) break;
@@ -503,6 +613,7 @@ function normalizeRoman(numeral: string): string {
 function buildSections(
   lines: SourceLine[],
   blockStarts: MarkerOccurrence[],
+  marker: RegExp,
 ): { sections: IngestSection[]; unknownEvidenceLevels: { recommendationNumber: string; raw: string }[] } {
   const starts = blockStarts.map((o) => o.index);
 
@@ -510,7 +621,7 @@ function buildSections(
   const unknownEvidenceLevels: { recommendationNumber: string; raw: string }[] = [];
   starts.forEach((start, order) => {
     const end = order + 1 < starts.length ? starts[order + 1] : lines.length;
-    const { chunks, unknownEvidence } = buildBlockChunks(lines.slice(start, end));
+    const { chunks, unknownEvidence } = buildBlockChunks(lines.slice(start, end), marker);
     if (unknownEvidence) unknownEvidenceLevels.push(unknownEvidence);
     if (chunks.length === 0) return;
 
@@ -598,8 +709,8 @@ interface BlockChunks {
 }
 
 /** 블록 하나 → 권고문 청크 1개 + 해설 청크 1개 이상 */
-function buildBlockChunks(block: SourceLine[]): BlockChunks {
-  const recommendationNumber = BLOCK_MARKER.exec(block[0].text)?.[1];
+function buildBlockChunks(block: SourceLine[], marker: RegExp): BlockChunks {
+  const recommendationNumber = marker.exec(block[0].text)?.[1];
   if (!recommendationNumber) return { chunks: [] };
 
   const bodyStart = TABLE_HEADER.test(block[1]?.text ?? '') ? 2 : 1;
@@ -609,13 +720,16 @@ function buildBlockChunks(block: SourceLine[]): BlockChunks {
       .filter((segment) => segment.kind === kind)
       .flatMap((segment) => block.slice(segment.start, segment.end));
 
-  // 합의 권고는 마커 줄에 **권고 문장 본문**이 이어붙는다 (docs/specs/23 기준 1).
-  // 마커 줄을 언제나 버리는 §20 기준 10은 붙은 것이 *제목*일 때의 규칙이므로, 이 경로에만
-  // 예외를 둔다 — 그러지 않으면 content가 「권고한다.」부터 시작하는 잘린 권고문이 된다.
-  const consensus = isConsensusBlock(block);
-  const trailing = BLOCK_MARKER.exec(block[0].text)?.[2]?.trim() ?? '';
+  // 마커 줄에 **권고 문장 본문**이 이어붙는 두 경로가 있다:
+  // ⑴ 합의 권고 (docs/specs/23 기준 1) ⑵ 괄호 없는 판본 (docs/specs/24 기준 8).
+  // 마커 줄을 언제나 버리는 §20 기준 10은 붙은 것이 *제목*일 때의 규칙이므로, 이 두 경로에만
+  // 예외를 둔다 — 그러지 않으면 content가 잘린 권고문으로 적재된다.
+  const consensus = isConsensusBlock(block, marker);
+  const trailing = marker.exec(block[0].text)?.[2]?.trim() ?? '';
   const leading: SourceLine[] =
-    consensus && trailing.length > 0 ? [{ ...block[0], text: trailing }] : [];
+    (consensus || marker === BARE_MARKER) && trailing.length > 0
+      ? [{ ...block[0], text: trailing }]
+      : [];
 
   const statementLines = [...leading, ...linesOf('statement')];
   const extracted = extractGrades(statementLines);
@@ -633,8 +747,9 @@ function buildBlockChunks(block: SourceLine[]): BlockChunks {
       // 정규형으로 못 읽은 등급도 본문에서는 걷어낸다 — 읽기 실패가 잔여물로 남을 이유는 없다
       text: line.text.replace(GRADE_TAIL, '').replace(UNKNOWN_EVIDENCE_TAIL, ''),
     })),
+    marker,
   );
-  const consideration = toParagraphs(linesOf('consideration'));
+  const consideration = toParagraphs(linesOf('consideration'), marker);
 
   const chunks: IngestChunk[] = [];
   splitByLength([...statement, ...consideration], CHUNK_MAX_CHARS).forEach((part, index) => {
@@ -650,7 +765,7 @@ function buildBlockChunks(block: SourceLine[]): BlockChunks {
     });
   });
 
-  const explanation = toParagraphs(linesOf('explanation'));
+  const explanation = toParagraphs(linesOf('explanation'), marker);
   for (const part of splitByLength(explanation, EXPLANATION_MAX_CHARS)) {
     chunks.push({
       // 등급은 권고에 부여된 것이지 해설 문단에 부여된 것이 아니다 — 복사하면 인용의 근거가
@@ -733,7 +848,7 @@ function rating(code: string, label: string): IngestRating {
  * 추출 텍스트의 줄바꿈은 지면의 시각적 줄바꿈이라, 문장이 줄 중간에서 잘린다.
  * 문장 종결로 끝난 줄과 구조 줄(소제목·소절 마커)만 문단 경계이고 나머지는 다음 줄과 이어붙인다.
  */
-function toParagraphs(lines: SourceLine[]): Paragraph[] {
+function toParagraphs(lines: SourceLine[], marker: RegExp): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   let current: Paragraph | null = null;
 
@@ -744,7 +859,7 @@ function toParagraphs(lines: SourceLine[]): Paragraph[] {
 
   for (const line of lines) {
     if (line.text.length === 0) continue;
-    if (isStructuralLine(line.text)) {
+    if (isStructuralLine(line.text, marker)) {
       flush();
       paragraphs.push({ text: line.text, pageStart: line.page, pageEnd: line.page });
       continue;
@@ -761,12 +876,12 @@ function toParagraphs(lines: SourceLine[]): Paragraph[] {
   return paragraphs;
 }
 
-function isStructuralLine(text: string): boolean {
+function isStructuralLine(text: string, marker: RegExp): boolean {
   return (
     CONSIDERATION_HEADER.test(text) ||
     SUBSECTION_MARKER.test(text) ||
     REFERENCES_MARKER.test(text) ||
-    BLOCK_MARKER.test(text) ||
+    marker.test(text) ||
     TABLE_HEADER.test(text)
   );
 }
