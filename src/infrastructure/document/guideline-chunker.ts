@@ -156,6 +156,15 @@ export interface ChunkDiagnostics {
   duplicated: string[];
   /** 권고문 청크는 있으나 등급을 추출하지 못한 번호 */
   gradeMissing: string[];
+  /**
+   * 권고등급은 읽었으나 근거수준이 정규형에 없던 경우의 **원문 표기** (docs/specs/23 기준 8).
+   *
+   * `C/Vey Low`(원문 오타)처럼 등급 문자는 분명한데 근거수준만 미상인 판본이 있다. 오타를 어휘에
+   * 박아 넣지 않으려고 등급 추출은 성공으로 두지만, 그냥 버리면 조용한 유실이 되므로 여기 모아
+   * `verify:templates`가 문서별로 보고한다. `evidenceLevel`은 비운다 — 정규형 없는 코드가 들어가면
+   * §14의 등급 필터가 「Moderate 이상」을 거를 때 어디에도 속하지 않는 값이 끼어든다.
+   */
+  unknownEvidenceLevels: { recommendationNumber: string; raw: string }[];
 }
 
 export interface ChunkResult {
@@ -207,6 +216,7 @@ export function chunkNckmGuideline(
         .filter(([, count]) => count > 1)
         .map(([number]) => number),
       gradeMissing: [...produced].filter((n) => !graded.has(n)),
+      unknownEvidenceLevels: [],
     },
   };
 }
