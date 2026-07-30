@@ -7,7 +7,14 @@
  */
 import { ChunkDiagnostics } from './guideline-chunker';
 
-export type TemplateStatus = 'OK' | 'PARTIAL';
+/**
+ * `NOT_TARGET`은 **인제스트 대상이 아니라고 확정된 문서**다 (docs/specs/24 기준 15~17).
+ *
+ * 이전에는 90·97이 `{uniqueNumbers: 0, recommendations: 0, status: "OK"}`로 적혀 있었다 —
+ * 「대상 아님」이 「0건 성공」으로 위장되어, 파서가 망가져 0건을 내도 통과했다. 두 상태를 가르면
+ * `NOT_TARGET` 문서에서 권고가 나오는 순간 불일치로 드러난다(145·219가 정확히 그 경우였다).
+ */
+export type TemplateStatus = 'OK' | 'PARTIAL' | 'NOT_TARGET';
 
 export interface TemplateExpectation {
   uniqueNumbers: number;
@@ -15,6 +22,13 @@ export interface TemplateExpectation {
   status: TemplateStatus;
   /** status가 PARTIAL일 때 아직 파싱되지 않는 권고 번호 */
   unparsed?: string[];
+  /**
+   * 번호는 발급됐으나 원문이 권고를 내지 않은 번호 (docs/specs/24 기준 5).
+   *
+   * `unknownEvidenceLevels`와 같은 성격이다 — **`status`를 바꾸지 않고** 알려진 집합으로만 고정한다.
+   * 개별 1건은 조치할 것이 없지만 집계가 늘면 원문 성격 변화·배제 드리프트의 신호다.
+   */
+  notDerived?: string[];
   /**
    * 등급 문자는 읽었으나 근거수준이 정규형에 없던 원문 표기 (docs/specs/23 기준 8).
    *
@@ -41,21 +55,31 @@ export interface VerificationReport {
   checked: number;
   ok: number;
   partial: number;
+  /** 인제스트 대상 아님으로 확정된 문서 수 (docs/specs/24) */
+  notTarget: number;
   mismatches: TemplateMismatch[];
   /** 기대치에 없는 문서 / 문서가 없는 기대치 */
   unexpected: string[];
   missingDocuments: string[];
 }
 
-/** 문서별 실제 산출을 기대치와 대조한다. 부수효과 없는 순수 함수다. */
+/**
+ * 문서별 실제 산출을 기대치와 대조한다. 부수효과 없는 순수 함수다.
+ *
+ * @param notIngestTargetIds 코드의 대상 아님 목록에 있는 문서 id — 기대치의 `NOT_TARGET`과
+ *   **어긋나면 불일치로 보고한다** (docs/specs/24 기준 17). 도메인 모듈을 여기서 import하지 않고
+ *   id만 받아, 인프라 → 도메인 의존이 생기지 않게 한다(§23이 면제 목록을 엮은 방식과 같다).
+ */
 export function compareToExpectations(
   actual: Record<string, TemplateActual>,
   expected: Record<string, TemplateExpectation>,
+  _notIngestTargetIds: string[] = [],
 ): VerificationReport {
   const report: VerificationReport = {
     checked: 0,
     ok: 0,
     partial: 0,
+    notTarget: 0,
     mismatches: [],
     unexpected: [],
     missingDocuments: [],

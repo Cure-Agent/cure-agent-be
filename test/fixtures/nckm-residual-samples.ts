@@ -196,4 +196,5 @@ export const makeKnownDefectDiagnosticsSample = () => ({
   unknownEvidenceLevels: [
     { recommendationNumber: 'R31', raw: 'Vey Low' },
   ],
+  notDerived: [] as string[],
 });

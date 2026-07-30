@@ -225,6 +225,15 @@ export interface ChunkDiagnostics {
    * §14의 등급 필터가 「Moderate 이상」을 거를 때 어디에도 속하지 않는 값이 끼어든다.
    */
   unknownEvidenceLevels: { recommendationNumber: string; raw: string }[];
+  /**
+   * 번호는 발급됐으나 원문이 **권고를 내지 않은** 번호 (docs/specs/24 기준 4·5).
+   *
+   * 145는 임상질문과 권고안에 같은 좌표를 쓰므로(`Q(Ⅲa-D-11)` ↔ `R(Ⅲa-D-11)`), 통계적 유의성이
+   * 없어 권고안 도출에 반영하지 않은 항목도 마커가 자리를 지킨다. 원문 결함이 아니라 원문의 의도라
+   * `uniqueNumbers`에서 빼되, **그냥 버리면 조용한 유실**이 되므로 여기 모아 기대치에 동결한다 —
+   * 1건이 40건이 되면 원문 성격의 변화나 배제 규칙의 드리프트 신호다 (§23 기준 8과 같은 이유).
+   */
+  notDerived: string[];
 }
 
 export interface ChunkResult {
@@ -277,6 +286,7 @@ export function chunkNckmGuideline(
         .map(([number]) => number),
       gradeMissing: [...produced].filter((n) => !graded.has(n)),
       unknownEvidenceLevels,
+      notDerived: [],
     },
   };
 }
