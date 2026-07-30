@@ -78,6 +78,11 @@
 1. 마커 뒤 10줄 안에 표 헤더·등급 토큰이 없어도, **마커와 같은 줄 또는 다음 줄부터 이어지는 문장이
    「합의를 통해 권고한다」로 끝나면** 권고 블록으로 인정한다. 그 블록의 `recommendationGrade`는
    `GPP`(전문가 합의 권고)이고 `evidenceLevel`은 없다
+   - **이 경로로 인정된 블록에서는 마커 줄에 이어진 텍스트를 권고문 content에 포함한다.**
+     §20 기준 10(`【R1】 삶의 질 개선`의 붙은 **제목**을 content에서 제외)은 합의 문구가 없는
+     제목 형태에 그대로 유지되고, 예외는 이 경로에만 좁게 둔다. 현재 구현은 마커 줄을 언제나
+     버리므로(`bodyStart`), 그대로 두면 `【 R20 】 소량의 음식을 자주 먹어 …` 여덟 건이 블록은
+     잡히면서 **content는 `권고한다.`부터 시작하는 잘린 권고문**으로 적재된다
 2. 합의 문구가 없고 표 헤더·등급도 없는 마커는 **여전히 블록이 아니다** (§20 변형 0의 재인용 판정 유지)
 
 **근거 소절 배제 (A)**
@@ -90,12 +95,22 @@
 
 **등급 어휘·표기 (C·D)**
 
-6. `Inconclusive`·`Insufficient`를 등급 어휘로 받는다. 단독(`Inconclusive`)과 조합
-   (`Insufficient/GPP`·`GPP/Insufficient`) 모두 인식하며 **슬래시 양쪽 순서에 의존하지 않는다**
+6. `Inconclusive`·`Insufficient`를 등급 어휘로 받는다. **어느 축인지는 원문이 정한다** —
+   `Inconclusive`는 **권고등급**(label 「권고 보류」), `Insufficient`는 **근거수준**
+   (label 「근거 불충분」)이다. 실측 근거: 324 R5 `권고를 보류한다. Inconclusive`·168 R3-1
+   `권고안 비도출 / Inconclusive`는 권고 강도가 보류된 것이고, 291 R7 `Insufficient/GPP`·
+   R14 `GPP/Insufficient`는 `GPP`가 권고등급이고 `Insufficient`가 그 근거수준이다
+   - `Inconclusive` 단독 → `{recommendationGrade:{code:'Inconclusive'}}`, `evidenceLevel` 없음
+   - `Insufficient/GPP`·`GPP/Insufficient` → **순서와 무관하게**
+     `{recommendationGrade:{code:'GPP'}, evidenceLevel:{code:'Insufficient'}}`
 7. 등급 문자 뒤 마침표(`C./Very Low`)를 `C/Very Low`와 같게 읽는다
 8. **등급 문자가 인식되면 근거수준이 미상이어도 등급 추출은 성공**으로 본다 (`C/Vey Low` →
-   `{code:'C'}` + 미상 근거수준). 원문 오타를 어휘에 박아 넣지 않기 위해서다.
-   미상 근거수준은 진단에 모아 `verify:templates`가 문서별로 보고한다 — 조용히 삼키지 않는다
+   `{recommendationGrade:{code:'C'}}`). 원문 오타를 어휘에 박아 넣지 않기 위해서다.
+   - 이때 **`evidenceLevel`은 비운다**(undefined). 정규형이 없는 값을 코드로 넣으면 §14의 등급
+     필터·좌표계가 오염된다 — 검색이 「근거수준 Moderate 이상」을 거를 때 `Vey Low`가 어디에도
+     속하지 않는 코드로 끼어든다
+   - 원문 표기(`Vey Low`)는 **진단에 모아** `verify:templates`가 문서별로 보고한다 —
+     조용히 삼키지 않는다
 
 **원문 결함 면제 (E)**
 
