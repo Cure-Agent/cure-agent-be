@@ -75,6 +75,46 @@ IV 권고사항
 이 번호는 근거 서술에서 비교 대상으로만 인용했다.`,
 ];
 
+export const bracketedReferenceResetPages: string[] = [
+  `112
+IV 권고사항
+1 한의 단독 치료
+1) 별무리 수면법
+【 R12 】
+권고안 권고등급/근거수준 참고문헌
+별무리 불면에는 달구름 수면법을 고려한다. B/Moderate
+임상적 고려사항
+어지러우면 적용을 멈춘다.
+(1) 배경
+달구름 수면법은 가상의 수면 지표를 높였다.
+【 R91 】
+이 번호는 근거 서술에서 비교 대상으로만 인용했다.
+[참고문헌]
+Imaginary Moon-Cloud Sleep Review
+【 R92 】
+이 번호에는 권고 표와 등급이 빠져 있다.`,
+];
+
+export const numberedReferenceResetPages: string[] = [
+  `113
+IV 권고사항
+1 한의 단독 치료
+1) 햇무리 온기법
+【 R13 】
+권고안 권고등급/근거수준 참고문헌
+햇무리 냉감에는 잔별 온기법을 고려한다. B/Low
+임상적 고려사항
+열감이 생기면 적용 시간을 줄인다.
+(1) 배경
+잔별 온기법은 가상의 온기 지표를 높였다.
+【 R93 】
+이 번호는 근거 서술에서 비교 대상으로만 인용했다.
+(3) 참고문헌
+Invented Little-Star Warming Trial
+【 R94 】
+이 번호에는 권고 표와 등급이 빠져 있다.`,
+];
+
 export const hyphenatedRecommendationPages: string[] = [
   `120
 IV 권고사항

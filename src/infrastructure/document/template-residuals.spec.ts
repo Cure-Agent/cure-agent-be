@@ -4,10 +4,12 @@ import {
   type IngestChunk,
 } from '../../domain/guideline/service/guideline-ingest.input';
 import {
+  bracketedReferenceResetPages,
   consensusRecommendationPages,
   dottedGradePages,
   extendedGradeVocabularyPages,
   hyphenatedRecommendationPages,
+  numberedReferenceResetPages,
   postSubsectionReferencePages,
   preSubsectionMissingPages,
   unknownEvidenceLevelPages,
@@ -106,6 +108,23 @@ describe('spec 23: 잔여 템플릿 일반화', () => {
     expect(recommendationNumbers(result.input)).toEqual(['R3']);
     expect(result.diagnostics.missing).toEqual([]);
     expect(findRecommendation(result.input, 'R88')).toBeUndefined();
+  });
+
+  it('기준 3-1: 참고문헌 소절 뒤의 비블록 권고 번호는 uniqueNumbers와 missing에 남는다', () => {
+    const bracketed = chunkNckmGuideline(bracketedReferenceResetPages, meta);
+    const numbered = chunkNckmGuideline(numberedReferenceResetPages, meta);
+
+    expect(sorted(bracketed.diagnostics.uniqueNumbers)).toEqual(['R12', 'R92']);
+    expect(recommendationNumbers(bracketed.input)).toEqual(['R12']);
+    expect(bracketed.diagnostics.missing).toEqual(['R92']);
+    expect(findRecommendation(bracketed.input, 'R91')).toBeUndefined();
+    expect(findRecommendation(bracketed.input, 'R92')).toBeUndefined();
+
+    expect(sorted(numbered.diagnostics.uniqueNumbers)).toEqual(['R13', 'R94']);
+    expect(recommendationNumbers(numbered.input)).toEqual(['R13']);
+    expect(numbered.diagnostics.missing).toEqual(['R94']);
+    expect(findRecommendation(numbered.input, 'R93')).toBeUndefined();
+    expect(findRecommendation(numbered.input, 'R94')).toBeUndefined();
   });
 
   it('기준 4: 소절 시작 전의 비블록 마커는 uniqueNumbers와 missing에 남는다', () => {
