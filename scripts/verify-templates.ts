@@ -6,7 +6,7 @@
  * `--update`는 현재 산출을 기대치 파일에 다시 쓴다(개선을 반영할 때만 의도적으로 쓴다).
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   chunkNckmGuideline,
   GuidelineDocumentMeta,
@@ -17,6 +17,7 @@ import {
   TemplateActual,
   TemplateExpectation,
 } from '../src/infrastructure/document/template-verification';
+import { applyKnownSourceDefects } from '../src/domain/guideline/service/known-source-defects';
 
 const DEFAULT_DIR = '.cure-data/survey';
 const EXPECTATIONS_PATH = 'test/fixtures/nckm-template-expectations.json';
@@ -49,8 +50,25 @@ export function parseArgs(argv: string[]): VerifyArgs {
   return args;
 }
 
-async function collectActual(dir: string): Promise<Record<string, TemplateActual>> {
+/**
+ * 문서별 발행일 — 면제는 **버전에 묶이므로**(docs/specs/23 기준 11) 판정에 필요하다.
+ * 목록 파일은 PDF와 같은 `.cure-data/`에 있고 둘 다 커밋되지 않는다. 없으면 빈 맵을 돌려주고,
+ * 그때는 버전이 어긋나 면제가 적용되지 않는다 — 조용히 통과시키는 방향으로 기울지 않는다.
+ */
+function loadVersions(dir: string): Record<string, string> {
+  const path = join(dirname(dir), 'nckm-list-sizes.json');
+  if (!existsSync(path)) return {};
+  const rows = JSON.parse(readFileSync(path, 'utf8')) as { guide_idx: number; date?: string }[];
+  return Object.fromEntries(rows.map((row) => [String(row.guide_idx), row.date ?? '']));
+}
+
+async function collectActual(
+  dir: string,
+): Promise<{ actual: Record<string, TemplateActual>; waived: string[] }> {
   const actual: Record<string, TemplateActual> = {};
+  const waived: string[] = [];
+  const versions = loadVersions(dir);
+
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.pdf')).sort()) {
     const documentId = file.replace(/\.pdf$/, '');
     const pages = await extractPdfPages(join(dir, file));
@@ -58,9 +76,19 @@ async function collectActual(dir: string): Promise<Record<string, TemplateActual
     const recommendations = input.sections
       .flatMap((section) => section.chunks)
       .filter((chunk) => chunk.recommendationGrade !== undefined).length;
-    actual[documentId] = { diagnostics, recommendations };
+
+    // 파이프라인과 **같은 판정**을 쓴다 — 갈라지면 CLI가 통과시킨 문서가 운영에서 실패한다
+    const { diagnostics: effective, applied } = applyKnownSourceDefects(diagnostics, {
+      sourceSystem: 'NCKM',
+      externalId: documentId,
+      version: versions[documentId] ?? '',
+    });
+    for (const defect of applied) {
+      waived.push(`${documentId} ${defect.diagnostic}=[${defect.numbers.join(', ')}] — ${defect.reason}`);
+    }
+    actual[documentId] = { diagnostics: effective, recommendations };
   }
-  return actual;
+  return { actual, waived };
 }
 
 function toExpectations(actual: Record<string, TemplateActual>): Record<string, TemplateExpectation> {
@@ -90,7 +118,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  const actual = await collectActual(args.dir);
+  const { actual, waived } = await collectActual(args.dir);
+  // 면제는 조용히 통과시키지 않는다 (docs/specs/23 기준 12)
+  for (const line of waived) console.log(`  알려진 원문 결함 면제: ${line}`);
   if (args.update) {
     writeFileSync(EXPECTATIONS_PATH, `${JSON.stringify(toExpectations(actual), null, 2)}\n`);
     console.log(`${EXPECTATIONS_PATH} 갱신 — 문서 ${Object.keys(actual).length}건`);

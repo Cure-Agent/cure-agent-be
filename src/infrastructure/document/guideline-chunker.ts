@@ -72,15 +72,59 @@ const CONSIDERATION_HEADER = /^\[?\s*임상적\s*고려사항\s*\]?$/;
 const SUBSECTION_MARKER = /^(?:\(\d+\)|[①-⑳])/;
 const REFERENCES_MARKER = /^\[참고문헌\]$/;
 /**
+ * 참고문헌 소절 — 한 블록의 해설이 **닫히는 경계**다 (docs/specs/23 기준 3).
+ *
+ * `[참고문헌]`과 `(3) 참고문헌` 두 형태로 오며 후자는 `SUBSECTION_MARKER`에도 걸리므로,
+ * 소절 판정보다 **먼저** 본다. 이 해제가 없으면 참고문헌 뒤의 미검출 마커까지 배제되어
+ * 「청크가 없는 번호」가 조용히 사라진다.
+ */
+const REFERENCES_SECTION = /^(?:\[?\s*참고문헌\s*\]?|\(\d+\)\s*참고문헌)/;
+/**
+ * 합의 권고의 산문 등급 표기 (docs/specs/23 기준 1).
+ *
+ * 표도 등급 토큰도 없이 `【 R20 】 … 전문가그룹의 공식적 합의를 통해 권고한다.`처럼 문장 안에서만
+ * 등급을 밝히는 판본이 있다(324). 이 문구가 곧 `GPP`의 증거다.
+ *
+ * **공백을 모두 지운 문자열에 대고 본다.** 지면 줄바꿈이 어절 한가운데를 자르는데
+ * (`공식적 합`/`의를 통해` — R22, `공식적 합의`/`를 통해` — R26) 그 경계 공백은 PDF에 없어
+ * 복원이 격조사 기반 추정이다. 공백을 지우면 어디서 잘렸든 같은 문자열이 되어 추정에 기대지 않는다.
+ */
+const CONSENSUS_STATEMENT = /합의를통해권고한다/;
+/**
+ * 해설 구간을 여는 소절 헤더 (docs/specs/23 기준 3).
+ *
+ * `SUBSECTION_MARKER`보다 **좁다** — 서지 항목의 연도가 줄 첫머리에 오면
+ * (`(2013)는 648명의 …`) 소절로 오인되고, 그 뒤의 마커가 통째로 배제되어 미검출이 조용히
+ * 사라진다(324 R26 실증). 실측 소절은 `(1)`~`(4)`뿐이라 자릿수로 가른다.
+ * 공유 상수를 좁히지 않는 이유는 §19의 블록 분해가 그 넓은 판정에 의존하기 때문이다.
+ */
+const EXPLANATION_SUBSECTION = /^(?:\(\d{1,2}\)|[①-⑳])/;
+/**
  * 등급 토큰. 판본마다 표기가 흔들린다 — 슬래시 둘레 공백(`A / Moderate`),
  * 대소문자(`B / Very low`·`B/MODERATE`). 대소문자 무시로 받고 코드는 정규형으로 모은다
  * (`MODERATE`와 `Moderate`가 서로 다른 코드가 되면 등급으로 거를 수 없다).
  * 근거수준은 `Very Low`를 `Low`보다 먼저 시도해야 잘리지 않는다.
  */
-const EVIDENCE_LEVEL_PATTERN = '(?:Very\\s+Low|High|Moderate|Low|CTB)';
-/** `GPP`는 근거수준 없이 오기도 하고 `GPP/CTB`처럼 붙어 오기도 한다. `A`~`D`는 항상 근거수준을 동반한다 */
+const EVIDENCE_LEVEL_PATTERN = '(?:Very\\s+Low|High|Moderate|Low|CTB|Insufficient)';
+/**
+ * `GPP`는 근거수준 없이 오기도 하고 `GPP/CTB`처럼 붙어 오기도 한다. `A`~`D`는 항상 근거수준을 동반한다.
+ *
+ * §23에서 셋이 늘었다 — `Inconclusive` 단독(권고 보류·비도출, 324·168), 근거수준이 **앞에 오는**
+ * 순서(`Insufficient/GPP`, 291), 등급 문자 뒤 마침표(`C./Very Low`, 143).
+ * 순서를 두 갈래로 나눠 받고, 어느 쪽이 등급이고 어느 쪽이 근거수준인지는 토큰 자체로 판정한다.
+ */
 const GRADE_PATTERN =
-  `(GPP(?:\\s*/\\s*${EVIDENCE_LEVEL_PATTERN})?|[A-D]\\s*/\\s*${EVIDENCE_LEVEL_PATTERN})`;
+  `(Inconclusive|${EVIDENCE_LEVEL_PATTERN}\\s*/\\s*GPP` +
+  `|GPP(?:\\s*/\\s*${EVIDENCE_LEVEL_PATTERN})?|[A-D]\\.?\\s*/\\s*${EVIDENCE_LEVEL_PATTERN})`;
+/**
+ * 등급 문자는 분명한데 근거수준이 정규형에 없는 판본 (`C/Vey Low` — 143의 원문 오타).
+ *
+ * 오타를 어휘에 박아 넣지 않으려고 **꼬리에 앵커된 별도 패턴**으로만 받는다 (docs/specs/23 기준 8).
+ * `GRADE_TOKEN`(블록 판정)에는 넣지 않는다 — 근거수준 자리를 임의 낱말로 열면 본문 문장이
+ * 등급으로 오인될 수 있고, 실측상 이 형태의 블록은 표 헤더로 이미 검출된다.
+ */
+const UNKNOWN_EVIDENCE_TAIL =
+  /(?:^|\s)([A-D])\.?\s*\/\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*(?:\d+(?:\s*[,\-–~]\s*\d+)*\)?)?$/;
 const GRADE_TOKEN = new RegExp(`(?:^|\\s)${GRADE_PATTERN}(?=\\s|$)`, 'i');
 const GRADE_TAIL = new RegExp(`(?:^|\\s)${GRADE_PATTERN}(?:\\s.*)?$`, 'i');
 
@@ -91,6 +135,19 @@ const EVIDENCE_CANONICAL: Record<string, string> = {
   moderate: 'Moderate',
   low: 'Low',
   ctb: 'CTB',
+  insufficient: 'Insufficient',
+};
+/**
+ * 권고등급 정규형. 슬래시 양쪽 중 **어느 쪽이 등급인지**를 이 표로 판정하므로,
+ * 표기 순서에 의존하지 않는다 (`Insufficient/GPP`와 `GPP/Insufficient`가 같은 결과다).
+ */
+const GRADE_CANONICAL: Record<string, string> = {
+  a: 'A',
+  b: 'B',
+  c: 'C',
+  d: 'D',
+  gpp: 'GPP',
+  inconclusive: 'Inconclusive',
 };
 /** 문장 종결 = 종결부호 + (선택) 참고문헌 번호. 이 줄만 문단 끝이고 나머지는 하드 랩이다 */
 const SENTENCE_END = /[.!?。]\s*(?:\d+(?:\s*[,\-–~]\s*\d+)*\))?$/;
@@ -114,6 +171,8 @@ const GRADE_LABELS: Record<string, string> = {
   C: '약한 권고',
   D: '권고하지 않음',
   GPP: '전문가 합의 권고',
+  // 근거가 부족하거나 국내 상황에 맞지 않아 권고 자체를 내지 않은 경우다 (docs/specs/23)
+  Inconclusive: '권고 보류',
 };
 
 const EVIDENCE_LABELS: Record<string, string> = {
@@ -124,6 +183,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
   // 지침이 직접 정의한다 — "현대적 연구방법론을 활용한 근거연구가 아직 수행되지 않았으나,
   // 기성 한의서 등 고전 텍스트에 근거가 있는 경우 CTB (Classical Text-based)를 부여"
   CTB: '고전문헌 근거',
+  Insufficient: '근거 불충분',
 };
 
 /** 섹션 경로가 확정된 본문 한 줄 */
@@ -156,6 +216,15 @@ export interface ChunkDiagnostics {
   duplicated: string[];
   /** 권고문 청크는 있으나 등급을 추출하지 못한 번호 */
   gradeMissing: string[];
+  /**
+   * 권고등급은 읽었으나 근거수준이 정규형에 없던 경우의 **원문 표기** (docs/specs/23 기준 8).
+   *
+   * `C/Vey Low`(원문 오타)처럼 등급 문자는 분명한데 근거수준만 미상인 판본이 있다. 오타를 어휘에
+   * 박아 넣지 않으려고 등급 추출은 성공으로 두지만, 그냥 버리면 조용한 유실이 되므로 여기 모아
+   * `verify:templates`가 문서별로 보고한다. `evidenceLevel`은 비운다 — 정규형 없는 코드가 들어가면
+   * §14의 등급 필터가 「Moderate 이상」을 거를 때 어디에도 속하지 않는 값이 끼어든다.
+   */
+  unknownEvidenceLevels: { recommendationNumber: string; raw: string }[];
 }
 
 export interface ChunkResult {
@@ -179,7 +248,7 @@ export function chunkNckmGuideline(
   const lines = collectTargetChapterLines(pages);
   const occurrences = findMarkerOccurrences(lines);
   const blockStarts = occurrences.filter((o) => isBlockStart(lines, o.index));
-  const sections = buildSections(lines, blockStarts);
+  const { sections, unknownEvidenceLevels } = buildSections(lines, blockStarts);
 
   const chunks = sections.flatMap((section) => section.chunks);
   const recommendationCounts = new Map<string, number>();
@@ -196,7 +265,7 @@ export function chunkNckmGuideline(
     }
   }
 
-  const uniqueNumbers = [...new Set(occurrences.map((o) => o.number))];
+  const uniqueNumbers = countableNumbers(lines, occurrences, blockStarts);
   const produced = new Set(blockStarts.map((o) => o.number));
   return {
     input: { ...meta, sections },
@@ -207,6 +276,7 @@ export function chunkNckmGuideline(
         .filter(([, count]) => count > 1)
         .map(([number]) => number),
       gradeMissing: [...produced].filter((n) => !graded.has(n)),
+      unknownEvidenceLevels,
     },
   };
 }
@@ -224,6 +294,43 @@ export function chunkNckmGuideline(
  */
 export function containsRecommendationMarker(pages: string[]): boolean {
   return pages.some((page) => INGEST_TARGET_MARKER.test(page));
+}
+
+/**
+ * 가드가 셀 권고 번호를 고른다 (docs/specs/23 기준 3·4).
+ *
+ * 블록이 아닌 마커라도 전부 세면 **근거 서술이 참조한 번호**까지 「청크가 없는 번호」가 된다
+ * (편두통 171: 근거 소절 안의 `R1-3`·`R13-4` 18개). 반대로 전부 빼면 진짜 미검출이 조용히
+ * 사라진다 — 그래서 배제는 **블록의 해설 구간 안**으로만 한정하고, 참고문헌에서 해제한다.
+ * 해설은 `(1) 배경` → `(2) 근거` → `(3) 참고문헌`으로 가고 참고문헌에서 그 블록이 닫힌다.
+ */
+function countableNumbers(
+  lines: SourceLine[],
+  occurrences: MarkerOccurrence[],
+  blockStarts: MarkerOccurrence[],
+): string[] {
+  const startIndexes = new Set(blockStarts.map((o) => o.index));
+  const numberAt = new Map(occurrences.map((o) => [o.index, o.number]));
+  const counted = new Set<string>();
+  let insideExplanation = false;
+
+  lines.forEach((line, index) => {
+    if (startIndexes.has(index)) {
+      // 새 블록이 열리면 직전 블록의 해설 구간은 끝난다
+      insideExplanation = false;
+    } else if (REFERENCES_SECTION.test(line.text)) {
+      // `(3) 참고문헌`은 소절 패턴에도 걸리므로 반드시 소절 판정보다 먼저 본다
+      insideExplanation = false;
+    } else if (EXPLANATION_SUBSECTION.test(line.text)) {
+      insideExplanation = true;
+    }
+
+    const number = numberAt.get(index);
+    if (number === undefined) return;
+    if (startIndexes.has(index) || !insideExplanation) counted.add(number);
+  });
+
+  return [...counted];
 }
 
 interface MarkerOccurrence {
@@ -248,7 +355,34 @@ function findMarkerOccurrences(lines: SourceLine[]): MarkerOccurrence[] {
  */
 function isBlockStart(lines: SourceLine[], index: number): boolean {
   const window = lines.slice(index + 1, index + 1 + BLOCK_EVIDENCE_WINDOW);
-  return window.some((line) => TABLE_HEADER.test(line.text) || GRADE_TOKEN.test(line.text));
+  if (window.some((line) => TABLE_HEADER.test(line.text) || GRADE_TOKEN.test(line.text))) {
+    return true;
+  }
+  return isConsensusBlock(lines.slice(index, index + 1 + BLOCK_EVIDENCE_WINDOW));
+}
+
+/**
+ * 마커로 시작하는 구간의 **첫 문장**이 합의 문구로 끝나는가 (docs/specs/23 기준 1).
+ *
+ * 마커 줄에 권고 문장이 이어붙는 판본이라 마커 줄의 뒤 텍스트부터 이어 붙이고, 문장이 끝나거나
+ * 다음 마커를 만나면 멈춘다. 해설 전체를 훑으면 근거 서술에 나온 「합의」까지 걸린다.
+ */
+function isConsensusBlock(block: SourceLine[]): boolean {
+  const marker = BLOCK_MARKER.exec(block[0]?.text ?? '');
+  if (!marker) return false;
+
+  const hasConsensus = (text: string): boolean =>
+    CONSENSUS_STATEMENT.test(text.replace(/\s+/g, ''));
+
+  let sentence = marker[2] ?? '';
+  if (hasConsensus(sentence)) return true;
+  for (const line of block.slice(1)) {
+    if (BLOCK_MARKER.test(line.text)) break;
+    sentence = `${sentence}${line.text}`;
+    if (hasConsensus(sentence)) return true;
+    if (SENTENCE_END.test(line.text)) break;
+  }
+  return false;
 }
 
 /** 페이지 헤더를 파싱한 결과 — 선언되지 않은 항목은 undefined다 */
@@ -366,13 +500,18 @@ function normalizeRoman(numeral: string): string {
 }
 
 /** 권고 블록을 분해해 섹션으로 묶는다. 청크가 없는 섹션은 만들지 않는다. */
-function buildSections(lines: SourceLine[], blockStarts: MarkerOccurrence[]): IngestSection[] {
+function buildSections(
+  lines: SourceLine[],
+  blockStarts: MarkerOccurrence[],
+): { sections: IngestSection[]; unknownEvidenceLevels: { recommendationNumber: string; raw: string }[] } {
   const starts = blockStarts.map((o) => o.index);
 
   const sections: IngestSection[] = [];
+  const unknownEvidenceLevels: { recommendationNumber: string; raw: string }[] = [];
   starts.forEach((start, order) => {
     const end = order + 1 < starts.length ? starts[order + 1] : lines.length;
-    const chunks = buildBlockChunks(lines.slice(start, end));
+    const { chunks, unknownEvidence } = buildBlockChunks(lines.slice(start, end));
+    if (unknownEvidence) unknownEvidenceLevels.push(unknownEvidence);
     if (chunks.length === 0) return;
 
     const path = lines[start].sectionPath;
@@ -388,7 +527,7 @@ function buildSections(lines: SourceLine[], blockStarts: MarkerOccurrence[]): In
       chunks,
     });
   });
-  return sections;
+  return { sections, unknownEvidenceLevels };
 }
 
 /** 블록을 이루는 구간의 종류 (docs/specs/19 「블록 경계」) */
@@ -452,10 +591,16 @@ function splitBlockSegments(block: SourceLine[], bodyStart: number): BlockSegmen
   return referencesAt === -1 ? segments : segments.slice(0, referencesAt);
 }
 
+interface BlockChunks {
+  chunks: IngestChunk[];
+  /** 등급 문자는 읽었으나 근거수준이 정규형에 없던 경우 (docs/specs/23 기준 8) */
+  unknownEvidence?: { recommendationNumber: string; raw: string };
+}
+
 /** 블록 하나 → 권고문 청크 1개 + 해설 청크 1개 이상 */
-function buildBlockChunks(block: SourceLine[]): IngestChunk[] {
+function buildBlockChunks(block: SourceLine[]): BlockChunks {
   const recommendationNumber = BLOCK_MARKER.exec(block[0].text)?.[1];
-  if (!recommendationNumber) return [];
+  if (!recommendationNumber) return { chunks: [] };
 
   const bodyStart = TABLE_HEADER.test(block[1]?.text ?? '') ? 2 : 1;
   const segments = splitBlockSegments(block, bodyStart);
@@ -464,13 +609,30 @@ function buildBlockChunks(block: SourceLine[]): IngestChunk[] {
       .filter((segment) => segment.kind === kind)
       .flatMap((segment) => block.slice(segment.start, segment.end));
 
-  const statementLines = linesOf('statement');
-  const grades = extractGrades(statementLines);
+  // 합의 권고는 마커 줄에 **권고 문장 본문**이 이어붙는다 (docs/specs/23 기준 1).
+  // 마커 줄을 언제나 버리는 §20 기준 10은 붙은 것이 *제목*일 때의 규칙이므로, 이 경로에만
+  // 예외를 둔다 — 그러지 않으면 content가 「권고한다.」부터 시작하는 잘린 권고문이 된다.
+  const consensus = isConsensusBlock(block);
+  const trailing = BLOCK_MARKER.exec(block[0].text)?.[2]?.trim() ?? '';
+  const leading: SourceLine[] =
+    consensus && trailing.length > 0 ? [{ ...block[0], text: trailing }] : [];
+
+  const statementLines = [...leading, ...linesOf('statement')];
+  const extracted = extractGrades(statementLines);
+  // 표도 등급 토큰도 없이 문장으로만 밝힌 합의 권고 — 그 문구 자체가 GPP의 증거다
+  const grades: ExtractedGrades =
+    extracted.recommendationGrade === undefined && consensus
+      ? { recommendationGrade: rating('GPP', GRADE_LABELS.GPP) }
+      : extracted;
 
   // 등급 토큰과 뒤따르는 참고문헌 번호는 본문에서 제거한다 — 등급은 메타데이터에 있고,
   // 참고문헌 번호는 가리킬 서지 목록을 버리므로 본문에 남기면 잔여물이 된다.
   const statement = toParagraphs(
-    statementLines.map((line) => ({ ...line, text: line.text.replace(GRADE_TAIL, '') })),
+    statementLines.map((line) => ({
+      ...line,
+      // 정규형으로 못 읽은 등급도 본문에서는 걷어낸다 — 읽기 실패가 잔여물로 남을 이유는 없다
+      text: line.text.replace(GRADE_TAIL, '').replace(UNKNOWN_EVIDENCE_TAIL, ''),
+    })),
   );
   const consideration = toParagraphs(linesOf('consideration'));
 
@@ -501,29 +663,64 @@ function buildBlockChunks(block: SourceLine[]): IngestChunk[] {
       pageEnd: part.pageEnd,
     });
   }
-  return chunks;
+  return {
+    chunks,
+    unknownEvidence:
+      grades.unknownEvidence !== undefined
+        ? { recommendationNumber, raw: grades.unknownEvidence }
+        : undefined,
+  };
 }
 
-function extractGrades(statementLines: SourceLine[]): {
+interface ExtractedGrades {
   recommendationGrade?: IngestRating;
   evidenceLevel?: IngestRating;
-} {
+  /** 등급 문자는 읽었으나 근거수준이 정규형에 없던 원문 표기 (docs/specs/23 기준 8) */
+  unknownEvidence?: string;
+}
+
+function extractGrades(statementLines: SourceLine[]): ExtractedGrades {
   for (const line of statementLines) {
     const token = GRADE_TAIL.exec(line.text)?.[1];
-    if (!token) continue;
-    // `A / Moderate`처럼 슬래시 둘레에 공백이 오고 대소문자도 흔들린다 (docs/specs/20)
-    const [rawCode, rawLevel] = token.split('/').map((part) => part.trim());
-    const code = rawCode.toUpperCase();
-    const recommendationGrade = rating(code, GRADE_LABELS[code] ?? code);
-    // 합의 권고는 근거수준이 없는 것이 원칙이나, `GPP/CTB`처럼 고전문헌 근거를 명시하는 판본이 있다
-    if (rawLevel === undefined) return { recommendationGrade };
-    const level = EVIDENCE_CANONICAL[rawLevel.replace(/\s+/g, ' ').toLowerCase()] ?? rawLevel;
-    return {
-      recommendationGrade,
-      evidenceLevel: rating(level, EVIDENCE_LABELS[level] ?? level),
-    };
+    if (token) return classifyGradeToken(token);
+
+    // 정규형 어휘로는 못 읽는 근거수준 — 등급 문자만 살리고 표기는 진단으로 넘긴다
+    const unknown = UNKNOWN_EVIDENCE_TAIL.exec(line.text);
+    if (unknown) {
+      const code = GRADE_CANONICAL[unknown[1].toLowerCase()] ?? unknown[1].toUpperCase();
+      return {
+        recommendationGrade: rating(code, GRADE_LABELS[code] ?? code),
+        unknownEvidence: unknown[2].replace(/\s+/g, ' ').trim(),
+      };
+    }
   }
   return {};
+}
+
+/**
+ * 등급 토큰을 권고등급·근거수준으로 가른다.
+ *
+ * **위치가 아니라 토큰 자체로 판정한다** — `Insufficient/GPP`처럼 근거수준이 앞에 오는 판본이
+ * 있어(291) 앞을 등급으로 고정하면 뒤집힌 채로 들어간다 (docs/specs/23 기준 6).
+ */
+function classifyGradeToken(token: string): ExtractedGrades {
+  let recommendationGrade: IngestRating | undefined;
+  let evidenceLevel: IngestRating | undefined;
+
+  // `A / Moderate`처럼 슬래시 둘레에 공백이 오고 대소문자도 흔들린다 (docs/specs/20).
+  // 등급 문자 뒤에 마침표가 붙는 판본도 있다 (`C./Very Low`, 143).
+  for (const part of token.split('/')) {
+    const bare = part.trim().replace(/\.$/, '');
+    const asGrade = GRADE_CANONICAL[bare.toLowerCase()];
+    if (asGrade !== undefined) {
+      recommendationGrade = rating(asGrade, GRADE_LABELS[asGrade] ?? asGrade);
+      continue;
+    }
+    const asLevel = EVIDENCE_CANONICAL[bare.replace(/\s+/g, ' ').toLowerCase()] ?? bare;
+    evidenceLevel = rating(asLevel, EVIDENCE_LABELS[asLevel] ?? asLevel);
+  }
+  // 합의 권고는 근거수준이 없는 것이 원칙이나, `GPP/CTB`처럼 고전문헌 근거를 명시하는 판본이 있다
+  return { recommendationGrade, evidenceLevel };
 }
 
 function rating(code: string, label: string): IngestRating {
