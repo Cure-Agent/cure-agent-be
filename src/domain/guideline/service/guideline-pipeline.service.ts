@@ -161,7 +161,14 @@ export class GuidelinePipelineService {
       if (!containsRecommendationMarker(pages)) {
         const sourceSystem = this.acquisition.sourceSystem;
         const version = acquired.item.releaseDate ?? '';
-        const listed = findNotIngestTarget({ sourceSystem, externalId: options.externalId, version });
+        const identity = {
+          sourceSystem,
+          externalId: options.externalId,
+          version,
+          // 수집이 실어 온 해시가 곧 source_documents.file_hash다 (docs/specs/25 기준 11)
+          fileHash: acquired.fileHash ?? '',
+        };
+        const listed = findNotIngestTarget(identity);
         if (!listed) {
           // 목록에 없다 — 대상인지 아닌지 아직 아무도 판단하지 않은 문서다 (§20 기준 3 복귀)
           return await this.fail(

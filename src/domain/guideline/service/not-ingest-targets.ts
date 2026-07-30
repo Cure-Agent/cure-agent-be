@@ -1,4 +1,7 @@
-import { SourceDocumentIdentity } from './known-source-defects';
+import {
+  ExpiredListEntry,
+  SourceDocumentIdentity,
+} from './known-source-defects';
 
 /**
  * **인제스트 대상 아님** 확정 목록 (docs/specs/24 기준 10~14).
@@ -26,6 +29,11 @@ export interface NotIngestTarget {
    * 개정판이 오면 값이 달라져 판정이 적용되지 않고 `FAILED`가 되어, 사람이 다시 판단한다.
    */
   version: string;
+  /**
+   * 본문 sha256 (docs/specs/25 기준 3). version만으로는 같은 release_date 재발행에서
+   * 판정이 만료되지 않아, 대상 아님으로 확정한 근거가 바뀐 뒤에도 계속 건너뛴다.
+   */
+  fileHash: string;
   reason: string;
 }
 
@@ -34,7 +42,14 @@ const nckm = (
   externalId: string,
   version: string,
   reason: string,
-): NotIngestTarget => ({ sourceSystem: 'NCKM', externalId, version, reason });
+  fileHash = '',
+): NotIngestTarget => ({
+  sourceSystem: 'NCKM',
+  externalId,
+  version,
+  fileHash,
+  reason,
+});
 
 /**
  * 확정 목록 (docs/specs/24 실측 조사 B·C표, 2026-07-30).
@@ -153,7 +168,20 @@ export function findNotIngestTarget(
     (target) =>
       target.sourceSystem === identity.sourceSystem &&
       target.externalId === identity.externalId &&
-      // version이 어긋나면 개정판이므로 판정이 만료된 것이다 — 다시 사람의 판단을 받아야 한다
-      target.version === identity.version,
+      // version·fileHash가 어긋나면 만료다 — 다시 사람의 판단을 받아야 한다 (docs/specs/25 기준 4)
+      target.version === identity.version &&
+      target.fileHash === identity.fileHash,
   );
+}
+
+/**
+ * 문서는 맞는데 축이 어긋나 적용되지 않은 대상 아님 항목을 고른다 (docs/specs/25 기준 1~3).
+ *
+ * 구현에서 채운다 — 스텁은 undefined다.
+ */
+export function findExpiredNotIngestTarget(
+  _identity: SourceDocumentIdentity,
+  _targets: NotIngestTarget[] = NOT_INGEST_TARGETS,
+): ExpiredListEntry<NotIngestTarget> | undefined {
+  return undefined;
 }

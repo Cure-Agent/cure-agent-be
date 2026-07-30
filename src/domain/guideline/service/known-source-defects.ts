@@ -23,6 +23,13 @@ export interface KnownSourceDefect {
    * 개정판이 오면 값이 달라져 면제가 적용되지 않고, 결함이 고쳐졌는지 다시 판정된다.
    */
   version: string;
+  /**
+   * 본문 sha256 (docs/specs/25 기준 3). **version만으로는 만료가 새는 자리를 막는다** —
+   * NCKM이 같은 release_date로 파일만 교체하면(정오표 재발행) `source_documents`는 해시
+   * 유니크라 새 행이 생기는데도 version이 같아 면제가 계속 붙었다. 원문이 결함을 고쳤어도
+   * 면제하고, 새 결함이 생겨도 면제가 덮는 조용한 오적용이다.
+   */
+  fileHash: string;
   diagnostic: 'missing' | 'duplicated' | 'gradeMissing';
   /** 면제 대상 권고 번호. 여기 없는 번호는 여전히 실패한다 — 면제는 번호 단위로 좁다 */
   numbers: string[];
@@ -34,6 +41,29 @@ export interface SourceDocumentIdentity {
   sourceSystem: string;
   externalId: string;
   version: string;
+  /** §18이 그 다운로드에 기록한 본문 sha256 (docs/specs/25 기준 11) */
+  fileHash: string;
+}
+
+/** 항목이 어긋난 축 하나 (docs/specs/25 기준 2·5) */
+export interface ExpiryMismatch {
+  axis: 'version' | 'fileHash';
+  /** 목록에 커밋된 값 */
+  recorded: string;
+  /** 지금 문서의 값 */
+  current: string;
+}
+
+/**
+ * **만료 후보** — 문서(`sourceSystem`+`externalId`)는 맞는데 축이 어긋나 판정이 적용되지 않은 항목.
+ *
+ * 조용한 「못 찾음」과 구분하려고 따로 돌려준다. 이것이 없으면 실패 진단이 거짓 방향을 가리킨다 —
+ * 대상 아님 경로는 "목록에도 없습니다"(실제로는 있다), 면제 경로는 번호 중복만 열거해
+ * 면제 만료인지 파서 회귀인지 구분할 수 없다.
+ */
+export interface ExpiredListEntry<T> {
+  entry: T;
+  mismatches: ExpiryMismatch[];
 }
 
 export const KNOWN_SOURCE_DEFECTS: KnownSourceDefect[] = [
@@ -41,6 +71,7 @@ export const KNOWN_SOURCE_DEFECTS: KnownSourceDefect[] = [
     sourceSystem: 'NCKM',
     externalId: '306',
     version: '2026-06',
+    fileHash: '',
     diagnostic: 'duplicated',
     numbers: ['R20'],
     reason:
@@ -59,12 +90,13 @@ export function applyKnownSourceDefects(
   identity: SourceDocumentIdentity,
   defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
 ): { diagnostics: ChunkDiagnostics; applied: KnownSourceDefect[] } {
-  // 셋 중 하나라도 다르면 다른 문서다. version이 어긋나면 개정판이므로 면제가 만료된 것이다
+  // 네 축이 모두 같아야 적용된다 — version이나 fileHash가 어긋나면 만료다 (docs/specs/25 기준 4)
   const applied = defects.filter(
     (defect) =>
       defect.sourceSystem === identity.sourceSystem &&
       defect.externalId === identity.externalId &&
-      defect.version === identity.version,
+      defect.version === identity.version &&
+      defect.fileHash === identity.fileHash,
   );
 
   const waived = (kind: KnownSourceDefect['diagnostic']): Set<string> =>
@@ -88,4 +120,16 @@ export function applyKnownSourceDefects(
     },
     applied,
   };
+}
+
+/**
+ * 문서는 맞는데 축이 어긋나 적용되지 않은 면제 항목을 고른다 (docs/specs/25 기준 1~3).
+ *
+ * 구현에서 채운다 — 스텁은 빈 목록이다.
+ */
+export function findExpiredSourceDefects(
+  _identity: SourceDocumentIdentity,
+  _defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
+): ExpiredListEntry<KnownSourceDefect>[] {
+  return [];
 }

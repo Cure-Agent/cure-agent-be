@@ -11,6 +11,8 @@ const target = (
   sourceSystem: 'NCKM-SYNTHETIC',
   externalId: 'not-target-fixture',
   version: '2026-07',
+  // docs/specs/25가 판정 축에 본문 해시를 더했다 — 합성 문서라 값 자체에 의미는 없다
+  fileHash: 'not-target-fixture-hash',
   reason: '합성 문서가 권고 지침이 아닌 것으로 명시됨',
   ...overrides,
 });
@@ -21,10 +23,12 @@ const identityOf = (
   sourceSystem: string;
   externalId: string;
   version: string;
+  fileHash: string;
 } => ({
   sourceSystem: value.sourceSystem,
   externalId: value.externalId,
   version: value.version,
+  fileHash: value.fileHash,
 });
 
 describe('spec 24: 인제스트 대상 아님 목록', () => {

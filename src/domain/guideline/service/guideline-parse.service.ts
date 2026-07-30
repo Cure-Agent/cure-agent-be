@@ -20,6 +20,11 @@ export interface ParseGuidelineOptions {
   sourceSystem?: string;
   /** CLI 플래그로 넘어온 메타 오버라이드 */
   overrides?: Partial<GuidelineDocumentMeta>;
+  /**
+   * 본문 sha256 (docs/specs/25 기준 11). 면제 판정의 축이다 —
+   * 파이프라인은 수집이 실어 온 값을, CLI는 읽은 파일의 해시를 넘긴다.
+   */
+  fileHash?: string;
 }
 
 /**
@@ -52,6 +57,8 @@ export class GuidelineParseService {
       sourceSystem,
       externalId: options.externalId,
       version: meta.version,
+      // §18이 그 다운로드에 기록한 해시 (docs/specs/25 기준 11) — 구현에서 원천을 연결한다
+      fileHash: options.fileHash ?? '',
     });
     for (const defect of applied) {
       // 조용히 통과시키지 않는다 — 무엇을 왜 면제했는지가 기록에 남아야 한다 (기준 12)
