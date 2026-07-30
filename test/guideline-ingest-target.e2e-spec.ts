@@ -20,6 +20,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { NOT_INGEST_TARGETS } from '../src/domain/guideline/service/not-ingest-targets';
 import { PdfTextExtractor } from '../src/infrastructure/document/pdf-text.extractor';
 import { EMBEDDING_PROVIDER } from '../src/infrastructure/embedding/embedding-provider.port';
 import {
@@ -120,18 +121,25 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     return app;
   };
 
-  const sourceItem = (externalId: string): SourceListItem => ({
+  const sourceItem = (
+    externalId: string,
+    releaseDate = '2024-07',
+  ): SourceListItem => ({
     externalId,
     title: `테스트 지침 ${externalId}`,
     publisher: '대한테스트학회',
-    releaseDate: '2024-07',
+    releaseDate,
     sourceUrl: `https://example.test/guidelines/${externalId}`,
     fileName: `${externalId}.pdf`,
   });
 
-  const addPdf = (externalId: string, pages: string[]): void => {
+  const addPdf = (
+    externalId: string,
+    pages: string[],
+    releaseDate = '2024-07',
+  ): void => {
     const marker = `DOC:${externalId}`;
-    fakeSource.addDocument(sourceItem(externalId), {
+    fakeSource.addDocument(sourceItem(externalId, releaseDate), {
       body: Buffer.from(`%PDF-1.7\n${marker}\nfixture`),
       contentType: 'application/pdf',
     });
@@ -269,7 +277,11 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
   });
 
   it('기준 7~12: 원본 마커 유무로 PARSE SKIPPED와 파싱 결함을 구분하고 잡 카운터에 반영한다', async () => {
-    addPdf('no-marker', nckmNoMarkerPages);
+    // docs/specs/24 기준 10이 SKIPPED의 근거를 「마커 부재」에서 **커밋된 대상 아님 목록**으로
+    // 옮겼다. 그래서 마커 없는 문서로 이 경로를 타려면 목록 항목과 (externalId, version)이
+    // 맞아야 한다 — 목록에 없는 마커 없는 문서는 이제 FAILED다(그 분기는 spec 24의 e2e가 덮는다).
+    const noMarkerTarget = NOT_INGEST_TARGETS[0];
+    addPdf(noMarkerTarget.externalId, nckmNoMarkerPages, noMarkerTarget.version);
     addPdf('marker-on-rejected-page', nckmMarkerOnRejectedPageOnly);
     addPdf('parse-success', nckmSamplePages);
 
@@ -292,7 +304,7 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     expect(completed.runs).toHaveLength(3);
 
     const noMarker = completed.runs.find(
-      (run) => run.externalId === 'no-marker',
+      (run) => run.externalId === noMarkerTarget.externalId,
     );
     expect(noMarker).toBeDefined();
 

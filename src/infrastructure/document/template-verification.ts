@@ -73,7 +73,7 @@ export interface VerificationReport {
 export function compareToExpectations(
   actual: Record<string, TemplateActual>,
   expected: Record<string, TemplateExpectation>,
-  _notIngestTargetIds: string[] = [],
+  notIngestTargetIds: string[] = [],
 ): VerificationReport {
   const report: VerificationReport = {
     checked: 0,
@@ -84,6 +84,7 @@ export function compareToExpectations(
     unexpected: [],
     missingDocuments: [],
   };
+  const listed = new Set(notIngestTargetIds);
 
   for (const [documentId, observed] of Object.entries(actual)) {
     const target = expected[documentId];
@@ -92,11 +93,25 @@ export function compareToExpectations(
       continue;
     }
     report.checked += 1;
-    if (target.status === 'OK') report.ok += 1;
+    if (target.status === 'NOT_TARGET') report.notTarget += 1;
+    else if (target.status === 'OK') report.ok += 1;
     else report.partial += 1;
 
     for (const reason of describeMismatches(observed, target)) {
       report.mismatches.push({ documentId, reason });
+    }
+    // 기대치와 코드의 대상 아님 목록이 갈라지면 CLI가 통과시킨 문서가 운영에서 실패한다 (기준 17)
+    if (target.status === 'NOT_TARGET' && !listed.has(documentId)) {
+      report.mismatches.push({
+        documentId,
+        reason: '기대치는 NOT_TARGET인데 코드의 대상 아님 목록에 없다',
+      });
+    }
+    if (target.status !== 'NOT_TARGET' && listed.has(documentId)) {
+      report.mismatches.push({
+        documentId,
+        reason: `코드의 대상 아님 목록에 있는데 기대치 상태가 ${target.status}다`,
+      });
     }
   }
 
@@ -120,6 +135,17 @@ function describeMismatches(
     reasons.push(`권고문 청크 ${target.recommendations} → ${observed.recommendations}`);
   }
 
+  // 대상 아님으로 확정된 문서에서 권고가 나오면 **판정이 틀렸다는 신호**다 (기준 16).
+  // 145·219가 정확히 그 경우였고, 그때 기대치는 `{0, 0, "OK"}`라 아무것도 드러내지 못했다.
+  if (target.status === 'NOT_TARGET') {
+    if (observed.recommendations > 0 || uniqueNumbers > 0) {
+      reasons.push(
+        `대상 아님으로 확정된 문서에서 권고가 나왔다 — 고유 ${uniqueNumbers} / 권고문 ${observed.recommendations}`,
+      );
+    }
+    return [...reasons, ...describeNotDerivedMismatch(observed, target)];
+  }
+
   const status: TemplateStatus = isFullyParsed(observed.diagnostics) ? 'OK' : 'PARTIAL';
   if (status !== target.status) {
     // 개선(PARTIAL → OK)도 불일치로 보고한다 — 기대치를 갱신해 이력에 남겨야 하기 때문이다
@@ -135,7 +161,23 @@ function describeMismatches(
   if (!sameSet(unknown, targetUnknown)) {
     reasons.push(`미상 근거수준 [${targetUnknown.join(', ')}] → [${unknown.join(', ')}]`);
   }
-  return reasons;
+  return [...reasons, ...describeNotDerivedMismatch(observed, target)];
+}
+
+/**
+ * 비도출 번호의 **집합 변화**를 잡는다 (docs/specs/24 기준 5).
+ *
+ * `unknownEvidenceLevels`와 같은 성격이라 `status`를 바꾸지 않는다 — 개별 1건은 조치할 것이
+ * 없지만, 1건이 40건이 되면 원문 성격의 변화나 배제 규칙의 드리프트 신호다.
+ */
+function describeNotDerivedMismatch(
+  observed: TemplateActual,
+  target: TemplateExpectation,
+): string[] {
+  const actual = observed.diagnostics.notDerived;
+  const expected = target.notDerived ?? [];
+  if (sameSet(actual, expected)) return [];
+  return [`권고 비도출 [${expected.join(', ')}] → [${actual.join(', ')}]`];
 }
 
 /** 집합 비교용 정규화 — `R5-1=Vey Low` 형태로 눌러 순서에 의존하지 않게 한다 */
