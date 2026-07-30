@@ -14,6 +14,11 @@
     "recommendations": 22,
     "status": "OK"
   },
+  "143": {
+    "uniqueNumbers": 24,
+    "recommendations": 24,
+    "status": "OK"
+  },
   "149": {
     "uniqueNumbers": 17,
     "recommendations": 17,
@@ -34,35 +39,20 @@
     "recommendations": 26,
     "status": "OK"
   },
+  "168": {
+    "uniqueNumbers": 64,
+    "recommendations": 64,
+    "status": "OK"
+  },
   "170": {
     "uniqueNumbers": 5,
     "recommendations": 5,
     "status": "OK"
   },
   "171": {
-    "uniqueNumbers": 37,
+    "uniqueNumbers": 19,
     "recommendations": 19,
-    "status": "PARTIAL",
-    "unparsed": [
-      "R1-3",
-      "R11-1",
-      "R13-1",
-      "R13-2",
-      "R13-3",
-      "R13-4",
-      "R16-1",
-      "R16-2",
-      "R17-1",
-      "R18-1",
-      "R18-2",
-      "R18-3",
-      "R2-1",
-      "R3-1",
-      "R4-1",
-      "R4-2",
-      "R9-1",
-      "R9-2"
-    ]
+    "status": "OK"
   },
   "218": {
     "uniqueNumbers": 19,
@@ -84,6 +74,11 @@
     "recommendations": 18,
     "status": "OK"
   },
+  "291": {
+    "uniqueNumbers": 18,
+    "recommendations": 18,
+    "status": "OK"
+  },
   "292": {
     "uniqueNumbers": 40,
     "recommendations": 40,
@@ -97,6 +92,11 @@
   "300": {
     "uniqueNumbers": 16,
     "recommendations": 16,
+    "status": "OK"
+  },
+  "306": {
+    "uniqueNumbers": 33,
+    "recommendations": 34,
     "status": "OK"
   },
   "309": {
@@ -121,23 +121,8 @@
   },
   "324": {
     "uniqueNumbers": 29,
-    "recommendations": 16,
-    "status": "PARTIAL",
-    "unparsed": [
-      "R17",
-      "R18",
-      "R20",
-      "R21",
-      "R22",
-      "R23",
-      "R24",
-      "R25",
-      "R26",
-      "R27",
-      "R5",
-      "R8",
-      "R9"
-    ]
+    "recommendations": 29,
+    "status": "OK"
   },
   "326": {
     "uniqueNumbers": 49,

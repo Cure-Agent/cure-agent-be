@@ -36,16 +36,54 @@ export interface SourceDocumentIdentity {
   version: string;
 }
 
-export const KNOWN_SOURCE_DEFECTS: KnownSourceDefect[] = [];
+export const KNOWN_SOURCE_DEFECTS: KnownSourceDefect[] = [
+  {
+    sourceSystem: 'NCKM',
+    externalId: '306',
+    version: '2026-06',
+    diagnostic: 'duplicated',
+    numbers: ['R20'],
+    reason:
+      '원문이 서로 다른 두 권고에 같은 【R20】을 달았다 — p.263 침 치료(C/Very low)와 ' +
+      'p.273 침+양약 병용(C/Low). 파서가 고칠 수 있는 결함이 아니고, 이 한 건 때문에 ' +
+      '나머지 권고를 통째로 잃지 않기 위해 면제한다. 두 블록은 모두 적재된다.',
+  },
+];
 
 /**
  * 진단에서 면제된 번호를 덜어낸 사본과, 실제로 면제된 항목을 함께 돌려준다.
  * 면제 사실을 호출자가 로그·보고에 남길 수 있어야 하므로(기준 12) 조용히 지우지 않는다.
  */
 export function applyKnownSourceDefects(
-  _diagnostics: ChunkDiagnostics,
-  _identity: SourceDocumentIdentity,
-  _defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
+  diagnostics: ChunkDiagnostics,
+  identity: SourceDocumentIdentity,
+  defects: KnownSourceDefect[] = KNOWN_SOURCE_DEFECTS,
 ): { diagnostics: ChunkDiagnostics; applied: KnownSourceDefect[] } {
-  throw new Error('not implemented');
+  // 셋 중 하나라도 다르면 다른 문서다. version이 어긋나면 개정판이므로 면제가 만료된 것이다
+  const applied = defects.filter(
+    (defect) =>
+      defect.sourceSystem === identity.sourceSystem &&
+      defect.externalId === identity.externalId &&
+      defect.version === identity.version,
+  );
+
+  const waived = (kind: KnownSourceDefect['diagnostic']): Set<string> =>
+    new Set(applied.filter((d) => d.diagnostic === kind).flatMap((d) => d.numbers));
+
+  const without = (numbers: string[], kind: KnownSourceDefect['diagnostic']): string[] => {
+    const skip = waived(kind);
+    return numbers.filter((number) => !skip.has(number));
+  };
+
+  return {
+    // 입력을 변형하지 않는다 — 호출자가 원본 진단을 그대로 로그·보고에 쓸 수 있어야 한다
+    diagnostics: {
+      uniqueNumbers: [...diagnostics.uniqueNumbers],
+      missing: without(diagnostics.missing, 'missing'),
+      duplicated: without(diagnostics.duplicated, 'duplicated'),
+      gradeMissing: without(diagnostics.gradeMissing, 'gradeMissing'),
+      unknownEvidenceLevels: diagnostics.unknownEvidenceLevels.map((entry) => ({ ...entry })),
+    },
+    applied,
+  };
 }
