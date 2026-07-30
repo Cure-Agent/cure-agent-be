@@ -20,6 +20,8 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { createHash } from 'node:crypto';
+import { GuidelineListProvider } from '../src/domain/guideline/service/guideline-list.provider';
 import {
   NOT_INGEST_TARGETS,
   type NotIngestTarget,
@@ -110,6 +112,12 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
     return app;
   };
 
+  /**
+   * docs/specs/25가 fileHash를 판정 축에 넣으면서, 합성 본문으로는 **커밋된 항목에 매칭할 수
+   * 없게 됐다** — 합성 본문의 sha256이 실물 해시와 같을 수 없기 때문이다. 그래서 커밋된 항목의
+   * 사유·버전은 그대로 쓰고 해시만 이 테스트가 만드는 본문의 것으로 바꿔 주입한다
+   * (docs/specs/25 기준 15·16 — 단언은 그대로 유지된다).
+   */
   const committedTarget = (externalId: string): NotIngestTarget => {
     const listed = NOT_INGEST_TARGETS.find(
       (target) => target.externalId === externalId,
@@ -119,7 +127,21 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
         `수용 기준 fixture에 필요한 대상 아님 목록 항목 ${externalId}가 없습니다.`,
       );
     }
-    return listed;
+    return { ...listed, fileHash: syntheticHash(externalId) };
+  };
+
+  /** addPdf가 만드는 본문과 **같은 버퍼**의 sha256 — §18이 기록할 값과 일치한다 */
+  const syntheticHash = (externalId: string): string =>
+    createHash('sha256').update(syntheticBody(externalId)).digest('hex');
+
+  const syntheticBody = (externalId: string): Buffer =>
+    Buffer.from(`%PDF-1.7\nDOC:${externalId}\nsynthetic fixture`);
+
+  /** 주입 목록 — 각 테스트가 필요한 항목만 담는다 */
+  const injectedTargets: NotIngestTarget[] = [];
+  const fakeListProvider = {
+    knownSourceDefects: () => [],
+    notIngestTargets: () => injectedTargets,
   };
 
   const sourceItem = (
@@ -141,7 +163,7 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
   ): void => {
     const marker = `DOC:${externalId}`;
     fakeSource.addDocument(sourceItem(externalId, version), {
-      body: Buffer.from(`%PDF-1.7\n${marker}\nsynthetic fixture`),
+      body: syntheticBody(externalId),
       contentType: 'application/pdf',
     });
     fakePdfExtractor.setPagesFor(marker, pages);
@@ -245,6 +267,8 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
       .useValue(failingEmbedding)
       .overrideProvider(PdfTextExtractor)
       .useValue(fakePdfExtractor)
+      .overrideProvider(GuidelineListProvider)
+      .useValue(fakeListProvider)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -281,6 +305,7 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
     fakeSource.reset();
     fakePdfExtractor.reset();
     failingEmbedding.reset();
+    injectedTargets.length = 0;
   });
 
   afterAll(async () => {
@@ -293,6 +318,7 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
 
   it('기준 10a: 마커가 없고 대상 아님 목록에 있는 문서는 SKIPPED/PARSE로 종결한다', async () => {
     const listed = committedTarget('90');
+    injectedTargets.push(listed);
     addPdf(listed.externalId, pipelineNoMarkerPages, listed.version);
 
     const created = await startJob();
@@ -367,7 +393,9 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
       .mockImplementation(() => undefined);
 
     try {
-      addPdf(listed.externalId, pipelineNoMarkerPages, listed.version);
+      injectedTargets.push(listed);
+      injectedTargets.push(listed);
+    addPdf(listed.externalId, pipelineNoMarkerPages, listed.version);
 
       const created = await startJob();
       const completed = await waitForJob(created.id);
@@ -391,6 +419,7 @@ describe('spec 24: 목록 기반 PARSE 단계 인제스트 대상 판정', () =>
 
   it('기준 14a: 목록 항목과 일치해도 마커가 있는 문서는 SKIPPED하지 않고 정상 파싱한다', async () => {
     const listed = committedTarget('92');
+    injectedTargets.push(listed);
     addPdf(
       listed.externalId,
       parenthesizedCoordinatePages,
