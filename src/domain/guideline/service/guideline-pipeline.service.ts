@@ -184,17 +184,18 @@ export class GuidelinePipelineService {
       // 「문서에 마커가 없다」와 「장·페이지 판정이 마커 페이지를 전량 탈락시켰다」를 구분하지 못한다
       // — 후자는 §20이 계열 B·C에서 겪은 파서 결함 그 자체라, 그것까지 건너뛰면 고쳐야 할 결함이
       // 조용히 묻힌다. 마커가 하나라도 있으면 목록에 있어도 파싱을 시도한다(기준 14).
+      const sourceSystem = this.acquisition.sourceSystem;
+      const version = acquired.item.releaseDate ?? '';
+      const identity = {
+        sourceSystem,
+        externalId: options.externalId,
+        version,
+        // 수집이 실어 온 해시가 곧 source_documents.file_hash다 (docs/specs/25 기준 11)
+        fileHash: acquired.fileHash ?? '',
+      };
+      const targets = this.lists.notIngestTargets();
+
       if (!containsRecommendationMarker(pages)) {
-        const sourceSystem = this.acquisition.sourceSystem;
-        const version = acquired.item.releaseDate ?? '';
-        const identity = {
-          sourceSystem,
-          externalId: options.externalId,
-          version,
-          // 수집이 실어 온 해시가 곧 source_documents.file_hash다 (docs/specs/25 기준 11)
-          fileHash: acquired.fileHash ?? '',
-        };
-        const targets = this.lists.notIngestTargets();
         const listed = findNotIngestTarget(identity, targets);
         if (!listed) {
           // **만료와 미등재를 구분한다** (docs/specs/25 기준 5·7). 항목이 있는데 축만 어긋난
@@ -238,13 +239,46 @@ export class GuidelinePipelineService {
         };
       }
 
-      const parsed = await this.parseService.parse({
-        pages,
-        externalId: options.externalId,
-        sourceSystem: this.acquisition.sourceSystem,
-        // 수집이 실어 온 해시를 그대로 넘긴다 — 면제 판정이 §18 기록과 어긋나지 않게 한다
-        fileHash: acquired.fileHash ?? '',
-      });
+      // **파싱이 실패하면 목록으로 되돌아온다** (이슈 #144 — docs/specs/24 기준 14 보완).
+      //
+      // 마커가 관측됐다는 이유만으로 파싱을 시도했는데 실패했다면, 그 마커가 진짜 권고 체계인지
+      // 다시 물어야 한다. 668(지침 **작성법 매뉴얼**)은 권고문 작성 예시가 등급 토큰 근처에 있어
+      // 마커 검출을 통과하지만 청커는 uniqueNumbers 0을 낸다 — 목록이 막아야 할 문서인데
+      // 이 칸이 비어 있어 매 잡마다 FAILED였다.
+      //
+      // **가르는 것은 파싱 성공 여부다.** 145·219는 파싱이 되므로 이 경로로 오지 않고 그대로
+      // 적재된다 — 기준 14가 세운 그물(목록이 틀렸을 때 진짜 지침을 살린다)은 유지된다.
+      let parsed;
+      try {
+        parsed = await this.parseService.parse({
+          pages,
+          externalId: options.externalId,
+          sourceSystem,
+          // 수집이 실어 온 해시를 그대로 넘긴다 — 면제 판정이 §18 기록과 어긋나지 않게 한다
+          fileHash: acquired.fileHash ?? '',
+        });
+      } catch (parseError) {
+        const listed = findNotIngestTarget(identity, targets);
+        if (!listed) throw parseError;
+
+        const skipMs = Date.now() - parseStart;
+        this.metrics.recordPipelineStage('parse', 'skipped', skipMs / 1000);
+        // 조용히 넘기지 않는다 — 목록에 있는 문서에서 마커가 관측됐다는 것은 판정을 재검토할
+        // 신호이므로, 그 사실과 실패 사유를 함께 남긴다
+        this.logger.warn(
+          `인제스트 대상 아님으로 건너뜁니다(마커가 관측됐으나 파싱 실패): ` +
+            `${sourceSystem} ${options.externalId}@${version} — ${listed.reason} ` +
+            `[파싱 실패: ${parseError instanceof Error ? parseError.message : String(parseError)}]`,
+        );
+        return {
+          run: await this.finish(options, run, {
+            status: 'SKIPPED',
+            phase,
+            // 파서를 돌렸으나 산출이 없다 — pages만 관측값이다
+            stages: { parse: { pages: pages.length, sections: 0, chunks: 0, ms: skipMs } },
+          }),
+        };
+      }
       const parseMs = Date.now() - parseStart;
       this.metrics.recordPipelineStage('parse', 'success', parseMs / 1000);
 
