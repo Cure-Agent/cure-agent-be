@@ -19,6 +19,16 @@ export type SseOutcome = 'completed' | 'aborted' | 'failed';
 /** 지침 파이프라인 **단계 자체의 결말** — 실행 status enum과는 다른 축이다 (docs/specs/22) */
 export type PipelineStageOutcome = 'success' | 'failure' | 'skipped';
 
+/** 검색 파이프라인의 단계 — 사용자 체감 지연을 임베딩과 벡터 조회로 가른다 (docs/specs/27) */
+export type RetrievalStage = 'embed' | 'vector_search';
+
+/**
+ * 답변 1회의 결말 (docs/specs/27).
+ * `sse_streams_total`과 다른 축이다 — abstain도 스트림으로는 `completed`이므로
+ * 그 축에서는 정상 답변과 구분되지 않는다.
+ */
+export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -114,6 +124,54 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 검색 단계별 소요 (docs/specs/27).
+   * LLM 지연은 이미 보이는데 그 앞단이 사각지대였다 — "답변이 느리다"가 임베딩인지 벡터 조회인지
+   * LLM인지 이 축에서 갈린다. 버킷이 LLM보다 훨씬 촘촘한 이유는 여기가 ms대이기 때문이다.
+   */
+  private readonly retrievalDuration = new Histogram({
+    name: 'rag_retrieval_duration_seconds',
+    help: '검색 단계별 소요 시간(초)',
+    labelNames: ['stage'] as const,
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+    registers: [this.registry],
+  });
+
+  /**
+   * 검색이 반환한 청크 수. **0건도 관측한다** — 0이 곧 abstain의 원인이고,
+   * 임베딩 모델을 바꿨을 때 재인제스트 전까지 전건 0이 되는 사고(docs/specs/14)가 여기서 드러난다.
+   */
+  private readonly retrievedChunks = new Histogram({
+    name: 'rag_retrieved_chunks',
+    help: '검색이 반환한 근거 청크 수',
+    buckets: [0, 1, 2, 3, 4, 5],
+    registers: [this.registry],
+  });
+
+  /**
+   * top-1 코사인 거리 (docs/specs/27).
+   * 지금 검색에는 유사도 임계값이 없다 — 컷을 감으로 정하면 과잉기권이거나 무용이므로,
+   * 이 분포가 컷의 근거가 된다. 결과가 0건이면 관측하지 않는다(잴 대상이 없다).
+   */
+  private readonly top1Distance = new Histogram({
+    name: 'rag_top1_distance',
+    help: '검색 top-1의 코사인 거리',
+    buckets: [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0],
+    registers: [this.registry],
+  });
+
+  /**
+   * 답변 1회의 결말 (docs/specs/27).
+   * `sse_streams_total`과 축이 다르다 — abstain도 스트림으로는 `completed`라 그 축에서는
+   * 정상 답변과 구분되지 않는다. abstain율 급등은 인제스트 사고의 조기 경보이므로 별도로 센다.
+   */
+  private readonly ragAnswers = new Counter({
+    name: 'rag_answers_total',
+    help: '답변 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -127,6 +185,23 @@ export class MetricsService {
   recordPipelineStage(stage: string, status: PipelineStageOutcome, durationSec: number): void {
     this.pipelineStageDuration.observe({ stage }, durationSec);
     this.pipelineStages.inc({ stage, status });
+  }
+
+  recordRetrievalStage(stage: RetrievalStage, durationSec: number): void {
+    this.retrievalDuration.observe({ stage }, durationSec);
+  }
+
+  /** 0건도 기록한다 — 0이 곧 abstain의 원인이다 */
+  recordRetrievedChunks(count: number): void {
+    this.retrievedChunks.observe(count);
+  }
+
+  recordTop1Distance(distance: number): void {
+    this.top1Distance.observe(distance);
+  }
+
+  recordAnswerOutcome(outcome: RagAnswerOutcome): void {
+    this.ragAnswers.inc({ outcome });
   }
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
