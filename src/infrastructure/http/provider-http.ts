@@ -21,25 +21,37 @@ export interface ProviderContext<E extends Error> {
   provider: string;
   errorClass: ProviderErrorClass<E>;
   signal?: AbortSignal;
+  /** 첫 응답(헤더) 수신 상한 — 미지정 시 DEFAULT_FIRST_BYTE_TIMEOUT_MS */
+  timeoutMs?: number;
 }
 
-/** 응답 헤더 수신까지의 상한 (architecture.md §11-1). 전체 상한 120s는 호출측이 부여한다. */
-const CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * 첫 응답(헤더) 수신까지의 기본 상한 (architecture.md §11-1). 전체 상한 120s는 호출측이 부여한다.
+ * 이 값은 TCP 연결이 아니라 "첫 바이트까지"를 잰다 — 비스트리밍 호출(임베딩)은 헤더와 본문이
+ * 함께 오므로 10s로 충분하지만, LLM 스트리밍은 첫 토큰 생성까지 헤더가 오지 않으므로
+ * 호출측이 timeoutMs로 더 긴 예산을 준다 (LLM_FIRST_BYTE_TIMEOUT_MS).
+ */
+const DEFAULT_FIRST_BYTE_TIMEOUT_MS = 10_000;
 
 export async function fetchStream<E extends Error>(
   url: string,
   init: RequestInit,
   context: ProviderContext<E>,
 ): Promise<Response> {
-  const { provider, errorClass: ErrorClass, signal } = context;
-  const connectTimeout = new AbortController();
+  const {
+    provider,
+    errorClass: ErrorClass,
+    signal,
+    timeoutMs = DEFAULT_FIRST_BYTE_TIMEOUT_MS,
+  } = context;
+  const firstByteTimeout = new AbortController();
   const timer = setTimeout(
-    () => connectTimeout.abort(new Error(`${provider} 연결 타임아웃 (${CONNECT_TIMEOUT_MS}ms)`)),
-    CONNECT_TIMEOUT_MS,
+    () => firstByteTimeout.abort(new Error(`${provider} 첫 응답 타임아웃 (${timeoutMs}ms)`)),
+    timeoutMs,
   );
   const composed = signal
-    ? AbortSignal.any([signal, connectTimeout.signal])
-    : connectTimeout.signal;
+    ? AbortSignal.any([signal, firstByteTimeout.signal])
+    : firstByteTimeout.signal;
 
   try {
     return await fetch(url, { ...init, signal: composed });

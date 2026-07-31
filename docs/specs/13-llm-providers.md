@@ -41,10 +41,11 @@ API 키가 설정된 환경에서 실 LLM(OpenAI·Anthropic)이 §11 게이트�
 ## 오류 매핑 (§11 4단 방어가 소비하는 계약)
 
 - `429` → `LlmProviderError(rateLimited: true, retryAfterSec: Retry-After 헤더 정수)` — 헤더 없거나 파싱 불가면 `retryAfterSec` 미지정
-- `5xx`·네트워크 오류·연결 타임아웃(10s, 응답 헤더 수신까지) → `retryable: true`
+- `5xx`·네트워크 오류·첫 응답 타임아웃(45s, 응답 헤더 수신까지) → `retryable: true`
 - 그 외 `4xx`(401·403·400 등 설정 오류) → `retryable: false`
 - **abort는 `LlmProviderError`로 감싸지 않고 원 오류 그대로 전파** — 게이트웨이는 `signal.aborted`로 폴백을 차단하고 스트림 서비스는 `CANCELLED`로 정리한다(§8-4)
-- 전체 상한(120s)은 호출측(`conversation-stream.service`)이 이미 부여하므로 어댑터는 연결 타임아웃만 책임진다
+- 전체 상한(120s)은 호출측(`conversation-stream.service`)이 이미 부여하므로 어댑터는 첫 응답 타임아웃만 책임진다
+- 첫 응답 상한이 45s인 이유: OpenAI·Anthropic은 첫 토큰이 준비되기 전에 헤더를 보내지 않아 이 값이 곧 TTFT 상한이 된다. 추론 모델(`gpt-5-mini`) 실측 TTFT가 약 9.5s여서 10s로는 매 요청이 타임아웃했다. 45s면 재시도 2회(45×2+0.3 ≈ 90s) 뒤에도 전체 상한 120s 안에 폴백 여지가 남는다
 
 ## 인용 계약
 

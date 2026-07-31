@@ -4,7 +4,12 @@
  */
 import { fetchStream, parseJson, toProviderError } from '../../http/provider-http';
 import { parseSseFrames } from '../../http/sse-stream.parser';
-import { LlmProvider, LlmProviderError, LlmStreamRequest } from '../llm-provider.port';
+import {
+  LLM_FIRST_BYTE_TIMEOUT_MS,
+  LlmProvider,
+  LlmProviderError,
+  LlmStreamRequest,
+} from '../llm-provider.port';
 import { buildPrompt } from '../prompt-builder';
 import { AnthropicProviderConfig } from './llm.config';
 
@@ -26,6 +31,7 @@ export class AnthropicProvider implements LlmProvider {
       provider: this.name,
       errorClass: LlmProviderError,
       signal: request.signal,
+      timeoutMs: LLM_FIRST_BYTE_TIMEOUT_MS,
     };
     const response = await fetchStream(
       `${this.config.baseUrl}/messages`,

@@ -53,7 +53,15 @@ export const ErrorCodes = {
 
   // Conversation / LLM
   DUPLICATE_CLIENT_REQUEST: { status: 409, message: '이미 처리 중인 요청입니다.' },
+  // 전 프로바이더 소진·상류 장애. "지연"은 LLM_TIMEOUT의 몫이라 문구를 분리했다 —
+  // 예전엔 이 코드가 retrieval 이후 모든 실패(DB 오류 포함)를 뭉뚱그려 진단을 막았다.
   LLM_UNAVAILABLE: {
+    status: 503,
+    message: 'AI 응답 생성을 일시적으로 이용할 수 없습니다. 잠시 후 다시 시도해주세요.',
+  },
+  // 스트림 전체 상한(§8-5) 초과 — 상류는 살아 있으나 제한 시간 안에 끝나지 않았다.
+  // 504가 아닌 이유: §10.1 허용 status 집합에 없다. 구분은 status가 아니라 code가 진다.
+  LLM_TIMEOUT: {
     status: 503,
     message: 'AI 응답 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요.',
   },
