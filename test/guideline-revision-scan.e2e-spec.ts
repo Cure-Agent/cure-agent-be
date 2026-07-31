@@ -790,14 +790,22 @@ describe('spec 26: 지침 개정 감지 스케줄러', () => {
     addPdf('redis-outage-target', SOURCE_MODIFIED_NEW);
     const listCallsBefore = fullScanListCallCount();
     const jobsBefore = await jobCount();
-    redis.disconnect();
+
+    // 장애는 **명령 주입**으로 재현한다 — 앱과 공유하는 클라이언트를 disconnect()하면
+    // lazyConnect 탓에 다음 명령(RedisLock.acquire의 SET)이 자동 재연결을 시작해,
+    // 복구용 connect()가 "Redis is already connecting/connected"로 던지고 이후 테스트가
+    // 연쇄로 죽는다. 검증 대상은 동일하다 — 락 획득이 실패하면 스캔하지 않는다.
+    const outage = jest
+      .spyOn(redis, 'set')
+      .mockRejectedValue(new Error('synthetic redis outage'));
 
     try {
       await scan.scan();
+      expect(outage).toHaveBeenCalled();
       expect(fullScanListCallCount()).toBe(listCallsBefore);
       expect(await jobCount()).toBe(jobsBefore);
     } finally {
-      await redis.connect();
+      outage.mockRestore();
     }
   });
 
