@@ -2,8 +2,11 @@ import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule, ConfigType } from '@nestjs/config';
 import Redis from 'ioredis';
 import { redisConfig } from '../config/redis.config';
+import { RedisLock } from './redis-lock';
+import { REDIS } from './redis.token';
 
-export const REDIS = Symbol('REDIS');
+// 토큰 정의는 redis.token.ts에 있다(순환 import 방지) — 기존 import 경로를 위해 re-export한다
+export { REDIS };
 
 /**
  * Redis 클라이언트 (architecture.md §4.3 denylist, 이후 §11 캐시 공용).
@@ -29,8 +32,10 @@ export const REDIS = Symbol('REDIS');
         return client;
       },
     },
+    // 개정 감지 스캔의 분산 락 (docs/specs/26) — 위 클라이언트와 달리 fail-closed다
+    RedisLock,
   ],
-  exports: [REDIS],
+  exports: [REDIS, RedisLock],
 })
 export class RedisModule implements OnApplicationShutdown {
   constructor(@Inject(REDIS) private readonly client: Redis) {}

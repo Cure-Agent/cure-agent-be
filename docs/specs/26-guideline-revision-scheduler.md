@@ -72,7 +72,17 @@ index가 이미 「전체에서 활성 1개」를 강제하므로 락을 11분�
 
 ## 범위 (진입점)
 
-엔드포인트 없음 — API 계약 무변경(FE 파장 0).
+**신규 엔드포인트는 없다. 다만 잡 응답 스키마가 바뀐다** — 아래 `requested_by` nullable 완화가
+`GuidelineJobResponseDto`로 새어 나오기 때문이다(2026-07-31 구현 Phase 1에서 발견, 초안의
+「API 계약 무변경」은 틀렸다). `requestedBy`는 지금 OpenAPI에서 `required` + non-nullable이라,
+nullable로 바꾸면 `oasdiff breaking`이 잡을 수 있다.
+
+- **`triggeredBy`를 응답에 함께 싣는다** — nullable이 된 필드의 의미를 짝 필드가 설명해야 한다.
+  「사람이 지운 잡인가 크론이 만든 잡인가」를 관리자가 응답만으로 구분하지 못하면, `requestedBy:
+  null`은 결측과 구분되지 않는다. 필드 **추가**는 breaking이 아니다.
+- FE는 이 필드를 쓰지 않아(`cure-agent-fe/src`에 `requestedBy` 0건, §22가 관리 화면을 Out of
+  scope로 둔 결과) **실질 파장은 0이다.** `openapi-breaking`이 ERR로 잡으면
+  `breaking-change-approved` 라벨로 통과시킨다 — 소비자가 없는 필드의 nullable 확장이다.
 
 | 진입점 | 변경 |
 |---|---|
@@ -110,6 +120,8 @@ index가 이미 「전체에서 활성 1개」를 강제하므로 락을 11분�
 - 컬럼명은 `trigger`가 아니라 `triggered_by`다 — `trigger`는 예약어라 인용부호 없이 못 쓴다.
 - **시스템 clinician 행을 만들지 않는다.** 실존하지 않는 의료인이 `clinicians`에 생기면 §4.4의
   테넌시 스코프와 목록·통계에 유령이 섞인다. 주체가 없는 것이 사실이므로 NULL이 사실이다.
+- 두 컬럼 모두 **`GuidelineJobResponseDto`에 반영된다**(위 「범위」) — `requestedBy`는 nullable로,
+  `triggeredBy`는 신규 필드로. `pnpm openapi:export` 산출을 같은 커밋에 담는다.
 - NOT NULL 완화와 default 있는 컬럼 추가는 **확장 방향**이라 `automation/pipeline.md`의 2단계
   배포 대상이 아니다 — 구버전 앱은 언제나 `requested_by`를 채우고 `triggered_by`는 default를 탄다.
 
@@ -155,7 +167,9 @@ index가 이미 「전체에서 활성 1개」를 강제하므로 락을 11분�
 18. 후보가 0건이면 잡을 만들지 않는다
 19. 크론이 만든 잡은 `triggeredBy=SCHEDULE`·`requestedBy=null`이다
 20. 사람이 만든 잡은 `triggeredBy=MANUAL`이고 `requestedBy`가 그대로 유지된다
-21. 이미 활성 잡이 있으면 그 틱은 잡을 만들지 않고 **baseline도 오르지 않는다** — 같은 후보가
+21. `GET /admin/guideline-jobs/{jobId}` 응답에 `triggeredBy`가 실리고, `SCHEDULE` 잡의
+    `requestedBy`는 `null`로 나온다 — 관리자가 응답만으로 두 잡을 구분한다
+22. 이미 활성 잡이 있으면 그 틱은 잡을 만들지 않고 **baseline도 오르지 않는다** — 같은 후보가
     다음 틱에 다시 잡힌다 (기준 10과 같은 이유: 처리하지 않은 것을 처리했다고 기록하지 않는다)
 
 **잡 결과 통보**
@@ -163,21 +177,26 @@ index가 이미 「전체에서 활성 1개」를 강제하므로 락을 11분�
 > §25의 만료 알림과는 **다른 사건이라 한 잡에서 둘 다 나갈 수 있다** — 만료는 「사람이 목록을
 > 갱신해야 한다」이고 잡 결과는 「이번 실행이 이렇게 끝났다」로, 수신자가 할 일이 다르다.
 
-22. `SCHEDULE` 잡이 **정상 종결**하면 `RealTimeAlertSender`로 알림 1건이 나간다
-23. `SCHEDULE` 잡이 **실패로 종결**해도(러너 사망 → `FAILED`) 알림 1건이 나간다
-24. 알림 본문에 잡 ID와 `total`·`succeeded`·`skipped`·`failed` 카운트가 담긴다
-25. 실패한 실행이 있으면 그 `externalId`와 `errorCode`가 본문에 담긴다 — 알림만 보고 어느
+23. `SCHEDULE` 잡이 **정상 종결**하면 `RealTimeAlertSender`로 알림 1건이 나간다
+24. `SCHEDULE` 잡이 **실패로 종결**해도(러너 사망 → `FAILED`) 알림 1건이 나간다
+25. 알림 본문에 잡 ID와 `total`·`succeeded`·`skipped`·`failed` 카운트가 담긴다
+26. 실패한 실행이 있으면 그 `externalId`와 `errorCode`가 본문에 담긴다 — 알림만 보고 어느
     문서를 봐야 하는지 알 수 있다
-26. `MANUAL` 잡의 종결에는 알림이 나가지 않는다 — 사람이 스트림으로 지켜보고 있다(§22의 논거)
-27. 목록 조회 실패로 스캔이 중단되면 알림이 나간다 — 잡이 아예 안 도는 것은 조용하면 안 된다
-28. 감지 0건인 틱에는 알림이 나가지 않는다 (연 359일이 그렇다 — 매일의 정상 보고는 정작 볼
+27. `MANUAL` 잡의 종결에는 알림이 나가지 않는다 — 사람이 스트림으로 지켜보고 있다(§22의 논거)
+28. 목록 조회 실패로 스캔이 중단되면 알림이 나간다 — 잡이 아예 안 도는 것은 조용하면 안 된다
+29. 감지 0건인 틱에는 알림이 나가지 않는다 (연 359일이 그렇다 — 매일의 정상 보고는 정작 볼
     알림을 묻는다)
-29. 알림 발송 실패가 스캔 결과·잡 결과를 바꾸지 않는다 (§15의 fire-and-forget, §25 기준 9와 같은 규칙)
+30. 알림 발송 실패가 스캔 결과·잡 결과를 바꾸지 않는다 (§15의 fire-and-forget, §25 기준 9와 같은 규칙)
+
+> 기준 23·24가 다루지 않는 종결 상태(`CANCELLED`·`INTERRUPTED`)도 **알림 대상이다** — 통보의
+> 트리거는 잡의 「종결」이지 특정 status가 아니다. 크론이 만든 잡이 조용히 끝나는 경우를 두지
+> 않는다.
 
 **기동·설정**
 
-30. `GUIDELINE_REVISION_SCAN_ENABLED`가 꺼져 있으면 크론이 등록되지 않는다 — 기본값이 꺼짐이다
-31. e2e는 `scan()`을 직접 호출해 검증한다 — 크론식·시간에 의존하는 테스트를 만들지 않는다
+31. `GUIDELINE_REVISION_SCAN_ENABLED`가 꺼져 있으면 크론이 등록되지 않는다 — 기본값이 꺼짐이며,
+    핸들러 안에서 early return 하는 것과 구분된다(`SchedulerRegistry`에 잡이 없어야 한다)
+32. e2e는 `scan()`을 직접 호출해 검증한다 — 크론식·시간에 의존하는 테스트를 만들지 않는다
 
 ## Out of scope
 

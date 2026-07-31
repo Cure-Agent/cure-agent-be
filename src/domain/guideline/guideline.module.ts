@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { guidelineScanConfig } from '../../global/config/guideline-scan.config';
 import { PdfTextExtractor } from '../../infrastructure/document/pdf-text.extractor';
 import { EmbeddingModule } from '../../infrastructure/embedding/embedding.module';
 import { GuidelineSourceModule } from '../../infrastructure/guideline-source/guideline-source.module';
@@ -25,6 +27,7 @@ import { GuidelineJobRecoveryService } from './service/guideline-job-recovery.se
 import { GuidelineJobRunner } from './service/guideline-job.runner';
 import { GuidelineJobService } from './service/guideline-job.service';
 import { GuidelinePipelineService } from './service/guideline-pipeline.service';
+import { GuidelineRevisionScanService } from './service/guideline-revision-scan.service';
 import { GuidelineParseService } from './service/guideline-parse.service';
 import { GuidelineListProvider } from './service/guideline-list.provider';
 import { GuidelineJobEventBus } from './sse/guideline-job-event.bus';
@@ -32,7 +35,13 @@ import { GuidelineService } from './service/guideline.service';
 
 @Module({
   // ClinicianModule은 AdminGuard의 역할 조회를 위해 필요하다 (docs/specs/21)
-  imports: [EmbeddingModule, GuidelineSourceModule, ClinicianModule],
+  imports: [
+    EmbeddingModule,
+    GuidelineSourceModule,
+    ClinicianModule,
+    // 개정 감지 스캔 설정 (docs/specs/26)
+    ConfigModule.forFeature(guidelineScanConfig),
+  ],
   controllers: [
     GuidelineController,
     EvidenceController,
@@ -59,12 +68,20 @@ import { GuidelineService } from './service/guideline.service';
     GuidelineJobRunner,
     GuidelinePipelineService,
     GuidelineJobRecoveryService,
+    // 개정 감지 스케줄러 (docs/specs/26) — 크론 트리거는 infrastructure/scheduler가 부른다
+    GuidelineRevisionScanService,
     GuidelineJobEventBus,
     GuidelineJobRepository,
     PipelineRunRepository,
     PdfTextExtractor,
     AdminGuard,
   ],
-  exports: [GuidelineIngestService, GuidelineAcquisitionService, GuidelineParseService],
+  exports: [
+    GuidelineIngestService,
+    GuidelineAcquisitionService,
+    GuidelineParseService,
+    // 크론 트리거가 부른다 (docs/specs/26)
+    GuidelineRevisionScanService,
+  ],
 })
 export class GuidelineModule {}
