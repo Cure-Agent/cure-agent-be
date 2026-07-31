@@ -6,10 +6,75 @@
  */
 import { RagEvalReport } from './rag-eval.service';
 
-/**
- * TODO(docs/specs/27 기준 5): 지표 요약·실패 문항·kind별 거리 분포·retrievalPolicyVersion을
- * 담은 마크다운을 만든다.
- */
-export function renderEvalReport(_report: RagEvalReport): string {
-  throw new Error('TODO: docs/specs/27 기준 5 미구현');
+const RATIO_DIGITS = 3;
+const DISTANCE_DIGITS = 4;
+
+function ratio(value: number): string {
+  return value.toFixed(RATIO_DIGITS);
+}
+
+/** 표 셀이 깨지지 않게 파이프를 이스케이프하고 질문을 한 줄로 줄인다 */
+function cell(text: string): string {
+  return text.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+}
+
+export function renderEvalReport(report: RagEvalReport): string {
+  const lines: string[] = [];
+
+  lines.push('# RAG 검색 기준선');
+  lines.push('');
+  // 정책 버전이 다르면 지표를 나란히 놓지 않는다 — 그래서 맨 위에 둔다
+  lines.push(`- retrievalPolicyVersion: \`${report.retrievalPolicyVersion}\``);
+  lines.push(`- 검색 가능한 청크: ${report.corpusChunkCount}`);
+  lines.push(`- 문항: answerable ${report.answerableCount} / abstain ${report.abstainCount}`);
+  lines.push('');
+
+  lines.push('## 지표');
+  lines.push('');
+  lines.push('| 지표 | 값 |');
+  lines.push('| --- | --- |');
+  lines.push(`| Recall@5 | ${ratio(report.recallAt5)} |`);
+  lines.push(`| MRR@5 | ${ratio(report.mrrAt5)} |`);
+  lines.push(`| Recall@30 | ${ratio(report.recallAt30)} |`);
+  lines.push('');
+  lines.push(
+    'Recall@30이 높은데 Recall@5가 낮으면 후보군엔 있고 순서가 나쁜 것이다(리랭커). ' +
+      '둘 다 낮으면 애초에 못 찾는 것이다(하이브리드·임베딩 교체).',
+  );
+  lines.push('');
+
+  lines.push('## top-1 거리 분포');
+  lines.push('');
+  lines.push('| kind | 표본 | p10 | p50 | p90 |');
+  lines.push('| --- | --- | --- | --- | --- |');
+  for (const distribution of report.distances) {
+    lines.push(
+      `| ${distribution.kind} | ${distribution.count} | ` +
+        `${distribution.p10.toFixed(DISTANCE_DIGITS)} | ` +
+        `${distribution.p50.toFixed(DISTANCE_DIGITS)} | ` +
+        `${distribution.p90.toFixed(DISTANCE_DIGITS)} |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    'answerable과 abstain의 분포가 갈리는 지점이 거리 임계값의 후보다 — ' +
+      '겹쳐 있으면 컷으로 둘을 가를 수 없다는 뜻이므로 컷을 두지 않는다.',
+  );
+  lines.push('');
+
+  lines.push(`## 실패 문항 (운영 K=5 밖) — ${report.failures.length}건`);
+  lines.push('');
+  if (report.failures.length === 0) {
+    lines.push('없음.');
+  } else {
+    lines.push('| 문항 | 질문 | 발견 순위 |');
+    lines.push('| --- | --- | --- |');
+    for (const failure of report.failures) {
+      const rank = failure.foundAtRank === null ? '없음 (top-30 밖)' : `${failure.foundAtRank}위`;
+      lines.push(`| ${cell(failure.itemId)} | ${cell(failure.question)} | ${rank} |`);
+    }
+  }
+  lines.push('');
+
+  return lines.join('\n');
 }

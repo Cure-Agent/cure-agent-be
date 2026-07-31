@@ -6,12 +6,13 @@
  */
 import { Module } from '@nestjs/common';
 import { RetrievalModule } from '../../infrastructure/retrieval/retrieval.module';
+import { EvalsetSampler } from './evalset-sampler';
 import { LabelResolver } from './label-resolver';
 import { RagEvalService } from './rag-eval.service';
 
 @Module({
   imports: [RetrievalModule],
-  providers: [LabelResolver, RagEvalService],
-  exports: [LabelResolver, RagEvalService],
+  providers: [EvalsetSampler, LabelResolver, RagEvalService],
+  exports: [EvalsetSampler, LabelResolver, RagEvalService],
 })
 export class EvaluationModule {}
