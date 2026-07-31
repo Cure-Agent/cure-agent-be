@@ -28,6 +28,11 @@ export interface RetrievedEvidence {
   section: GuidelineSectionRow;
   version: GuidelineVersionRow;
   guideline: GuidelineRow;
+  /**
+   * 코사인 거리 (0에 가까울수록 유사). 지금은 정렬에만 쓰고 버리던 값을 노출한다 —
+   * 거리 임계값을 데이터로 정하려면 분포를 재야 하기 때문이다 (docs/specs/27).
+   */
+  distance: number;
 }
 
 /**
@@ -72,7 +77,7 @@ export class RetrievalService {
         : undefined,
     ].filter((c) => c !== undefined);
 
-    return this.txManager.conn
+    const rows = await this.txManager.conn
       .select({
         chunk: evidenceChunks,
         section: guidelineSections,
@@ -86,5 +91,8 @@ export class RetrievalService {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(cosineDistance(evidenceChunks.embedding, embedding)))
       .limit(RETRIEVAL_TOP_K);
+
+    // TODO(docs/specs/27 기준 2): 거리를 SELECT에 실어 반환하고 단계별 소요·반환 건수·top-1 거리를 계측한다
+    return rows.map((row) => ({ ...row, distance: 0 }));
   }
 }

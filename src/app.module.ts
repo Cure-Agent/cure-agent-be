@@ -7,6 +7,7 @@ import { AuthModule } from './domain/auth/auth.module';
 import { ClinicianModule } from './domain/clinician/clinician.module';
 import { ConversationModule } from './domain/conversation/conversation.module';
 import { ClinicalGuidanceModule } from './domain/clinical-guidance/clinical-guidance.module';
+import { EvaluationModule } from './domain/evaluation/evaluation.module';
 import { PatientModule } from './domain/patient/patient.module';
 import { GuidelineModule } from './domain/guideline/guideline.module';
 import { LlmModule } from './infrastructure/llm/llm.module';
@@ -68,6 +69,8 @@ import { HealthModule } from './health/health.module';
     ClinicalGuidanceModule,
     // 개정 감지 크론 트리거 (docs/specs/26) — GuidelineModule 뒤에 온다
     SchedulerModule,
+    // RAG 평가 (docs/specs/27) — 컨트롤러 없음. scripts/eval-rag.ts와 e2e가 소비한다
+    EvaluationModule,
   ],
   providers: [
     { provide: APP_PIPE, useFactory: buildGlobalValidationPipe },

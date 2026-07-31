@@ -19,6 +19,16 @@ export type SseOutcome = 'completed' | 'aborted' | 'failed';
 /** 지침 파이프라인 **단계 자체의 결말** — 실행 status enum과는 다른 축이다 (docs/specs/22) */
 export type PipelineStageOutcome = 'success' | 'failure' | 'skipped';
 
+/** 검색 파이프라인의 단계 — 사용자 체감 지연을 임베딩과 벡터 조회로 가른다 (docs/specs/27) */
+export type RetrievalStage = 'embed' | 'vector_search';
+
+/**
+ * 답변 1회의 결말 (docs/specs/27).
+ * `sse_streams_total`과 다른 축이다 — abstain도 스트림으로는 `completed`이므로
+ * 그 축에서는 정상 답변과 구분되지 않는다.
+ */
+export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -128,6 +138,18 @@ export class MetricsService {
     this.pipelineStageDuration.observe({ stage }, durationSec);
     this.pipelineStages.inc({ stage, status });
   }
+
+  /** TODO(docs/specs/27 기준 2): 검색 단계별 소요를 기록한다 */
+  recordRetrievalStage(_stage: RetrievalStage, _durationSec: number): void {}
+
+  /** TODO(docs/specs/27 기준 2): 검색이 반환한 청크 수 — 0은 abstain의 원인이다 */
+  recordRetrievedChunks(_count: number): void {}
+
+  /** TODO(docs/specs/27 기준 2): top-1 코사인 거리 — 거리 컷의 근거가 될 분포 */
+  recordTop1Distance(_distance: number): void {}
+
+  /** TODO(docs/specs/27 기준 1): 답변 결말 — abstain을 정상 답변과 가른다 */
+  recordAnswerOutcome(_outcome: RagAnswerOutcome): void {}
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
     const labels = { method, route, status: String(status) };
