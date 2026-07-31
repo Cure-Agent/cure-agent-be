@@ -6,6 +6,18 @@ import { ProviderErrorOptions } from '../http/provider-http';
 
 export const LLM_PROVIDERS = Symbol('LLM_PROVIDERS');
 
+/**
+ * LLM 스트리밍의 첫 응답(헤더) 수신 상한.
+ *
+ * OpenAI·Anthropic은 첫 토큰이 준비되기 전에는 응답 헤더를 내보내지 않는다. 즉 이 값은
+ * 사실상 TTFT 상한이며, 추론 모델(gpt-5-mini 등)은 사고 시간이 그대로 여기에 포함된다.
+ * 기본값 10s로는 실제 근거 프롬프트에서 매 요청이 타임아웃했다 — 실측 TTFT 약 9.5s.
+ *
+ * 45s인 이유: retry-policy가 프로바이더당 2회 시도하므로 45×2+0.3 ≈ 90s가 최악이고,
+ * 호출측 전체 상한 120s 안에 다음 프로바이더로 폴백할 여유(§11-4)가 남는다.
+ */
+export const LLM_FIRST_BYTE_TIMEOUT_MS = 45_000;
+
 export interface LlmEvidenceContext {
   marker: number; // 답변 인용 마커 [n]
   content: string;

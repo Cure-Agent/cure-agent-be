@@ -79,7 +79,14 @@ services:
       GUIDELINE_REVISION_SCAN_CRON: ${GUIDELINE_REVISION_SCAN_CRON:-0 19 * * *}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1024}
+      # ⚠️ LLM 튜닝값의 기본값은 llm.config.ts DEFAULTS가 단독으로 소유한다.
+      # 여기에 기본값을 적어두면 코드가 올라가도 컨테이너는 옛 값을 받는다 —
+      # 실제로 LLM_MAX_OUTPUT_TOKENS를 `:-1024`로 박아둔 탓에 코드의 4096 상향이 무효였다.
+      # 빈 값은 코드 기본값으로 떨어지므로(nonEmpty/positiveInt) 통과만 시킨다.
+      # 환경별로 덮어쓸 때만 값을 채우고, cd-gcp.yml의 env·envs 목록에도 함께 추가한다.
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-}
     depends_on:
       postgres:
         condition: service_healthy

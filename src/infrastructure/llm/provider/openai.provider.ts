@@ -4,7 +4,12 @@
  */
 import { fetchStream, parseJson, toProviderError } from '../../http/provider-http';
 import { parseSseFrames } from '../../http/sse-stream.parser';
-import { LlmProvider, LlmProviderError, LlmStreamRequest } from '../llm-provider.port';
+import {
+  LLM_FIRST_BYTE_TIMEOUT_MS,
+  LlmProvider,
+  LlmProviderError,
+  LlmStreamRequest,
+} from '../llm-provider.port';
 import { buildPrompt } from '../prompt-builder';
 import { OpenAiProviderConfig } from './llm.config';
 
@@ -26,6 +31,7 @@ export class OpenAiProvider implements LlmProvider {
       provider: this.name,
       errorClass: LlmProviderError,
       signal: request.signal,
+      timeoutMs: LLM_FIRST_BYTE_TIMEOUT_MS,
     };
     const response = await fetchStream(
       `${this.config.baseUrl}/chat/completions`,
@@ -41,6 +47,10 @@ export class OpenAiProvider implements LlmProvider {
           // 마지막 청크에 usage를 실어 보낸다 — 토큰 비용 지표(llm_tokens_total)의 원천
           stream_options: { include_usage: true },
           max_completion_tokens: this.config.maxOutputTokens,
+          // 추론 모델 전용 인자 — 비추론 모델은 400으로 거부하므로 설정이 있을 때만 싣는다
+          ...(this.config.reasoningEffort
+            ? { reasoning_effort: this.config.reasoningEffort }
+            : {}),
           messages: [
             { role: 'system', content: prompt.system },
             { role: 'user', content: prompt.user },
