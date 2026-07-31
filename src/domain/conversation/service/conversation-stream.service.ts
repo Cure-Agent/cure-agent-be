@@ -8,6 +8,7 @@ import { TransactionManager } from '../../../global/database/transaction-manager
 import { TraceContext } from '../../../global/context/trace-context.service';
 import {
   MetricsService,
+  RagAnswerOutcome,
   SseOutcome,
 } from '../../../global/observability/metrics/metrics.service';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
@@ -154,6 +155,12 @@ export class ConversationStreamService {
     // 진행 중 스트림 수(sse_active_streams)로 커넥션 누수를 감지한다
     this.metrics.sseStreamStarted();
     let sseOutcome: SseOutcome = 'completed';
+    /**
+     * 답변 결말 (docs/specs/27). `sseOutcome`과 축이 다르다 — abstain도 스트림으로는
+     * `completed`라 그 축에서는 정상 답변과 구분되지 않는다.
+     * null은 「세지 않는다」다 (아래 abort 주석 참조).
+     */
+    let ragOutcome: RagAnswerOutcome | null = 'answered';
 
     try {
       sse.send({
@@ -171,6 +178,7 @@ export class ConversationStreamService {
       });
 
       if (retrieved.length === 0) {
+        ragOutcome = 'abstained';
         await this.repository.updateMessage(assistantMessageId, {
           status: 'ABSTAINED',
           content: '',
@@ -215,10 +223,14 @@ export class ConversationStreamService {
       });
     } catch (error) {
       sseOutcome = clientSignal.aborted ? 'aborted' : 'failed';
+      // 사용자가 끊은 것은 답변 실패가 아니다 — sse_streams_total{outcome="aborted"}가 이미 센다.
+      // 여기서 failed로 세면 실패율이 사용자 이탈로 오염되어 장애 판단을 흐린다.
+      ragOutcome = clientSignal.aborted ? null : 'failed';
       await this.handleStreamFailure(error, assistantMessageId, clientSignal, sse, traceId);
     } finally {
       sse.end();
       this.metrics.sseStreamEnded(sseOutcome);
+      if (ragOutcome !== null) this.metrics.recordAnswerOutcome(ragOutcome);
     }
   }
 
