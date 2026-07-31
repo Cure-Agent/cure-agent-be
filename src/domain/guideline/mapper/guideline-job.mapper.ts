@@ -7,6 +7,7 @@ export function toGuidelineJob(row: GuidelineJobRow): GuidelineJobResponseDto {
     id: row.id,
     status: row.status,
     requestedBy: row.requestedBy,
+    triggeredBy: row.triggeredBy,
     total: row.total,
     processed: row.processed,
     succeeded: row.succeeded,

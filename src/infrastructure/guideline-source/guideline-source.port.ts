@@ -20,6 +20,15 @@ export interface SourceListItem {
   publisher: string;
   /** "2024-07"처럼 일자가 없을 수 있어 원문 문자열을 그대로 전달한다 */
   releaseDate: string | null;
+  /**
+   * 원본 목록이 준 레코드 수정 시각 — 개정 감지의 축이다 (docs/specs/26).
+   * `releaseDate`와 같이 **원문 문자열을 그대로** 전달한다(로케일 의존 형식이라 파싱하지 않는다).
+   *
+   * 목록이 주지 않으면 없다 — 소비 지점이 `?? null`로 정규화하며, 값이 없는 문서는
+   * 「모르면 받아본다」로 후보가 된다(기준 5). optional인 덕에 이 필드를 모르는 기존 fake도
+   * 그대로 컴파일되고, 그 fake들은 자동으로 「모름」 경로를 탄다.
+   */
+  sourceModifiedAt?: string | null;
   /** view.do — 인용 시 노출할 원문 링크 */
   sourceUrl: string;
   /**

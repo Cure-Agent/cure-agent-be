@@ -225,7 +225,8 @@ cure-agent-be/
 │       ├── retrieval/                        # 포트 없음 — DB 검색이라 실물로 검증
 │       ├── guideline-source/                 # 포트 (NCKM HTTP — fake 치환) §18
 │       ├── document/                         # pdf-parser, guideline-chunker §19
-│       └── scheduler/                        # 지침 개정 감지 크론 (별도 spec)
+│       └── scheduler/                        # 지침 개정 감지 크론 트리거 (docs/specs/26)
+│                                             #   판정·잡 위임·통보는 domain/guideline이 한다
 │
 ├── test/
 │   ├── contract/                     # OpenAPI 재생성 diff + breaking change 검사
@@ -756,7 +757,7 @@ type GuidelineJobStreamEventDto =
 | GuidelineSectionEntity | guidelineVersionId, parentId, title, path, order |
 | EvidenceChunkEntity | sectionId, content, embedding, 권고등급, 근거수준, 페이지, contentHash |
 | PipelineRunEntity | 문서 1건의 수집→파싱→임베딩→적재 실행 기록. 도달한 단계(phase)·단계별 산출(stages)·실패 코드. jobId가 없으면 잡 밖의 단건 실행 (docs/specs/22) |
-| GuidelineJobEntity | 전건 파이프라인 잡 — 상태·진행 카운트. PipelineRun N건의 부모 (docs/specs/22) |
+| GuidelineJobEntity | 전건 파이프라인 잡 — 상태·진행 카운트. PipelineRun N건의 부모 (docs/specs/22). **triggeredBy**(MANUAL/SCHEDULE)로 주체를 구분하며 크론이 만든 잡은 requestedBy가 NULL이다 (docs/specs/26) |
 | ConversationEntity | clinicianId, patientId?, type, title, status |
 | MessageEntity | conversationId, role, content, status(**CANCELLED 포함**) |
 | MessageCitationEntity | messageId, evidenceChunkId, marker, quote |

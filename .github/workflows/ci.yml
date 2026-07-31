@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [dev]
+    # labeled/unlabeled가 없으면 아래 openapi-breaking의 `breaking-change-approved` 승인 경로가
+    # **선언만 되고 동작하지 않는다** — 라벨을 붙여도 재평가할 계기가 없고, run rerun은 원본
+    # 이벤트 payload를 재사용해 라벨 변경을 보지 못한다(PR #153에서 실증).
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   build-test:

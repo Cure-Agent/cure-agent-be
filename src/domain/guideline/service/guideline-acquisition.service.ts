@@ -210,7 +210,9 @@ export class GuidelineAcquisitionService {
       fileHash,
     );
     if (existing) {
-      await this.repository.touchFetchedAt(existing.id, fetchedAt);
+      // 본문을 받았으므로 baseline도 갱신한다 — 파일이 그대로여도 목록의 수정 시각은
+      // 오를 수 있고, 안 올리면 그 문서가 매일 후보로 뜬다 (docs/specs/26 기준 9)
+      await this.repository.touchFetchedAt(existing.id, fetchedAt, item.sourceModifiedAt);
       // 행을 새로 만들지 않았을 뿐 본문은 받아왔다 — 재적재 판정은 호출자가 내용으로 한다
       return {
         externalId: item.externalId,
@@ -241,6 +243,9 @@ export class GuidelineAcquisitionService {
       status: verdict.status,
       error: verdict.error,
       fetchedAt,
+      // 본문을 받았을 때만 baseline이 생긴다 — 아래 네트워크 실패 경로에는 없다
+      // (docs/specs/26 기준 8·10). 그래야 못 받은 문서가 다음 스캔에 다시 후보가 된다
+      sourceModifiedAt: item.sourceModifiedAt ?? null,
     });
 
     return {

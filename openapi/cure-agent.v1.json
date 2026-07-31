@@ -2441,7 +2441,16 @@
           },
           "requestedBy": {
             "type": "string",
-            "description": "잡을 시작한 ADMIN"
+            "nullable": true,
+            "description": "잡을 시작한 ADMIN. 크론이 만든 잡(triggeredBy=SCHEDULE)은 null이다"
+          },
+          "triggeredBy": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "SCHEDULE"
+            ],
+            "description": "잡을 시작한 주체 — 크론이 만들었으면 SCHEDULE (docs/specs/26)"
           },
           "total": {
             "type": "number",
@@ -2479,6 +2488,7 @@
           "id",
           "status",
           "requestedBy",
+          "triggeredBy",
           "total",
           "processed",
           "succeeded",
@@ -2732,7 +2742,16 @@
           },
           "requestedBy": {
             "type": "string",
-            "description": "잡을 시작한 ADMIN"
+            "nullable": true,
+            "description": "잡을 시작한 ADMIN. 크론이 만든 잡(triggeredBy=SCHEDULE)은 null이다"
+          },
+          "triggeredBy": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "SCHEDULE"
+            ],
+            "description": "잡을 시작한 주체 — 크론이 만들었으면 SCHEDULE (docs/specs/26)"
           },
           "total": {
             "type": "number",
@@ -2777,6 +2796,7 @@
           "id",
           "status",
           "requestedBy",
+          "triggeredBy",
           "total",
           "processed",
           "succeeded",
