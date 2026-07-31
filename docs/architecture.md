@@ -196,7 +196,7 @@ cure-agent-be/
 │   │
 │   └── infrastructure/
 │       ├── http/                             # 프로바이더 공통 전송 계층 (llm·embedding 공용)
-│       │   ├── provider-http.ts              # 연결 타임아웃 + 오류 등급화(errorClass 주입)
+│       │   ├── provider-http.ts              # 첫 응답 타임아웃(timeoutMs) + 오류 등급화(errorClass 주입)
 │       │   ├── sse-stream.parser.ts
 │       │   └── env.ts                        # config 공용 env 파싱
 │       ├── oauth/                            # 소셜 로그인 제공자 (docs/specs/17)
@@ -719,7 +719,8 @@ type ConversationStreamEventDto =
 2. 해당 메시지가 `COMPLETED`/`ABSTAINED`면 그 내용으로 확정 렌더. `STREAMING`/`FAILED`/`CANCELLED`면 재시도 UI 제공.
 3. 재시도는 같은 `clientRequestId`로 안전하다(unique constraint가 중복 생성을 차단).
 4. 클라이언트 abort 감지 시 서버는 LLM 호출을 취소하고 메시지를 `CANCELLED`로 정리한다.
-5. LLM 응답 타임아웃(권장 60~120s) 초과 시 `error(retryable: true)` 발행 후 `FAILED` 처리.
+5. LLM 응답 타임아웃(권장 60~120s) 초과 시 `error(code: LLM_TIMEOUT, retryable: true)` 발행 후 `FAILED` 처리.
+6. `error` 이벤트의 `code`는 원인별로 나뉜다 — 상류 소진은 `LLM_UNAVAILABLE`, 전체 상한 초과는 `LLM_TIMEOUT`, 도메인 계약 위반은 해당 코드, 그 외(DB·영속화 결함)는 `INTERNAL_ERROR`다. `retryable`은 상류 장애(`LLM_UNAVAILABLE`·`LLM_TIMEOUT`)에만 `true`다 — 우리 쪽 결함은 재시도해도 같은 결과이기 때문이다.
 
 ### 잡 진행 스트림 (docs/specs/22)
 
@@ -866,7 +867,8 @@ export const ErrorCodes = {
   PATIENT_ARCHIVED:           { status: 409, message: "보관된 환자입니다. 먼저 보관을 해제해주세요." },
   // Conversation / LLM
   DUPLICATE_CLIENT_REQUEST:   { status: 409, message: "이미 처리 중인 요청입니다." },
-  LLM_UNAVAILABLE:            { status: 503, message: "AI 응답 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요." },
+  LLM_UNAVAILABLE:            { status: 503, message: "AI 응답 생성을 일시적으로 이용할 수 없습니다. 잠시 후 다시 시도해주세요." },  // 전 프로바이더 소진·상류 장애
+  LLM_TIMEOUT:                { status: 503, message: "AI 응답 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요." },              // 스트림 전체 상한(§8-5) 초과
   SERVICE_NOT_READY:          { status: 503, message: "서비스가 아직 준비되지 않았습니다." },
   // Guidance
   GUIDANCE_ALREADY_REVIEWED:  { status: 409, message: "이미 검토가 완료된 항목입니다." },
@@ -905,7 +907,7 @@ export type ErrorCode = keyof typeof ErrorCodes;
 
 `retry-policy` 단독으로는 부족하다. `infrastructure/llm/resilience/`에 4단 방어를 구성한다:
 
-1. **retry-policy**: 일시 오류(5xx, 네트워크)에 지수 백오프 재시도. 타임아웃 명시(연결 10s / 전체 60~120s).
+1. **retry-policy**: 일시 오류(5xx, 네트워크)에 지수 백오프 재시도. 타임아웃 명시(첫 응답 — LLM 45s·임베딩 10s / 전체 60~120s). LLM은 첫 토큰 생성 전까지 응답 헤더가 오지 않으므로 이 상한이 사실상 TTFT 상한이다 — 추론 모델의 사고 시간을 포함해 잡는다.
 2. **circuit-breaker**: 연속 실패 임계 초과 시 일정 시간 호출 차단(fail-fast). 차단 중 요청은 즉시 `LLM_UNAVAILABLE`.
 3. **rate-limit-block-store**: 429 수신 시 해당 프로바이더를 `Retry-After` 기준 일정 시간 차단.
 4. **provider-router**: 우선순위 기반 폴백 라우팅 — 주 프로바이더 차단·실패 시 보조 프로바이더로 전환. `GenerationRun`에 실사용 프로바이더·모델 기록.

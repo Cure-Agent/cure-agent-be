@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { ulid } from 'ulid';
 import { monotonicUlid } from '../../../global/common/id/monotonic-ulid';
-import { ErrorCodes } from '../../../global/common/exception/error-code.registry';
+import { ErrorCode, ErrorCodes } from '../../../global/common/exception/error-code.registry';
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { TraceContext } from '../../../global/context/trace-context.service';
@@ -11,8 +11,11 @@ import {
   SseOutcome,
 } from '../../../global/observability/metrics/metrics.service';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
-import { LlmGateway } from '../../../infrastructure/llm/llm-gateway';
-import { LlmEvidenceContext } from '../../../infrastructure/llm/llm-provider.port';
+import { LlmExhaustedError, LlmGateway } from '../../../infrastructure/llm/llm-gateway';
+import {
+  LlmEvidenceContext,
+  LlmProviderError,
+} from '../../../infrastructure/llm/llm-provider.port';
 import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
 import {
   RetrievalService,
@@ -36,6 +39,36 @@ const MODEL_LABEL = 'gateway-routed';
 const QUOTE_LIMIT = 120;
 const STREAM_TIMEOUT_MS = 120_000;
 const PG_UNIQUE_VIOLATION = '23505';
+
+/** 스트림 전체 상한(§8-5) 초과 — 프로바이더 장애와 구분해 LLM_TIMEOUT으로 내보낸다 */
+export class StreamTimeoutError extends Error {
+  constructor() {
+    super(`LLM 응답이 ${STREAM_TIMEOUT_MS}ms 안에 완료되지 않았습니다`);
+    this.name = 'StreamTimeoutError';
+  }
+}
+
+/** 상류(LLM) 장애는 재시도로 풀리지만, 우리 쪽 결함·계약 위반은 재시도해도 같은 결과다 */
+export const RETRYABLE_STREAM_FAILURES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
+  'LLM_UNAVAILABLE',
+  'LLM_TIMEOUT',
+]);
+
+/**
+ * retrieval 이후 실패를 원인별 코드로 나눈다 (테스트 위해 export).
+ * 예전엔 전부 LLM_UNAVAILABLE이라 DB 오류도 "AI 응답 생성이 지연" 문구로 나가 진단을 막았다.
+ */
+export function classifyStreamFailure(error: unknown): ErrorCode {
+  if (error instanceof StreamTimeoutError) return 'LLM_TIMEOUT';
+  // 소진(전 프로바이더 불가) · 첫 토큰 이후 실패로 폴백 불가한 프로바이더 오류
+  if (error instanceof LlmExhaustedError || error instanceof LlmProviderError) {
+    return 'LLM_UNAVAILABLE';
+  }
+  // 도메인 계약 위반은 자기 코드를 그대로 쓴다 (스냅샷·가이던스 생성 실패 등)
+  if (error instanceof ServiceException) return error.code;
+  // 나머지(DB·영속화·예상 못한 결함)는 우리 쪽 문제다
+  return 'INTERNAL_ERROR';
+}
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
 interface GuidanceContext {
@@ -209,14 +242,23 @@ export class ConversationStreamService {
     }));
 
     let seq = 0;
-    const signal = AbortSignal.any([clientSignal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]);
-    const outcome = await this.llmGateway.stream(
-      { question, evidence: evidenceContext, signal },
-      (delta) => {
-        sse.send({ eventType: 'answer.delta', messageId: assistantMessageId, seq, delta });
-        seq += 1;
-      },
-    );
+    const timeoutSignal = AbortSignal.timeout(STREAM_TIMEOUT_MS);
+    const signal = AbortSignal.any([clientSignal, timeoutSignal]);
+    let outcome;
+    try {
+      outcome = await this.llmGateway.stream(
+        { question, evidence: evidenceContext, signal },
+        (delta) => {
+          sse.send({ eventType: 'answer.delta', messageId: assistantMessageId, seq, delta });
+          seq += 1;
+        },
+      );
+    } catch (error) {
+      // 전체 상한 초과를 프로바이더 장애와 구분한다. 클라이언트 abort가 함께 걸린 경우는
+      // CANCELLED가 우선이므로(§8-4) 상위 handleStreamFailure의 판정을 가로채지 않는다.
+      if (timeoutSignal.aborted && !clientSignal.aborted) throw new StreamTimeoutError();
+      throw error;
+    }
 
     // 답변에 실제 등장한 마커만 인용으로 영속화
     const usedMarkers = new Set(
@@ -292,13 +334,14 @@ export class ConversationStreamService {
       return;
     }
 
-    this.logger.error(`[${traceId}] 스트리밍 실패: ${String(error)}`);
+    const code = classifyStreamFailure(error);
+    this.logger.error(`[${traceId}] 스트리밍 실패(${code}): ${String(error)}`);
     await this.repository.updateMessageIfStreaming(assistantMessageId, 'FAILED');
     sse.send({
       eventType: 'error',
-      code: 'LLM_UNAVAILABLE',
-      message: ErrorCodes.LLM_UNAVAILABLE.message,
-      retryable: true,
+      code,
+      message: ErrorCodes[code].message,
+      retryable: RETRYABLE_STREAM_FAILURES.has(code),
       traceId,
     });
   }
