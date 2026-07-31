@@ -23,6 +23,17 @@ export const sourceDocuments = pgTable(
     publisher: text('publisher').notNull(),
     /** 목록이 "2024-07"처럼 일자 없이 주므로 날짜 타입으로 파싱하지 않고 원문을 보존한다 */
     releaseDate: text('release_date'),
+    /**
+     * 원본 목록이 준 레코드 수정 시각 — 개정 감지의 baseline이다 (docs/specs/26).
+     *
+     * **날짜로 파싱하지 않는다.** `"Jul 30, 2026 10:05:00 AM"`은 영문 로케일·타임존 미표기
+     * 형식이라 파싱하면 판정이 서버 로케일에 걸린다. 판정에 필요한 것은 동등 비교뿐이며,
+     * `release_date`를 문자열로 보존하는 것과 같은 이유다(§18).
+     *
+     * **본문을 받았을 때만 기록된다** — 본문을 못 받은 실패 행은 NULL로 남아 다음 스캔에서
+     * 다시 후보가 된다(기준 10).
+     */
+    sourceModifiedAt: text('source_modified_at'),
     sourceUrl: text('source_url').notNull(),
     /**
      * 응답 본문을 받았으면 그 내용이 무엇이든 sha256 (PDF든 HTML 에러 페이지든).

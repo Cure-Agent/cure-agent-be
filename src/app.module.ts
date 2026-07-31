@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './domain/auth/auth.module';
 import { ClinicianModule } from './domain/clinician/clinician.module';
@@ -17,7 +18,9 @@ import { appConfig } from './global/config/app.config';
 import { authConfig } from './global/config/auth.config';
 import { databaseConfig } from './global/config/database.config';
 import { oauthConfig } from './global/config/oauth.config';
+import { guidelineScanConfig } from './global/config/guideline-scan.config';
 import { redisConfig } from './global/config/redis.config';
+import { SchedulerModule } from './infrastructure/scheduler/scheduler.module';
 import { validateEnv } from './global/config/env.validation';
 import { ContextModule } from './global/context/context.module';
 import { DatabaseModule } from './global/database/database.module';
@@ -42,10 +45,13 @@ import { HealthModule } from './health/health.module';
         authConfig,
         oauthConfig,
         redisConfig,
+        guidelineScanConfig,
       ],
       validate: validateEnv,
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    // 크론 런타임 (docs/specs/26). 잡 등록 자체는 SchedulerModule이 설정을 보고 결정한다
+    ScheduleModule.forRoot(),
     ContextModule,
     ObservabilityModule,
     CryptoModule,
@@ -60,6 +66,8 @@ import { HealthModule } from './health/health.module';
     ConversationModule,
     PatientModule,
     ClinicalGuidanceModule,
+    // 개정 감지 크론 트리거 (docs/specs/26) — GuidelineModule 뒤에 온다
+    SchedulerModule,
   ],
   providers: [
     { provide: APP_PIPE, useFactory: buildGlobalValidationPipe },

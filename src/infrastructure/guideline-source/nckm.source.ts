@@ -103,6 +103,8 @@ export class NckmGuidelineSource implements GuidelineSourcePort {
       // 목록의 agency가 발행 주관기관이다
       publisher: row.agency ?? '',
       releaseDate: row.release_date ?? null,
+      // TODO(docs/specs/26): modify_date ?? add_date를 싣는다 — 스텁은 null이다
+      sourceModifiedAt: null,
       sourceUrl: `${this.config.baseUrl}${VIEW_PATH}?guide_idx=${externalId}&menu_idx=${MENU_IDX}`,
       fileName: row.guide_file,
     };

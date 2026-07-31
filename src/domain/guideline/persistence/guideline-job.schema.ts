@@ -29,6 +29,12 @@ export const guidelineJobStatus = pgEnum('guideline_job_status', [
   'FAILED',
 ]);
 
+/**
+ * 잡을 시작한 주체 (docs/specs/26). 컬럼명이 `trigger`가 아닌 이유는 예약어라서다.
+ * `SCHEDULE` 잡만 종결 시 알림이 나간다 — `MANUAL`은 사람이 스트림으로 지켜본다.
+ */
+export const guidelineJobTrigger = pgEnum('guideline_job_trigger', ['MANUAL', 'SCHEDULE']);
+
 export const pipelineRunStatus = pgEnum('pipeline_run_status', [
   'RUNNING',
   'SUCCEEDED',
@@ -63,9 +69,13 @@ export const guidelineJobs = pgTable(
   {
     id: text('id').primaryKey(), // ULID
     status: guidelineJobStatus('status').notNull().default('RUNNING'),
-    requestedBy: text('requested_by')
-      .notNull()
-      .references(() => clinicians.id),
+    /**
+     * 잡을 시작한 ADMIN. **크론이 만든 잡은 NULL이다** (docs/specs/26) — 시스템 clinician 행을
+     * 만들면 실존하지 않는 의료인이 §4.4 테넌시 스코프와 목록에 유령으로 섞인다.
+     * 주체가 없는 것이 사실이므로 NULL이 사실이고, 그 이유는 `triggeredBy`가 설명한다.
+     */
+    requestedBy: text('requested_by').references(() => clinicians.id),
+    triggeredBy: guidelineJobTrigger('triggered_by').notNull().default('MANUAL'),
     /** 잡 시작 시점에 정해져 도중에 변하지 않는다 — 러너가 원본 목록을 받은 직후 채운다 */
     total: integer('total').notNull().default(0),
     /** processed = succeeded + skipped + failed. RUNNING 실행은 세지 않는다 */
@@ -133,5 +143,6 @@ export const pipelineRuns = pgTable(
 export type GuidelineJobRow = typeof guidelineJobs.$inferSelect;
 export type PipelineRunRow = typeof pipelineRuns.$inferSelect;
 export type GuidelineJobStatus = (typeof guidelineJobStatus.enumValues)[number];
+export type GuidelineJobTrigger = (typeof guidelineJobTrigger.enumValues)[number];
 export type PipelineRunStatus = (typeof pipelineRunStatus.enumValues)[number];
 export type PipelineRunPhase = (typeof pipelineRunPhase.enumValues)[number];

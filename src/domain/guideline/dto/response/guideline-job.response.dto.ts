@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { GuidelineJobStatus } from '../../persistence/guideline-job.schema';
+import { GuidelineJobStatus, GuidelineJobTrigger } from '../../persistence/guideline-job.schema';
+
+export const GUIDELINE_JOB_TRIGGERS = ['MANUAL', 'SCHEDULE'] as const;
 
 export const GUIDELINE_JOB_STATUSES = [
   'RUNNING',
@@ -27,8 +29,18 @@ export class GuidelineJobResponseDto {
   })
   status!: GuidelineJobStatus;
 
-  @ApiProperty({ description: '잡을 시작한 ADMIN' })
-  requestedBy!: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '잡을 시작한 ADMIN. 크론이 만든 잡(triggeredBy=SCHEDULE)은 null이다',
+  })
+  requestedBy!: string | null;
+
+  @ApiProperty({
+    enum: GUIDELINE_JOB_TRIGGERS,
+    description: '잡을 시작한 주체 — 크론이 만들었으면 SCHEDULE (docs/specs/26)',
+  })
+  triggeredBy!: GuidelineJobTrigger;
 
   @ApiProperty({ description: '러너가 원본 목록을 받은 직후 채운다 — POST 응답 시점엔 0' })
   total!: number;

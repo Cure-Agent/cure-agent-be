@@ -64,7 +64,11 @@ export class GuidelineJobRepository {
    * 「제약으로 막는다」는 결정이 앱 코드의 판단으로 바뀐다. 호출측은
    * `isActiveGuidelineJobConflict`로 판정한다.
    */
-  async insert(row: Pick<GuidelineJobRow, 'id' | 'requestedBy'>): Promise<GuidelineJobRow> {
+  async insert(
+    row: Pick<GuidelineJobRow, 'id' | 'requestedBy'> &
+      // 크론이 만든 잡은 requestedBy가 null이고 triggeredBy가 SCHEDULE이다 (docs/specs/26)
+      Partial<Pick<GuidelineJobRow, 'triggeredBy'>>,
+  ): Promise<GuidelineJobRow> {
     const rows = await this.txManager.conn.insert(guidelineJobs).values(row).returning();
     return rows[0];
   }

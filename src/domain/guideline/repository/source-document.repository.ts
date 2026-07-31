@@ -21,6 +21,8 @@ export interface SourceDocumentInsert {
   status: SourceDocumentStatus;
   error: string | null;
   fetchedAt: Date;
+  /** 목록이 준 레코드 수정 시각 — 본문을 받았을 때만 채운다 (docs/specs/26 기준 8·10) */
+  sourceModifiedAt?: string | null;
 }
 
 /** 수집 추적 저장소 (docs/specs/18) — Drizzle 구현 단일 클래스 (§3) */
@@ -65,6 +67,20 @@ export class SourceDocumentRepository {
       .orderBy(desc(sourceDocuments.fetchedAt))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * **본문을 받은** 최신 행 — 개정 감지의 baseline 원천이다 (docs/specs/26 기준 2·6).
+   *
+   * `findLatestByExternalId`와 달리 `file_hash IS NOT NULL`로 좁힌다. 본문을 못 받은 실패 행은
+   * baseline을 갖지 않으므로, 그 행만 있는 문서는 「받아본 적 없음」으로 후보가 되어야 한다.
+   */
+  async findLatestFetchedByExternalId(
+    _sourceSystem: string,
+    _externalId: string,
+  ): Promise<SourceDocumentRow | null> {
+    // TODO(docs/specs/26): file_hash IS NOT NULL 최신 행 조회
+    return null;
   }
 
   async insert(row: SourceDocumentInsert): Promise<void> {
