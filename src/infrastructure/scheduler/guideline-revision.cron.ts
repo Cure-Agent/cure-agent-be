@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { guidelineScanConfig } from '../../global/config/guideline-scan.config';
 import { GuidelineRevisionScanService } from '../../domain/guideline/service/guideline-revision-scan.service';
 
@@ -29,6 +30,20 @@ export class GuidelineRevisionCron implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    // TODO(docs/specs/26): enabled일 때만 CronJob을 registry에 등록한다
+    if (!this.config.enabled) {
+      this.logger.log(
+        '개정 감지 크론을 등록하지 않는다 — GUIDELINE_REVISION_SCAN_ENABLED가 꺼져 있다',
+      );
+      return;
+    }
+
+    const job = new CronJob(this.config.cron, () => {
+      // scan()은 예외를 밖으로 던지지 않는다 — 크론 핸들러를 죽이지 않기 위해서다
+      void this.scan.scan();
+    });
+
+    this.registry.addCronJob(REVISION_SCAN_CRON_NAME, job);
+    job.start();
+    this.logger.log(`개정 감지 크론 등록: '${this.config.cron}' (프로세스 TZ 기준, 배포는 UTC)`);
   }
 }

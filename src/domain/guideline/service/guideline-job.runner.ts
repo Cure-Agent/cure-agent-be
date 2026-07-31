@@ -3,12 +3,15 @@ import { CLS_ID, ClsService } from 'nestjs-cls';
 import { ulid } from 'ulid';
 import { GuidelineJobResponseDto } from '../dto/response/guideline-job.response.dto';
 import { toGuidelineJob, toPipelineRun } from '../mapper/guideline-job.mapper';
+import { RealTimeAlertSender } from '../../../global/observability/real-time-alert.sender';
 import {
   GuidelineJobRow,
+  GuidelineJobStatus,
   PipelineRunRow,
   PipelineRunStatus,
 } from '../persistence/guideline-job.schema';
 import { GuidelineJobCounter, GuidelineJobRepository } from '../repository/guideline-job.repository';
+import { PipelineRunRepository } from '../repository/pipeline-run.repository';
 import { GuidelineJobEventBus } from '../sse/guideline-job-event.bus';
 import { GuidelineAcquisitionService } from './guideline-acquisition.service';
 import { GuidelinePipelineService } from './guideline-pipeline.service';
@@ -22,6 +25,14 @@ const COUNTER_OF: Partial<Record<PipelineRunStatus, GuidelineJobCounter>> = {
 
 /** 러너가 종료를 기다려주는 상한 — 배포 시 현재 문서를 마칠 시간을 준다 */
 const SHUTDOWN_GRACE_MS = 20_000;
+
+/** 크론 잡 결과 알림의 제목에 쓰는 종결 표현 (docs/specs/26) */
+const JOB_RESULT_LABEL: Partial<Record<GuidelineJobStatus, string>> = {
+  COMPLETED: '완료',
+  FAILED: '실패',
+  CANCELLED: '취소',
+  INTERRUPTED: '중단',
+};
 
 /**
  * 전건 파이프라인 인프로세스 러너 (docs/specs/22).
@@ -39,10 +50,13 @@ export class GuidelineJobRunner implements BeforeApplicationShutdown {
 
   constructor(
     private readonly jobs: GuidelineJobRepository,
+    private readonly runs: PipelineRunRepository,
     private readonly acquisition: GuidelineAcquisitionService,
     private readonly pipeline: GuidelinePipelineService,
     private readonly bus: GuidelineJobEventBus,
     private readonly cls: ClsService,
+    // 크론이 만든 잡의 결과 통보 (docs/specs/26) — 지켜보는 사람이 없는 잡이다
+    private readonly alerts: RealTimeAlertSender,
   ) {}
 
   /**
@@ -163,5 +177,40 @@ export class GuidelineJobRunner implements BeforeApplicationShutdown {
     }));
     const job = row ? toGuidelineJob(row) : null;
     if (job) this.bus.complete(job);
+    if (row) await this.notifyScheduledResult(row);
+  }
+
+  /**
+   * 크론이 만든 잡의 결과를 알린다 (docs/specs/26).
+   *
+   * **트리거는 잡의 「종결」이지 특정 status가 아니다** — 완료·실패·취소·중단 모두 나간다.
+   * `MANUAL` 잡은 사람이 SSE로 지켜보고 있으므로 조용하다(§22의 논거).
+   *
+   * 알림 실패가 잡 결과를 바꾸지 않는다 (§15의 fire-and-forget).
+   */
+  private async notifyScheduledResult(row: GuidelineJobRow): Promise<void> {
+    if (row.triggeredBy !== 'SCHEDULE') return;
+
+    try {
+      const runs = await this.runs.listByJobId(row.id);
+      // 알림만 보고 어느 문서를 봐야 하는지 알 수 있어야 한다 (기준 26)
+      const failures = runs
+        .filter((run) => run.status === 'FAILED')
+        .map((run) => `- ${run.externalId ?? '(식별자 없음)'}: ${run.errorCode ?? 'UNKNOWN'}`);
+
+      const detail = [
+        `jobId=${row.id}`,
+        `total=${row.total} succeeded=${row.succeeded} skipped=${row.skipped} failed=${row.failed}`,
+        ...(row.error ? [`사유: ${row.error}`] : []),
+        ...(failures.length > 0 ? ['실패한 문서:', ...failures] : []),
+      ].join('\n');
+
+      this.alerts.send({
+        title: `지침 개정 감지 잡 ${JOB_RESULT_LABEL[row.status] ?? row.status}`,
+        detail,
+      });
+    } catch (error) {
+      this.logger.warn(`잡 ${row.id} 결과 알림 실패: ${String(error)}`);
+    }
   }
 }

@@ -22,6 +22,10 @@ interface NckmRow {
   agency?: string;
   release_date?: string;
   guide_file?: string;
+  /** 레코드 수정 시각 — 개정 감지의 축 (docs/specs/26). 형식 "Jul 30, 2026 10:05:00 AM" */
+  modify_date?: string;
+  /** 최초 등록 시각. 한 번도 수정되지 않은 문서는 modify_date가 비어 있다 */
+  add_date?: string;
 }
 
 /**
@@ -103,8 +107,9 @@ export class NckmGuidelineSource implements GuidelineSourcePort {
       // 목록의 agency가 발행 주관기관이다
       publisher: row.agency ?? '',
       releaseDate: row.release_date ?? null,
-      // TODO(docs/specs/26): modify_date ?? add_date를 싣는다 — 스텁은 null이다
-      sourceModifiedAt: null,
+      // 수정된 적 없는 문서는 modify_date가 비어 있어 add_date가 그 자리를 대신한다.
+      // **문자열을 그대로 싣는다** — 로케일 의존 형식이라 파싱하면 판정이 서버 로케일에 걸린다
+      sourceModifiedAt: emptyToNull(row.modify_date) ?? emptyToNull(row.add_date),
       sourceUrl: `${this.config.baseUrl}${VIEW_PATH}?guide_idx=${externalId}&menu_idx=${MENU_IDX}`,
       fileName: row.guide_file,
     };
@@ -127,4 +132,10 @@ export class NckmGuidelineSource implements GuidelineSourcePort {
     const ms = this.config.requestIntervalMs;
     return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
   }
+}
+
+/** 목록은 미설정 필드를 빈 문자열로 준다 — 그것은 「값 없음」이지 baseline이 아니다 */
+function emptyToNull(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }

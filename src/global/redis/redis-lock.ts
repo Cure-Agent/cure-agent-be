@@ -1,6 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
+import { ulid } from 'ulid';
 import { REDIS } from './redis.token';
+
+/** 내가 건 락일 때만 지운다 — 대조와 삭제가 한 원자 단위여야 한다 */
+const RELEASE_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0
+`;
 
 /**
  * TTL 기반 분산 락 (docs/specs/26).
@@ -23,13 +32,29 @@ export class RedisLock {
    * `SET key token NX PX ttl` — 획득하면 해제용 토큰을, 실패하면 null을 돌려준다.
    * Redis 장애도 null이다(fail-closed): 호출자는 「락을 얻지 못했다」와 같이 다뤄야 한다.
    */
-  async acquire(_key: string, _ttlMs: number): Promise<string | null> {
-    // TODO(docs/specs/26): SET NX PX + 장애 시 null
-    return null;
+  async acquire(key: string, ttlMs: number): Promise<string | null> {
+    const token = ulid();
+    try {
+      const result = await this.client.set(key, token, 'PX', ttlMs, 'NX');
+      return result === 'OK' ? token : null;
+    } catch (error) {
+      // fail-closed — 못 얻은 것으로 다룬다. 스캔을 한 틱 거르면 다음 주기에 다시 온다
+      this.logger.warn(`락 획득 실패(${key}): ${String(error)}`);
+      return null;
+    }
   }
 
-  /** 토큰이 일치할 때만 해제한다 — 해제 실패는 삼킨다(TTL이 결국 푼다) */
-  async release(_key: string, _token: string): Promise<void> {
-    // TODO(docs/specs/26): 토큰 대조 후 DEL
+  /**
+   * 토큰이 일치할 때만 해제한다 — 해제 실패는 삼킨다(TTL이 결국 푼다).
+   *
+   * GET·DEL을 나눠 하면 그 사이에 TTL이 지나 **다른 실행이 잡은 락을 지울 수 있다.**
+   * Lua로 한 원자 단위에 묶는다.
+   */
+  async release(key: string, token: string): Promise<void> {
+    try {
+      await this.client.eval(RELEASE_SCRIPT, 1, key, token);
+    } catch (error) {
+      this.logger.warn(`락 해제 실패(${key}): ${String(error)}`);
+    }
   }
 }
