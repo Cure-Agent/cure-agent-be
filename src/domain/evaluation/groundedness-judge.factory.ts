@@ -4,8 +4,15 @@
  */
 import { FakeGroundednessJudge } from './fake-groundedness-judge';
 import { GroundednessJudge } from './groundedness-judge.port';
+import { OpenAiGroundednessJudge } from './openai-groundedness-judge';
 
-/** TODO(docs/specs/30 기준 8): 키가 있으면 OpenAiGroundednessJudge를 등록한다 */
-export function createGroundednessJudge(_env: NodeJS.ProcessEnv): GroundednessJudge {
-  return new FakeGroundednessJudge();
+export function createGroundednessJudge(env: NodeJS.ProcessEnv): GroundednessJudge {
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return new FakeGroundednessJudge();
+  // 심판 전용 env를 늘리지 않는다 — 필요해지면 그때 (docs/specs/30)
+  return new OpenAiGroundednessJudge({
+    apiKey,
+    model: env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini',
+    baseUrl: env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1',
+  });
 }
