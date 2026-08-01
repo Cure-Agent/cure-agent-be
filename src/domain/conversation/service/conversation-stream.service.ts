@@ -7,6 +7,7 @@ import { ServiceException } from '../../../global/common/exception/service.excep
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { TraceContext } from '../../../global/context/trace-context.service';
 import {
+  AbstainReason,
   MetricsService,
   RagAnswerOutcome,
   SseOutcome,
@@ -70,6 +71,16 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
   // 나머지(DB·영속화·예상 못한 결함)는 우리 쪽 문제다
   return 'INTERNAL_ERROR';
 }
+
+/**
+ * 기권 사유별 사용자 문구 (docs/specs/28 기준 5).
+ * FE가 reason을 그대로 표시하므로, 「코퍼스에 근거가 없다」와 「질문이 코퍼스 범위 밖으로
+ * 보인다」가 사용자에게 다르게 읽혀야 재질의를 유도할 수 있다.
+ */
+const ABSTAIN_REASON_MESSAGE: Record<AbstainReason, string> = {
+  no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
+  beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
+};
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
 interface GuidanceContext {
@@ -172,13 +183,28 @@ export class ConversationStreamService {
 
       sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
       const retrieved = await this.retrievalService.search(dto.content, dto.filters);
+
+      /**
+       * 기권 판정 (docs/specs/28) — **게이트는 top-1만 본다.** 통과하면 2~5위에 컷 밖 청크가
+       * 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28 실측 조사).
+       * 컷 기권의 근거는 노출하지 않는다 — 컷 밖 근거를 보여주면 「근거가 있는데 왜 기권?」이
+       * 되므로, 근거 0건 경로와 노출 규약을 맞춰 빈 evidence를 보낸다.
+       */
+      const abstainReason: AbstainReason | null =
+        retrieved.length === 0
+          ? 'no_candidates'
+          : retrieved[0].distance > this.retrievalService.distanceCutoff
+            ? 'beyond_cutoff'
+            : null;
+
       sse.send({
         eventType: 'retrieval.completed',
-        evidence: retrieved.map((row) => toEvidenceDetail(row)),
+        evidence: abstainReason ? [] : retrieved.map((row) => toEvidenceDetail(row)),
       });
 
-      if (retrieved.length === 0) {
+      if (abstainReason) {
         ragOutcome = 'abstained';
+        this.metrics.recordAbstain(abstainReason);
         await this.repository.updateMessage(assistantMessageId, {
           status: 'ABSTAINED',
           content: '',
@@ -187,7 +213,7 @@ export class ConversationStreamService {
         sse.send({
           eventType: 'answer.abstained',
           message,
-          reason: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
+          reason: ABSTAIN_REASON_MESSAGE[abstainReason],
           missingInformation: [],
         });
         return;

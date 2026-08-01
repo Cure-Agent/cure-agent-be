@@ -38,6 +38,12 @@ export interface RagEvalReport {
   recallAt5: number;
   mrrAt5: number;
   recallAt30: number;
+  /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
+  distanceCutoff: number;
+  /** 기권해야 하는 문항 중 top-1 > 컷으로 실제 기권되는 비율 (docs/specs/28 기준 8) */
+  abstainRecall: number;
+  /** 답해야 하는 문항 중 top-1 > 컷으로 억울하게 기권되는 비율 (docs/specs/28 기준 8) */
+  overAbstainRate: number;
   distances: DistanceDistribution[];
   failures: EvalFailure[];
 }
@@ -86,16 +92,22 @@ export class RagEvalService {
       labels.map((label) => [label.itemId, new Set(label.chunkIds)]),
     );
 
+    const cutoff = this.retrieval.distanceCutoff;
     const answerableDistances: number[] = [];
     const abstainDistances: number[] = [];
     const failures: EvalFailure[] = [];
     let hitAt5 = 0;
     let hitAtK = 0;
     let reciprocalRankSum = 0;
+    // 컷 기권 시뮬레이션 (docs/specs/28 기준 8) — 런타임 게이트와 같은 판정:
+    // 결과 0건 또는 top-1 > 컷이면 기권이다. 순위 지표는 이와 무관하게 계속 잰다(기준 9).
+    let abstainedAbstain = 0;
+    let abstainedAnswerable = 0;
 
     for (const item of answerable) {
       const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
       if (results.length > 0) answerableDistances.push(results[0].distance);
+      if (results.length === 0 || results[0].distance > cutoff) abstainedAnswerable += 1;
 
       const expected = expectedByItem.get(item.id) ?? new Set<string>();
       const zeroBased = results.findIndex((row) => expected.has(row.chunk.id));
@@ -117,6 +129,7 @@ export class RagEvalService {
     for (const item of abstain) {
       const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
       if (results.length > 0) abstainDistances.push(results[0].distance);
+      if (results.length === 0 || results[0].distance > cutoff) abstainedAbstain += 1;
     }
 
     const denominator = answerable.length || 1;
@@ -128,6 +141,9 @@ export class RagEvalService {
       recallAt5: hitAt5 / denominator,
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
+      distanceCutoff: cutoff,
+      abstainRecall: abstainedAbstain / (abstain.length || 1),
+      overAbstainRate: abstainedAnswerable / denominator,
       distances: [
         distributionOf('answerable', answerableDistances),
         distributionOf('abstain', abstainDistances),
