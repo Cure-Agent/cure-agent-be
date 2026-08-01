@@ -613,4 +613,44 @@ describe('Clinical guidance (e2e)', () => {
       success: false,
     });
   });
+
+  it('9. 새로고침 복구: 메시지 목록의 CLINICAL_GUIDANCE 답변에 guidanceId를 싣는다', async () => {
+    // 참고안은 SSE answer.completed로만 전달됐다 — 새로고침 후 GET messages 복구 경로(§8)에서
+    // 참고안 카드를 복원하려면 목록의 메시지가 guidanceId를 실어야 한다 (#180).
+    const patient = await createPatient();
+    const conversationId = await createConversation(
+      ownerCookie,
+      'PATIENT_GUIDANCE',
+      patient.id,
+    );
+    const completed = await streamCompleted(
+      ownerCookie,
+      conversationId,
+      '이 환자에게 적용할 임상 지침을 알려 주세요.',
+    );
+    const guidance = completed.guidance as GuidanceDto;
+
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/conversations/${conversationId}/messages`)
+      .set('Cookie', ownerCookie)
+      .expect(200);
+    expect(list.body).toMatchObject({ success: true });
+
+    const messages = list.body.data as Array<{
+      role: string;
+      answerKind?: string;
+      guidanceId?: string;
+    }>;
+    const assistantMessage = messages.find(
+      (message) => message.answerKind === 'CLINICAL_GUIDANCE',
+    );
+    expect(assistantMessage).toBeDefined();
+    // SSE로 받았던 참고안과 같은 id여야 GET /clinical-guidance/{id} 복원이 성립한다
+    expect(assistantMessage?.guidanceId).toBe(guidance.id);
+
+    // 참고안이 없는 메시지(사용자 질문)에는 실리지 않는다
+    const userMessage = messages.find((message) => message.role === 'USER');
+    expect(userMessage).toBeDefined();
+    expect(userMessage?.guidanceId).toBeUndefined();
+  });
 });
