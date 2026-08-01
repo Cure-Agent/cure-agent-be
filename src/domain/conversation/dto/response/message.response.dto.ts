@@ -27,6 +27,12 @@ export class MessageResponseDto {
   @ApiProperty({ enum: ANSWER_KINDS, required: false })
   answerKind?: (typeof ANSWER_KINDS)[number];
 
+  @ApiProperty({
+    required: false,
+    description: 'CLINICAL_GUIDANCE 답변의 임상 참고안 id — GET /clinical-guidance/{id}로 조회',
+  })
+  guidanceId?: string;
+
   @ApiProperty({ type: [AnswerCitationResponseDto] })
   citations!: AnswerCitationResponseDto[];
 

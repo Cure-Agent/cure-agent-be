@@ -46,6 +46,7 @@ export function toCitationDto(row: CitationDetailRow): AnswerCitationResponseDto
 export function toMessageDto(
   row: MessageRow,
   citations: AnswerCitationResponseDto[],
+  guidanceId?: string,
 ): MessageResponseDto {
   return {
     id: row.id,
@@ -53,6 +54,7 @@ export function toMessageDto(
     content: row.content,
     status: row.status,
     answerKind: row.answerKind ?? undefined,
+    guidanceId,
     citations,
     createdAt: row.createdAt.toISOString(),
   };

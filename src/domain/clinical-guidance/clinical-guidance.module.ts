@@ -7,6 +7,6 @@ import { ClinicalGuidanceService } from './service/clinical-guidance.service';
 @Module({
   controllers: [ClinicalGuidanceController],
   providers: [ClinicalGuidanceService, ClinicalGuidanceComposer, ClinicalGuidanceRepository],
-  exports: [ClinicalGuidanceComposer],
+  exports: [ClinicalGuidanceComposer, ClinicalGuidanceRepository],
 })
 export class ClinicalGuidanceModule {}
