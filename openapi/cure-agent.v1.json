@@ -1302,6 +1302,20 @@
             }
           },
           {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "desc면 최신부터 역방향 조회 — cursor는 이전 페이지 마지막 메시지보다 과거 경계",
+            "schema": {
+              "default": "asc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
             "name": "size",
             "required": false,
             "in": "query",
@@ -1341,7 +1355,7 @@
             }
           }
         },
-        "summary": "메시지 목록 (시간순, §8 복구 폴백)",
+        "summary": "메시지 목록 (기본 시간순, order=desc 시 최신부터 역방향 — §8 복구 폴백)",
         "tags": [
           "Conversation"
         ]
