@@ -70,6 +70,32 @@ export class RetrievalService {
     return this.config.distanceCutoff;
   }
 
+  /** 리랭크 설정 노출 (docs/specs/29) — distanceCutoff와 같은 이유로 단일 접근 경로를 유지한다 */
+  get rerankEnabled(): boolean {
+    return this.config.rerankEnabled;
+  }
+
+  get rerankCandidates(): number {
+    return this.config.rerankCandidates;
+  }
+
+  get rerankScoreCutoff(): number {
+    return this.config.rerankScoreCutoff;
+  }
+
+  /**
+   * 리랭크로 답한 GenerationRun의 정책 버전 (docs/specs/29 기준 7).
+   * 폴백·비활성은 기존 policyVersion(v2)을 그대로 기록한다 — GenerationRun에서
+   * 「이 답변이 실제로 리랭크를 탔는가」가 문자열로 구분된다.
+   */
+  rerankedPolicyVersion(rerankerModel: string): string {
+    return (
+      `cosine-top${this.config.rerankCandidates}-rerank-${rerankerModel}` +
+      `-cut${this.config.distanceCutoff}-score${this.config.rerankScoreCutoff}` +
+      `-v3/${this.embeddingProvider.model}`
+    );
+  }
+
   /**
    * 현재 좌표계로 **검색 가능한** 청크 수 (docs/specs/27).
    * 기준선을 나란히 비교할 때 코퍼스 규모가 같은지 확인하는 값이다 — 지표만 보면
