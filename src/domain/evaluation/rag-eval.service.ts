@@ -40,6 +40,13 @@ export interface RagEvalReport {
   recallAt30: number;
   /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
   distanceCutoff: number;
+  /** 리랭크 적용 지표 (docs/specs/29 기준 10) — 원 순위 지표(recallAt5 등)는 컷·리랭크 미적용 유지 */
+  rerankedRecallAt5: number;
+  rerankedMrrAt5: number;
+  /** 점수 게이트 포함 기권 지표 — 거리 게이트(§28)와 합산된 최종 판정 기준 */
+  rerankedAbstainRecall: number;
+  rerankedOverAbstainRate: number;
+  rerankScoreCutoff: number;
   /** 기권해야 하는 문항 중 top-1 > 컷으로 실제 기권되는 비율 (docs/specs/28 기준 8) */
   abstainRecall: number;
   /** 답해야 하는 문항 중 top-1 > 컷으로 억울하게 기권되는 비율 (docs/specs/28 기준 8) */
@@ -142,6 +149,12 @@ export class RagEvalService {
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
       distanceCutoff: cutoff,
+      // TODO(docs/specs/29 기준 10): 리랭크 적용 지표 — 포트로 재정렬해 산출한다
+      rerankedRecallAt5: Number.NaN,
+      rerankedMrrAt5: Number.NaN,
+      rerankedAbstainRecall: Number.NaN,
+      rerankedOverAbstainRate: Number.NaN,
+      rerankScoreCutoff: Number.NaN,
       abstainRecall: abstainedAbstain / (abstain.length || 1),
       overAbstainRate: abstainedAnswerable / denominator,
       distances: [

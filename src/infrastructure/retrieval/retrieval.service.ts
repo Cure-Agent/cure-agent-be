@@ -71,6 +71,15 @@ export class RetrievalService {
   }
 
   /**
+   * TODO(docs/specs/29 기준 7): 리랭크로 답한 GenerationRun의 정책 버전 —
+   * `cosine-top30-rerank-{리랭크모델}-cut{거리컷}-score{점수컷}-v3/{임베딩모델}`.
+   * 폴백은 기존 policyVersion(v2)을 그대로 기록한다.
+   */
+  rerankedPolicyVersion(_rerankerModel: string): string {
+    return 'TODO: docs/specs/29 미구현';
+  }
+
+  /**
    * 현재 좌표계로 **검색 가능한** 청크 수 (docs/specs/27).
    * 기준선을 나란히 비교할 때 코퍼스 규모가 같은지 확인하는 값이다 — 지표만 보면
    * 코퍼스가 늘어 어려워진 것과 검색이 나빠진 것을 구분할 수 없다.

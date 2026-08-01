@@ -35,6 +35,9 @@ export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
  */
 export type AbstainReason = 'no_candidates' | 'beyond_cutoff';
 
+/** 리랭크 1회의 결말 (docs/specs/29) — fallback 상시화는 이 축이 잡는다 */
+export type RerankOutcome = 'reranked' | 'fallback';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -226,6 +229,9 @@ export class MetricsService {
   recordAbstain(reason: AbstainReason): void {
     this.ragAbstains.inc({ reason });
   }
+
+  /** TODO(docs/specs/29 기준 6): rag_rerank_total{outcome} + rag_rerank_duration_seconds */
+  recordRerank(_outcome: RerankOutcome, _durationSec: number): void {}
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
     const labels = { method, route, status: String(status) };

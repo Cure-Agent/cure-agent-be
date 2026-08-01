@@ -12,6 +12,10 @@ import { registerAs } from '@nestjs/config';
  */
 export const retrievalConfig = registerAs('retrieval', () => ({
   distanceCutoff: parseCutoff(process.env.RETRIEVAL_DISTANCE_CUTOFF),
+  // TODO(docs/specs/29 기준 8·9): env 파싱 — 기본값 rerankEnabled true·candidates 30·scoreCutoff 6
+  rerankEnabled: false,
+  rerankCandidates: Number.NaN,
+  rerankScoreCutoff: Number.NaN,
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.42;
