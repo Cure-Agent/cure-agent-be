@@ -80,21 +80,36 @@ export class OpenAiReranker implements Reranker {
     const parsed = parseJson(content);
     if (!parsed) throw new RerankerError('리랭커 응답이 JSON이 아닙니다');
 
-    const ranking = Array.isArray(parsed.ranking) ? parsed.ranking : [];
-    const order = ranking
-      .filter(
-        (n): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= candidates.length,
-      )
-      .map((n) => candidates[n - 1].chunkId);
-    if (order.length === 0) throw new RerankerError('리랭커 응답에 유효한 순위가 없습니다');
-
+    const indices = normalizeRanking(parsed.ranking, candidates.length);
     const relevance = Number(parsed.top1Relevance);
     if (!Number.isFinite(relevance)) {
-      throw new RerankerError('리랭커 응답에 top1Relevance가 없습니다');
+      throw new RerankerError(`리랭커 응답에 top1Relevance가 없습니다: ${content.slice(0, 120)}`);
     }
 
-    return { order, top1Relevance: relevance };
+    // 빈 순위는 오류가 아니다 — 관련 후보가 없다는 판정({"ranking":[null],"top1Relevance":0},
+    // 2026-08-02 실운영 관측)이며, 점수 게이트가 기권으로 처리한다. 여기서 던지면 무관 질문이
+    // 기권 대신 코사인 폴백으로 «답변»되는 역방향 강등이 된다.
+    return { order: indices.map((n) => candidates[n - 1].chunkId), top1Relevance: relevance };
   }
+}
+
+/**
+ * 순위 배열 정규화 — 모델이 간헐적으로 번호를 문자열("3")로 내는 것을 실운영에서 확인했다
+ * (2026-08-02, 평가 실행 중 「유효한 순위 없음」 오류). 숫자로 강제 변환하고 범위 밖·중복을
+ * 거른다. 관대한 파싱이 안전한 이유: 잘못 걸러도 최악이 코사인 폴백(기준 6)이다.
+ */
+export function normalizeRanking(ranking: unknown, candidateCount: number): number[] {
+  if (!Array.isArray(ranking)) return [];
+  const seen = new Set<number>();
+  const indices: number[] = [];
+  for (const entry of ranking) {
+    const value = Number(entry);
+    if (!Number.isInteger(value) || value < 1 || value > candidateCount) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    indices.push(value);
+  }
+  return indices;
 }
 
 function extractContent(payload: Record<string, unknown> | null): string {
