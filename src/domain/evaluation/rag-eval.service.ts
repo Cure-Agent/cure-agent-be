@@ -4,8 +4,9 @@
  * Recall@5·MRR@5는 운영 지표이고 **Recall@30은 진단용**이다 — 후보군에 정답이 있는데 순서가
  * 나쁜 것(리랭커)과 애초에 못 찾는 것(하이브리드·모델 교체)을 가르는 축이기 때문이다.
  */
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { RetrievalService, RETRIEVAL_TOP_K } from '../../infrastructure/retrieval/retrieval.service';
+import { RERANKER, Reranker } from '../../infrastructure/retrieval/reranker.port';
 import { EvalKind, EvalSetItem } from './evalset.types';
 import { LabelResolver } from './label-resolver';
 
@@ -40,6 +41,13 @@ export interface RagEvalReport {
   recallAt30: number;
   /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
   distanceCutoff: number;
+  /** 리랭크 적용 지표 (docs/specs/29 기준 10) — 원 순위 지표(recallAt5 등)는 컷·리랭크 미적용 유지 */
+  rerankedRecallAt5: number;
+  rerankedMrrAt5: number;
+  /** 점수 게이트 포함 기권 지표 — 거리 게이트(§28)와 합산된 최종 판정 기준 */
+  rerankedAbstainRecall: number;
+  rerankedOverAbstainRate: number;
+  rerankScoreCutoff: number;
   /** 기권해야 하는 문항 중 top-1 > 컷으로 실제 기권되는 비율 (docs/specs/28 기준 8) */
   abstainRecall: number;
   /** 답해야 하는 문항 중 top-1 > 컷으로 억울하게 기권되는 비율 (docs/specs/28 기준 8) */
@@ -73,6 +81,7 @@ function distributionOf(kind: EvalKind, distances: number[]): DistanceDistributi
 export class RagEvalService {
   constructor(
     private readonly retrieval: RetrievalService,
+    @Inject(RERANKER) private readonly reranker: Reranker,
     private readonly labelResolver: LabelResolver,
   ) {}
 
@@ -93,6 +102,7 @@ export class RagEvalService {
     );
 
     const cutoff = this.retrieval.distanceCutoff;
+    const scoreCutoff = this.retrieval.rerankScoreCutoff;
     const answerableDistances: number[] = [];
     const abstainDistances: number[] = [];
     const failures: EvalFailure[] = [];
@@ -103,11 +113,34 @@ export class RagEvalService {
     // 결과 0건 또는 top-1 > 컷이면 기권이다. 순위 지표는 이와 무관하게 계속 잰다(기준 9).
     let abstainedAbstain = 0;
     let abstainedAnswerable = 0;
+    // 리랭크 시뮬레이션 (docs/specs/29 기준 10) — 런타임 3단 게이트와 같은 판정을 겹친다:
+    // 거리 기권 || 점수 기권이 최종 기권이다. 평가는 측정 도구이므로 enabled 플래그와
+    // 무관하게 항상 리랭크를 재서 「켰을 때 무엇이 달라지는가」에 답한다.
+    let rerankHitAt5 = 0;
+    let rerankReciprocalSum = 0;
+    let rerankAbstainedAbstain = 0;
+    let rerankAbstainedAnswerable = 0;
+
+    const rerankOf = async (
+      question: string,
+      results: Awaited<ReturnType<RetrievalService['search']>>,
+    ): Promise<{ orderedChunkIds: string[]; top1Relevance: number }> => {
+      const result = await this.reranker.rerank(
+        question,
+        results.map((row) => ({
+          chunkId: row.chunk.id,
+          content: row.chunk.content,
+          guidelineTitle: row.guideline.title,
+        })),
+      );
+      return { orderedChunkIds: result.order, top1Relevance: result.top1Relevance };
+    };
 
     for (const item of answerable) {
       const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
       if (results.length > 0) answerableDistances.push(results[0].distance);
-      if (results.length === 0 || results[0].distance > cutoff) abstainedAnswerable += 1;
+      const distanceAbstained = results.length === 0 || results[0].distance > cutoff;
+      if (distanceAbstained) abstainedAnswerable += 1;
 
       const expected = expectedByItem.get(item.id) ?? new Set<string>();
       const zeroBased = results.findIndex((row) => expected.has(row.chunk.id));
@@ -124,12 +157,34 @@ export class RagEvalService {
       if (rank === null || rank > RETRIEVAL_TOP_K) {
         failures.push({ itemId: item.id, question: item.question, foundAtRank: rank });
       }
+
+      if (results.length > 0) {
+        const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
+        if (distanceAbstained || top1Relevance < scoreCutoff) rerankAbstainedAnswerable += 1;
+        const rerankZeroBased = orderedChunkIds
+          .slice(0, RETRIEVAL_TOP_K)
+          .findIndex((chunkId) => expected.has(chunkId));
+        if (rerankZeroBased !== -1) {
+          rerankHitAt5 += 1;
+          rerankReciprocalSum += 1 / (rerankZeroBased + 1);
+        }
+      } else {
+        rerankAbstainedAnswerable += 1;
+      }
     }
 
     for (const item of abstain) {
       const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
       if (results.length > 0) abstainDistances.push(results[0].distance);
-      if (results.length === 0 || results[0].distance > cutoff) abstainedAbstain += 1;
+      const distanceAbstained = results.length === 0 || results[0].distance > cutoff;
+      if (distanceAbstained) abstainedAbstain += 1;
+
+      if (results.length > 0) {
+        const { top1Relevance } = await rerankOf(item.question, results);
+        if (distanceAbstained || top1Relevance < scoreCutoff) rerankAbstainedAbstain += 1;
+      } else {
+        rerankAbstainedAbstain += 1;
+      }
     }
 
     const denominator = answerable.length || 1;
@@ -142,6 +197,11 @@ export class RagEvalService {
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
       distanceCutoff: cutoff,
+      rerankedRecallAt5: rerankHitAt5 / denominator,
+      rerankedMrrAt5: rerankReciprocalSum / denominator,
+      rerankedAbstainRecall: rerankAbstainedAbstain / (abstain.length || 1),
+      rerankedOverAbstainRate: rerankAbstainedAnswerable / denominator,
+      rerankScoreCutoff: scoreCutoff,
       abstainRecall: abstainedAbstain / (abstain.length || 1),
       overAbstainRate: abstainedAnswerable / denominator,
       distances: [

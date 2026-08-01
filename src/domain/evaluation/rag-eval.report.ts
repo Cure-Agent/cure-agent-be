@@ -44,6 +44,23 @@ export function renderEvalReport(report: RagEvalReport): string {
   );
   lines.push('');
 
+  lines.push('## 리랭크 적용 지표 (docs/specs/29)');
+  lines.push('');
+  lines.push(`- 리랭크 점수 컷: ${report.rerankScoreCutoff}`);
+  lines.push('');
+  lines.push('| 지표 | 값 |');
+  lines.push('| --- | --- |');
+  lines.push(`| 리랭크 Recall@5 | ${ratio(report.rerankedRecallAt5)} |`);
+  lines.push(`| 리랭크 MRR@5 | ${ratio(report.rerankedMrrAt5)} |`);
+  lines.push(`| 리랭크 기권 재현율 | ${ratio(report.rerankedAbstainRecall)} |`);
+  lines.push(`| 리랭크 과잉 기권률 | ${ratio(report.rerankedOverAbstainRate)} |`);
+  lines.push('');
+  lines.push(
+    '리랭크 기권 지표는 거리 게이트(§28)와 점수 게이트를 합산한 최종 판정 기준이다. ' +
+      '아래 원 순위 지표와의 차이가 리랭커의 기여분이다.',
+  );
+  lines.push('');
+
   lines.push('## 기권 판정 (거리 컷 시뮬레이션)');
   lines.push('');
   lines.push('| 지표 | 값 |');

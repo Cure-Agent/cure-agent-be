@@ -35,6 +35,9 @@ export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
  */
 export type AbstainReason = 'no_candidates' | 'beyond_cutoff';
 
+/** 리랭크 1회의 결말 (docs/specs/29) — fallback 상시화는 이 축이 잡는다 */
+export type RerankOutcome = 'reranked' | 'fallback';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -191,6 +194,22 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** 리랭크 결말 (docs/specs/29) — fallback이 조용히 상시화되면 이 축이 잡는다 */
+  private readonly rerankTotal = new Counter({
+    name: 'rag_rerank_total',
+    help: '리랭크 시도 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
+  /** 리랭크 호출 소요 — 실측 p50 0.96s·p90 1.29s (docs/specs/29). TTFT 예산 감시용 */
+  private readonly rerankDuration = new Histogram({
+    name: 'rag_rerank_duration_seconds',
+    help: '리랭크 호출 소요 시간(초)',
+    buckets: [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10],
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -225,6 +244,11 @@ export class MetricsService {
 
   recordAbstain(reason: AbstainReason): void {
     this.ragAbstains.inc({ reason });
+  }
+
+  recordRerank(outcome: RerankOutcome, durationSec: number): void {
+    this.rerankTotal.inc({ outcome });
+    this.rerankDuration.observe(durationSec);
   }
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
