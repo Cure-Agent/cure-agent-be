@@ -132,18 +132,19 @@ export class ConversationRepository {
 
   async listMessages(
     conversationId: string,
-    filter: { afterId?: string; limit: number },
+    filter: { afterId?: string; beforeId?: string; order?: 'asc' | 'desc'; limit: number },
   ): Promise<MessageRow[]> {
     const conditions = [
       eq(messages.conversationId, conversationId),
       filter.afterId ? gt(messages.id, filter.afterId) : undefined,
+      filter.beforeId ? lt(messages.id, filter.beforeId) : undefined,
     ].filter((c) => c !== undefined);
 
     return this.txManager.conn
       .select()
       .from(messages)
       .where(and(...conditions))
-      .orderBy(asc(messages.id))
+      .orderBy(filter.order === 'desc' ? desc(messages.id) : asc(messages.id))
       .limit(filter.limit);
   }
 

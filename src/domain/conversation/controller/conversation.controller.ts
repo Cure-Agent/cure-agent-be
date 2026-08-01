@@ -91,7 +91,7 @@ export class ConversationController {
   }
 
   @Get(':conversationId/messages')
-  @ApiOperation({ summary: '메시지 목록 (시간순, §8 복구 폴백)' })
+  @ApiOperation({ summary: '메시지 목록 (기본 시간순, order=desc 시 최신부터 역방향 — §8 복구 폴백)' })
   @ApiPageResponse(MessageResponseDto)
   listMessages(
     @CurrentClinician() principal: ClinicianPrincipal,
