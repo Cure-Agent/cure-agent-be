@@ -70,13 +70,30 @@ export class RetrievalService {
     return this.config.distanceCutoff;
   }
 
+  /** 리랭크 설정 노출 (docs/specs/29) — distanceCutoff와 같은 이유로 단일 접근 경로를 유지한다 */
+  get rerankEnabled(): boolean {
+    return this.config.rerankEnabled;
+  }
+
+  get rerankCandidates(): number {
+    return this.config.rerankCandidates;
+  }
+
+  get rerankScoreCutoff(): number {
+    return this.config.rerankScoreCutoff;
+  }
+
   /**
-   * TODO(docs/specs/29 기준 7): 리랭크로 답한 GenerationRun의 정책 버전 —
-   * `cosine-top30-rerank-{리랭크모델}-cut{거리컷}-score{점수컷}-v3/{임베딩모델}`.
-   * 폴백은 기존 policyVersion(v2)을 그대로 기록한다.
+   * 리랭크로 답한 GenerationRun의 정책 버전 (docs/specs/29 기준 7).
+   * 폴백·비활성은 기존 policyVersion(v2)을 그대로 기록한다 — GenerationRun에서
+   * 「이 답변이 실제로 리랭크를 탔는가」가 문자열로 구분된다.
    */
-  rerankedPolicyVersion(_rerankerModel: string): string {
-    return 'TODO: docs/specs/29 미구현';
+  rerankedPolicyVersion(rerankerModel: string): string {
+    return (
+      `cosine-top${this.config.rerankCandidates}-rerank-${rerankerModel}` +
+      `-cut${this.config.distanceCutoff}-score${this.config.rerankScoreCutoff}` +
+      `-v3/${this.embeddingProvider.model}`
+    );
   }
 
   /**

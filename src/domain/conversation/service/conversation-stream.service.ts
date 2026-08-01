@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { ulid } from 'ulid';
 import { monotonicUlid } from '../../../global/common/id/monotonic-ulid';
@@ -20,9 +20,11 @@ import {
 } from '../../../infrastructure/llm/llm-provider.port';
 import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
 import {
+  RETRIEVAL_TOP_K,
   RetrievalService,
   RetrievedEvidence,
 } from '../../../infrastructure/retrieval/retrieval.service';
+import { RERANKER, Reranker } from '../../../infrastructure/retrieval/reranker.port';
 import { ClinicalGuidanceResponseDto } from '../../clinical-guidance/dto/response/clinical-guidance.response.dto';
 import { ClinicalGuidanceComposer } from '../../clinical-guidance/service/clinical-guidance-composer.service';
 import { toEvidenceDetail } from '../../guideline/mapper/guideline.mapper';
@@ -100,6 +102,7 @@ export class ConversationStreamService {
   constructor(
     private readonly repository: ConversationRepository,
     private readonly retrievalService: RetrievalService,
+    @Inject(RERANKER) private readonly reranker: Reranker,
     private readonly llmGateway: LlmGateway,
     private readonly txManager: TransactionManager,
     private readonly traceContext: TraceContext,
@@ -182,24 +185,74 @@ export class ConversationStreamService {
       });
 
       sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
-      const retrieved = await this.retrievalService.search(dto.content, dto.filters);
+      // 리랭크가 켜져 있으면 후보를 넓게 연다(K=30) — 순서는 리랭커가 다시 세운다 (docs/specs/29)
+      const rerankActive = this.retrievalService.rerankEnabled;
+      const retrieved = rerankActive
+        ? await this.retrievalService.search(
+            dto.content,
+            dto.filters,
+            this.retrievalService.rerankCandidates,
+          )
+        : await this.retrievalService.search(dto.content, dto.filters);
 
       /**
-       * 기권 판정 (docs/specs/28) — **게이트는 top-1만 본다.** 통과하면 2~5위에 컷 밖 청크가
+       * 게이트 ① 거리 (docs/specs/28) — **top-1만 본다.** 통과하면 2~5위에 컷 밖 청크가
        * 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28 실측 조사).
-       * 컷 기권의 근거는 노출하지 않는다 — 컷 밖 근거를 보여주면 「근거가 있는데 왜 기권?」이
-       * 되므로, 근거 0건 경로와 노출 규약을 맞춰 빈 evidence를 보낸다.
+       * 거리 기권이면 리랭커는 호출되지 않는다 — 확실히 먼 질문에 리랭크 비용을 쓰지 않는다.
        */
-      const abstainReason: AbstainReason | null =
+      let abstainReason: AbstainReason | null =
         retrieved.length === 0
           ? 'no_candidates'
           : retrieved[0].distance > this.retrievalService.distanceCutoff
             ? 'beyond_cutoff'
             : null;
 
+      /**
+       * 게이트 ② 리랭크 → ③ 점수 (docs/specs/29). 실패는 코사인 순위 폴백이다 —
+       * 리랭커는 품질 향상 계층이지 가용성 의존성이 아니다. 점수 기권은 거리 기권과
+       * 같은 사유(beyond_cutoff)로 통합한다: 사용자에게는 「관련 근거를 찾지 못했다」는
+       * 같은 사실이고, 내부 원인은 로그가 구분한다.
+       */
+      let evidenceRows = retrieved.slice(0, RETRIEVAL_TOP_K);
+      let retrievalPolicyVersion = this.retrievalService.policyVersion;
+      if (!abstainReason && rerankActive) {
+        const rerankStartedAt = process.hrtime.bigint();
+        const elapsedSec = (): number =>
+          Number(process.hrtime.bigint() - rerankStartedAt) / 1e9;
+        try {
+          const result = await this.reranker.rerank(
+            dto.content,
+            retrieved.map((row) => ({
+              chunkId: row.chunk.id,
+              content: row.chunk.content,
+              guidelineTitle: row.guideline.title,
+            })),
+          );
+          this.metrics.recordRerank('reranked', elapsedSec());
+          if (result.top1Relevance < this.retrievalService.rerankScoreCutoff) {
+            abstainReason = 'beyond_cutoff';
+          } else {
+            const byChunkId = new Map(retrieved.map((row) => [row.chunk.id, row]));
+            const reranked = result.order
+              .map((chunkId) => byChunkId.get(chunkId))
+              .filter((row): row is RetrievedEvidence => row !== undefined)
+              .slice(0, RETRIEVAL_TOP_K);
+            if (reranked.length > 0) {
+              evidenceRows = reranked;
+              retrievalPolicyVersion = this.retrievalService.rerankedPolicyVersion(
+                this.reranker.model,
+              );
+            }
+          }
+        } catch (error) {
+          this.metrics.recordRerank('fallback', elapsedSec());
+          this.logger.warn(`[${traceId}] 리랭크 실패 — 코사인 순위 폴백: ${String(error)}`);
+        }
+      }
+
       sse.send({
         eventType: 'retrieval.completed',
-        evidence: abstainReason ? [] : retrieved.map((row) => toEvidenceDetail(row)),
+        evidence: abstainReason ? [] : evidenceRows.map((row) => toEvidenceDetail(row)),
       });
 
       if (abstainReason) {
@@ -240,7 +293,8 @@ export class ConversationStreamService {
       await this.generateAnswer({
         sse,
         principal,
-        retrieved,
+        retrieved: evidenceRows,
+        retrievalPolicyVersion,
         question,
         assistantMessageId,
         clientSignal,
@@ -264,6 +318,8 @@ export class ConversationStreamService {
     sse: SseStream;
     principal: ClinicianPrincipal;
     retrieved: RetrievedEvidence[];
+    /** 이 답변이 실제로 탄 검색 정책 — 리랭크 성공 v3, 폴백·비활성 v2 (docs/specs/29 기준 7) */
+    retrievalPolicyVersion: string;
     question: string;
     assistantMessageId: string;
     clientSignal: AbortSignal;
@@ -326,7 +382,7 @@ export class ConversationStreamService {
         provider: outcome.provider,
         model: outcome.model ?? MODEL_LABEL,
         promptVersion: PROMPT_VERSION,
-        retrievalPolicyVersion: this.retrievalService.policyVersion,
+        retrievalPolicyVersion: args.retrievalPolicyVersion,
         latencyMs: outcome.latencyMs,
         tokenUsage: {
           inputTokens: estimateTokens(question),
