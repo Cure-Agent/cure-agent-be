@@ -29,6 +29,12 @@ export type RetrievalStage = 'embed' | 'vector_search';
  */
 export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
 
+/**
+ * 기권의 사유 (docs/specs/28) — abstain 급등이 「코퍼스 사고(no_candidates)인가,
+ * 범위 밖 질문 유입(beyond_cutoff)인가」를 이 축이 가른다.
+ */
+export type AbstainReason = 'no_candidates' | 'beyond_cutoff';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -203,6 +209,9 @@ export class MetricsService {
   recordAnswerOutcome(outcome: RagAnswerOutcome): void {
     this.ragAnswers.inc({ outcome });
   }
+
+  /** TODO(docs/specs/28 기준 4): 기권 사유별 카운트 — rag_abstains_total{reason} */
+  recordAbstain(_reason: AbstainReason): void {}
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
     const labels = { method, route, status: String(status) };

@@ -38,6 +38,12 @@ export interface RagEvalReport {
   recallAt5: number;
   mrrAt5: number;
   recallAt30: number;
+  /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
+  distanceCutoff: number;
+  /** 기권해야 하는 문항 중 top-1 > 컷으로 실제 기권되는 비율 (docs/specs/28 기준 8) */
+  abstainRecall: number;
+  /** 답해야 하는 문항 중 top-1 > 컷으로 억울하게 기권되는 비율 (docs/specs/28 기준 8) */
+  overAbstainRate: number;
   distances: DistanceDistribution[];
   failures: EvalFailure[];
 }
@@ -128,6 +134,10 @@ export class RagEvalService {
       recallAt5: hitAt5 / denominator,
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
+      // TODO(docs/specs/28 기준 8): 컷 기반 기권 지표 — 순위 지표는 컷 미적용 유지(기준 9)
+      distanceCutoff: Number.NaN,
+      abstainRecall: Number.NaN,
+      overAbstainRate: Number.NaN,
       distances: [
         distributionOf('answerable', answerableDistances),
         distributionOf('abstain', abstainDistances),
