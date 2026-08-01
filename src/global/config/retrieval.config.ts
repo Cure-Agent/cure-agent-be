@@ -14,7 +14,11 @@ export const retrievalConfig = registerAs('retrieval', () => ({
   distanceCutoff: parseCutoff(process.env.RETRIEVAL_DISTANCE_CUTOFF),
 }));
 
-/** TODO(docs/specs/28 기준 7): 미지정·빈 값은 코드 기본값 0.42로 (compose 빈 통과 규약) */
-function parseCutoff(_raw: string | undefined): number {
-  return Number.NaN;
+const DEFAULT_DISTANCE_CUTOFF = 0.42;
+
+/** 미지정·빈 값·수가 아닌 값은 전부 코드 기본값으로 떨어진다 (compose 빈 통과 규약) */
+function parseCutoff(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_DISTANCE_CUTOFF;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_DISTANCE_CUTOFF;
 }

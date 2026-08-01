@@ -178,6 +178,19 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 기권 사유별 카운트 (docs/specs/28).
+   * `rag_answers_total{outcome="abstained"}`의 분해 축이다 — 라벨을 그 메트릭에 더하면
+   * answered 시계열까지 빈 라벨이 번지므로 별도 카운터로 둔다. abstain 급등 시
+   * 「코퍼스 사고(no_candidates)인가, 범위 밖 질문 유입(beyond_cutoff)인가」가 여기서 갈린다.
+   */
+  private readonly ragAbstains = new Counter({
+    name: 'rag_abstains_total',
+    help: '기권 사유별 수',
+    labelNames: ['reason'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -210,8 +223,9 @@ export class MetricsService {
     this.ragAnswers.inc({ outcome });
   }
 
-  /** TODO(docs/specs/28 기준 4): 기권 사유별 카운트 — rag_abstains_total{reason} */
-  recordAbstain(_reason: AbstainReason): void {}
+  recordAbstain(reason: AbstainReason): void {
+    this.ragAbstains.inc({ reason });
+  }
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
     const labels = { method, route, status: String(status) };

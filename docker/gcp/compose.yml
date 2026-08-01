@@ -87,6 +87,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-}
       LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-}
+      RETRIEVAL_DISTANCE_CUTOFF: ${RETRIEVAL_DISTANCE_CUTOFF:-}
     depends_on:
       postgres:
         condition: service_healthy
