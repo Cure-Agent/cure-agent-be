@@ -124,10 +124,14 @@ export class ConversationService {
     if (!conversation) throw new ServiceException('NOT_FOUND');
 
     const size = query.size ?? DEFAULT_MESSAGE_SIZE;
-    const afterId = query.cursor ? decodeCursor<IdCursor>(query.cursor).id : undefined;
+    const order = query.order ?? 'asc';
+    const cursorId = query.cursor ? decodeCursor<IdCursor>(query.cursor).id : undefined;
 
+    // desc: 최신부터 역방향 — cursor는 "이 id보다 과거" 경계 (채팅 위로 무한 스크롤용)
     const rows = await this.repository.listMessages(conversationId, {
-      afterId,
+      afterId: order === 'asc' ? cursorId : undefined,
+      beforeId: order === 'desc' ? cursorId : undefined,
+      order,
       limit: size + 1,
     });
     const hasNext = rows.length > size;

@@ -284,6 +284,26 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     expect(paged.body.page.hasNext).toBe(true);
   });
 
+  it('기준 7-1: GET messages order=desc — 최신부터 역방향 커서 (채팅 위로 무한 스크롤)', async () => {
+    const page1 = await request(server())
+      .get(`/api/v1/conversations/${convId}/messages`)
+      .query({ order: 'desc', size: 1 })
+      .set('Cookie', cookieA)
+      .expect(200);
+    expect(page1.body.data).toHaveLength(1);
+    expect(page1.body.data[0]).toMatchObject({ id: assistantMessageId, role: 'ASSISTANT' });
+    expect(page1.body.page.hasNext).toBe(true);
+
+    const page2 = await request(server())
+      .get(`/api/v1/conversations/${convId}/messages`)
+      .query({ order: 'desc', size: 1, cursor: page1.body.page.nextCursor })
+      .set('Cookie', cookieA)
+      .expect(200);
+    expect(page2.body.data).toHaveLength(1);
+    expect(page2.body.data[0]).toMatchObject({ role: 'USER', content: QUESTION });
+    expect(page2.body.page.hasNext).toBe(false);
+  });
+
   it('기준 2: GET /conversations 본인 것만 + 커서', async () => {
     const listA = await request(server())
       .get('/api/v1/conversations')
