@@ -12,16 +12,16 @@ describe('spec 28 기준 7: 검색 거리 임계값 env 기본값 규약', () =>
     }
   });
 
-  it('기준 7a: RETRIEVAL_DISTANCE_CUTOFF가 미지정이면 코드 기본값 0.42를 쓴다', () => {
+  it('기준 7a: RETRIEVAL_DISTANCE_CUTOFF가 미지정이면 코드 기본값 0.48을 쓴다', () => {
     delete process.env.RETRIEVAL_DISTANCE_CUTOFF;
 
-    expect(retrievalConfig().distanceCutoff).toBe(0.42);
+    expect(retrievalConfig().distanceCutoff).toBe(0.48);
   });
 
-  it("기준 7b: RETRIEVAL_DISTANCE_CUTOFF가 빈 문자열이면 코드 기본값 0.42를 쓴다", () => {
+  it("기준 7b: RETRIEVAL_DISTANCE_CUTOFF가 빈 문자열이면 코드 기본값 0.48을 쓴다", () => {
     process.env.RETRIEVAL_DISTANCE_CUTOFF = '';
 
-    expect(retrievalConfig().distanceCutoff).toBe(0.42);
+    expect(retrievalConfig().distanceCutoff).toBe(0.48);
   });
 
   it("기준 7c: RETRIEVAL_DISTANCE_CUTOFF가 '0.5'면 숫자 0.5를 전달한다", () => {
