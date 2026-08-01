@@ -20,6 +20,7 @@ import {
   toMessageDto,
 } from '../mapper/conversation.mapper';
 import { ConversationRepository } from '../repository/conversation.repository';
+import { ClinicalGuidanceRepository } from '../../clinical-guidance/repository/clinical-guidance.repository';
 
 const DEFAULT_SIZE = 20;
 const DEFAULT_MESSAGE_SIZE = 50;
@@ -34,6 +35,7 @@ export class ConversationService {
   constructor(
     private readonly repository: ConversationRepository,
     private readonly patientService: PatientService,
+    private readonly guidanceRepository: ClinicalGuidanceRepository,
   ) {}
 
   async create(
@@ -139,8 +141,19 @@ export class ConversationService {
       citationsByMessage.set(row.citation.messageId, list);
     }
 
+    // CLINICAL_GUIDANCE 답변은 새로고침 후에도 참고안 카드를 복원할 수 있도록 guidanceId를 실어준다
+    const guidanceMessageIds = page
+      .filter((m) => m.answerKind === 'CLINICAL_GUIDANCE')
+      .map((m) => m.id);
+    const guidanceIdByMessage = await this.guidanceRepository.findIdsByMessageIds(
+      { clinicId: principal.clinicId },
+      guidanceMessageIds,
+    );
+
     return PageResult.of(
-      page.map((row) => toMessageDto(row, citationsByMessage.get(row.id) ?? [])),
+      page.map((row) =>
+        toMessageDto(row, citationsByMessage.get(row.id) ?? [], guidanceIdByMessage.get(row.id)),
+      ),
       {
         size,
         hasNext,
