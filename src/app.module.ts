@@ -21,6 +21,7 @@ import { databaseConfig } from './global/config/database.config';
 import { oauthConfig } from './global/config/oauth.config';
 import { guidelineScanConfig } from './global/config/guideline-scan.config';
 import { redisConfig } from './global/config/redis.config';
+import { retrievalConfig } from './global/config/retrieval.config';
 import { SchedulerModule } from './infrastructure/scheduler/scheduler.module';
 import { validateEnv } from './global/config/env.validation';
 import { ContextModule } from './global/context/context.module';
@@ -47,6 +48,7 @@ import { HealthModule } from './health/health.module';
         oauthConfig,
         redisConfig,
         guidelineScanConfig,
+        retrievalConfig,
       ],
       validate: validateEnv,
     }),

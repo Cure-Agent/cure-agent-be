@@ -27,6 +27,7 @@ export function renderEvalReport(report: RagEvalReport): string {
   lines.push(`- retrievalPolicyVersion: \`${report.retrievalPolicyVersion}\``);
   lines.push(`- 검색 가능한 청크: ${report.corpusChunkCount}`);
   lines.push(`- 문항: answerable ${report.answerableCount} / abstain ${report.abstainCount}`);
+  lines.push(`- 거리 임계값: ${report.distanceCutoff}`);
   lines.push('');
 
   lines.push('## 지표');
@@ -40,6 +41,19 @@ export function renderEvalReport(report: RagEvalReport): string {
   lines.push(
     'Recall@30이 높은데 Recall@5가 낮으면 후보군엔 있고 순서가 나쁜 것이다(리랭커). ' +
       '둘 다 낮으면 애초에 못 찾는 것이다(하이브리드·임베딩 교체).',
+  );
+  lines.push('');
+
+  lines.push('## 기권 판정 (거리 컷 시뮬레이션)');
+  lines.push('');
+  lines.push('| 지표 | 값 |');
+  lines.push('| --- | --- |');
+  lines.push(`| 기권 재현율 | ${ratio(report.abstainRecall)} |`);
+  lines.push(`| 과잉 기권률 | ${ratio(report.overAbstainRate)} |`);
+  lines.push('');
+  lines.push(
+    '기권 재현율은 범위 밖 문항이 실제로 기권되는 비율, 과잉 기권률은 답해야 하는 문항이 ' +
+      '억울하게 기권되는 비율이다. 순위 지표는 컷과 무관하게 측정된다.',
   );
   lines.push('');
 

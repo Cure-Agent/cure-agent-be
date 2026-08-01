@@ -10,6 +10,8 @@ import {
   guidelineVersions,
   guidelines,
 } from '../../domain/guideline/persistence/guideline.schema';
+import { ConfigType } from '@nestjs/config';
+import { retrievalConfig } from '../../global/config/retrieval.config';
 import { TransactionManager } from '../../global/database/transaction-manager';
 import { MetricsService } from '../../global/observability/metrics/metrics.service';
 import { EMBEDDING_PROVIDER, EmbeddingProvider } from '../embedding/embedding-provider.port';
@@ -19,8 +21,6 @@ function elapsedSeconds(startedAt: bigint): number {
   return Number(process.hrtime.bigint() - startedAt) / 1e9;
 }
 
-/** 검색 정책 버전 — GenerationRun 재현성 기록용 (architecture.md §5.7, §9) */
-export const RETRIEVAL_POLICY_VERSION = 'cosine-exact-top5-v1';
 export const RETRIEVAL_TOP_K = 5;
 
 export interface RetrievalFilters {
@@ -51,13 +51,23 @@ export class RetrievalService {
     private readonly txManager: TransactionManager,
     @Inject(EMBEDDING_PROVIDER) private readonly embeddingProvider: EmbeddingProvider,
     private readonly metrics: MetricsService,
+    @Inject(retrievalConfig.KEY)
+    private readonly config: ConfigType<typeof retrievalConfig>,
   ) {}
 
   /**
-   * GenerationRun 기록용 — 검색 결과는 임베딩 모델에 종속되므로 정책 버전에 모델을 포함한다 (docs/specs/14).
+   * GenerationRun 재현성 기록용 (architecture.md §5.7, §9).
+   * 검색 결과는 임베딩 모델에 종속되므로 모델을 포함하고(docs/specs/14), 기권 게이트가 정책의
+   * 일부가 되면서 **실사용 컷 값**도 포함한다(docs/specs/28) — env로 컷을 바꾼 운영 기록도
+   * 이 문자열에서 구분된다.
    */
   get policyVersion(): string {
-    return `${RETRIEVAL_POLICY_VERSION}/${this.embeddingProvider.model}`;
+    return `cosine-top5-cut${this.config.distanceCutoff}-v2/${this.embeddingProvider.model}`;
+  }
+
+  /** 기권 게이트가 소비하는 임계값 — 판정 자체는 대화 정책이라 conversation-stream이 소유한다 */
+  get distanceCutoff(): number {
+    return this.config.distanceCutoff;
   }
 
   /**

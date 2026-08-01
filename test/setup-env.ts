@@ -9,6 +9,10 @@ process.env.ALERT_WEBHOOK_URL = '';
 // 개발 머신 셸의 실키가 새어들어와 테스트가 외부 API를 때리는 것을 차단한다.
 process.env.OPENAI_API_KEY = '';
 process.env.ANTHROPIC_API_KEY = '';
+// 거리 게이트 중립화 (docs/specs/28). fake 임베딩은 텍스트 간 상관이 없어 코사인 거리가
+// ~1.0에 몰리므로, 실 임베딩 좌표계 실측으로 정한 기본 컷(0.42)을 그대로 두면 e2e의 모든
+// 질문이 기권된다. 게이트 동작 자체는 spec 28 스위트가 provider 오버라이드로 검증한다.
+process.env.RETRIEVAL_DISTANCE_CUTOFF = '2';
 // DB·Redis가 필요한 스펙(auth.e2e)은 Testcontainers 기동 후 실제 URL로 덮어쓴다.
 process.env.DATABASE_URL = 'postgres://placeholder:placeholder@localhost:5/placeholder';
 process.env.REDIS_URL = 'redis://localhost:6390';

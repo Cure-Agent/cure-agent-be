@@ -542,8 +542,9 @@ describe('spec 27: RAG 평가 기반', () => {
         .evaluate(evaluationItems);
       const markdown = renderEvalReport(report);
 
+      // spec 28에서 정책 버전이 실사용 컷을 포함한 v2로 범프됐다 — 컷 2는 setup-env의 중립값
       expect(report.retrievalPolicyVersion).toBe(
-        'cosine-exact-top5-v1/fake-embedding-v1',
+        'cosine-top5-cut2-v2/fake-embedding-v1',
       );
       expect(markdown).toContain('retrievalPolicyVersion');
       expect(markdown).toContain(report.retrievalPolicyVersion);
