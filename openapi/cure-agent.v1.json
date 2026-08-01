@@ -3005,6 +3005,10 @@
               "CLINICAL_GUIDANCE"
             ]
           },
+          "guidanceId": {
+            "type": "string",
+            "description": "CLINICAL_GUIDANCE 답변의 임상 참고안 id — GET /clinical-guidance/{id}로 조회"
+          },
           "citations": {
             "type": "array",
             "items": {
