@@ -1,14 +1,16 @@
 import { registerAs } from '@nestjs/config';
 
 /**
- * 검색 거리 임계값 설정 (docs/specs/28).
+ * 검색 거리 임계값 설정 (docs/specs/28, 기본값 개정 2026-08-02).
  *
- * **기본값 0.42는 이 파일이 단독으로 소유한다** — compose는 `${VAR:-}`로 빈 값을 통과시킬 뿐이다.
+ * **기본값은 이 파일이 단독으로 소유한다** — compose는 `${VAR:-}`로 빈 값을 통과시킬 뿐이다.
  * 두 곳이 기본값을 가지면 코드 상향이 조용히 무효가 된다(#156 실증: LLM_MAX_OUTPUT_TOKENS).
  *
- * 0.42인 근거는 spec 28 실측이다: 프로덕션 74문항 raw 거리 스윕에서 **정답 손실 0이 증명된
- * 유일한 유효값**(기권 재현 9/15). answerable max(0.4167)와의 여유가 0.0033뿐이라 표본 밖
- * 추상 질문이 넘을 수 있다 — 그래서 env 조정 가능이 필수이고, 리랭커 후 재측정이 교정 지점이다.
+ * 0.48인 근거는 paraphrase 실측(docs/rag-eval/2026-08-02-*)이다. spec 28의 0.42는 긴 임상
+ * 문장 59문항에서 손실 0이었지만 max(0.4167)와 여유가 0.0033뿐이었고, 축약 문체에서
+ * answerable 4/59가 컷을 넘어 리랭커에 닿기 전에 기권됐다(축약 max 0.4358). 0.48은 두 문체
+ * 합산 118문항 손실 0 + 여유 0.044이며, abstain 27%는 여전히 거리에서 선컷돼 리랭크 비용을
+ * 아낀다. 기권 재현은 리랭크 점수 게이트가 담당한다(docs/specs/29, 실측 0.933).
  */
 export const retrievalConfig = registerAs('retrieval', () => ({
   distanceCutoff: parseCutoff(process.env.RETRIEVAL_DISTANCE_CUTOFF),
@@ -22,7 +24,7 @@ export const retrievalConfig = registerAs('retrieval', () => ({
   rerankScoreCutoff: parsePositive(process.env.RETRIEVAL_RERANK_SCORE_CUTOFF, 6),
 }));
 
-const DEFAULT_DISTANCE_CUTOFF = 0.42;
+const DEFAULT_DISTANCE_CUTOFF = 0.48;
 
 /** 미지정·빈 값·수가 아닌 값은 전부 코드 기본값으로 떨어진다 (compose 빈 통과 규약) */
 function parseCutoff(raw: string | undefined): number {
