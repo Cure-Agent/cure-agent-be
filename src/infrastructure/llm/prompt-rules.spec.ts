@@ -1,6 +1,6 @@
 /**
- * qa-v3에서 추가된 프롬프트 규칙.
- * 두 규칙 모두 실측으로 확인된 결함을 막는다 — 모델을 바꿔도 유지되어야 한다.
+ * qa-v3·qa-v4에서 추가된 프롬프트 규칙.
+ * 전부 실측으로 확인된 결함을 막는다 — 모델을 바꿔도 유지되어야 한다.
  */
 import { PROMPT_VERSION, buildPrompt } from './prompt-builder';
 import type { LlmStreamRequest } from './llm-provider.port';
@@ -17,7 +17,7 @@ const request: LlmStreamRequest = {
   ],
 };
 
-describe('프롬프트 규칙 (qa-v3)', () => {
+describe('프롬프트 규칙 (qa-v3·qa-v4)', () => {
   const { system } = buildPrompt(request);
 
   it('무관한 근거에 마커를 달지 말라고 지시한다', () => {
@@ -32,8 +32,18 @@ describe('프롬프트 규칙 (qa-v3)', () => {
     expect(system).toContain('마크다운을 쓰지 않는다');
   });
 
-  it('규칙을 추가했으므로 promptVersion이 qa-v2에서 올라가 있다', () => {
+  it('마커의 직접 지지 원칙을 지시한다 (qa-v4)', () => {
+    // groundedness 실측(docs/rag-eval, 2026-08-02): miscite·실질 무근거가 전부
+    // 「근거 내용 소개·나열의 귀속 과잉」이었다 — 처방·수치를 종합해 나열하며
+    // 그 항목이 없는 근거에 마커를 달았다. miscite는 인용이 달려 검증된 것처럼
+    // 보이는 안전 최우선 결함이라, 불확실하면 마커를 빼는 쪽으로 기울인다.
+    expect(system).toContain('직접 서술한 내용에만 단다');
+    expect(system).toContain('각 근거가 모두 그 문장을 지지할 때만');
+    expect(system).toContain('종합해 만든 목록이나 결론에는');
+  });
+
+  it('규칙을 추가했으므로 promptVersion이 qa-v3에서 올라가 있다', () => {
     // GenerationRun.promptVersion으로 답변 품질 변화를 추적한다
-    expect(PROMPT_VERSION).toBe('qa-v3');
+    expect(PROMPT_VERSION).toBe('qa-v4');
   });
 });
