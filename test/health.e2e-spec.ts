@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 describe('health', () => {
   let app: INestApplication;
@@ -35,7 +36,7 @@ describe('health', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
   });
 
   afterAll(async () => {

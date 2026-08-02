@@ -44,6 +44,7 @@ import {
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { FakePdfExtractor } from './fixtures/fake-pdf-extractor';
 import { socialSignUp, type TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const JOB_TIMEOUT_MS = 30_000;
@@ -469,7 +470,7 @@ describe('spec 25: 면제·제외 목록 만료 진단과 통보', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.listen(0);
+    await bootstrapApp(app);
 
     admin = await socialSignUp(currentApp(), {
       email: 'guideline-exemption-expiry-admin@clinic.kr',

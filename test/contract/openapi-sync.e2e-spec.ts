@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from '../../src/app.module';
 import { buildOpenApiDocument } from '../../src/global/openapi/openapi-document.factory';
+import { bootstrapApp } from '../fixtures/app-bootstrap';
 
 const SPEC_PATH = join(__dirname, '..', '..', 'openapi', 'cure-agent.v1.json');
 
@@ -19,7 +20,7 @@ describe('contract: OpenAPI 스펙 동기화', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    await app.init();
+    await bootstrapApp(app);
   });
 
   afterAll(async () => {

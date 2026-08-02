@@ -60,7 +60,21 @@ export async function socialCallback(
   const provider = (identity.provider ?? 'GOOGLE').toLowerCase();
   const server = app.getHttpServer();
 
-  const started = await request(server).get(`/api/v1/auth/oauth/${provider}`).expect(302);
+  /**
+   * 진단 계측 (issue #250) — 이 요청이 e2e flake의 유일한 잔여 시그니처다.
+   * `@Public()` 라우트라 핸들러는 302 또는 리다이렉트만 반환하는데 간헐적으로 401이 온다.
+   * **그 401은 이 핸들러에서 나올 수 없으므로** 어느 앱·어느 라우트가 답했는지를 봐야 한다:
+   * 응답 봉투의 code·traceId와 요청이 향한 포트를 실패 메시지에 실어 로그와 대조한다.
+   */
+  const started = await request(server).get(`/api/v1/auth/oauth/${provider}`);
+  if (started.status !== 302) {
+    const address = server.address() as { port?: number } | string | null;
+    const port = typeof address === 'object' && address ? address.port : address;
+    throw new Error(
+      `[#250] OAuth start가 302가 아니다 — status=${started.status} port=${String(port)} ` +
+        `body=${JSON.stringify(started.body)} headers=${JSON.stringify(started.headers)}`,
+    );
+  }
   const stateCookie = setCookies(started).oauth_state.split(';')[0];
   const state = stateCookie.slice('oauth_state='.length);
 

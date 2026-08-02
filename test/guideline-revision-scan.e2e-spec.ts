@@ -57,6 +57,7 @@ import {
   nckmSamplePages,
 } from './fixtures/nckm-pages.sample';
 import { socialSignUp, type TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const JOB_TIMEOUT_MS = 30_000;
@@ -193,9 +194,9 @@ describe('spec 26: 지침 개정 감지 스케줄러', () => {
       nextApp.setGlobalPrefix('api/v1');
       nextApp.use(cookieParser());
       if (listen) {
-        await nextApp.listen(0);
+        await bootstrapApp(nextApp);
       } else {
-        await nextApp.init();
+        await bootstrapApp(nextApp);
       }
       return nextApp;
     } finally {

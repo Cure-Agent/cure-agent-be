@@ -19,6 +19,7 @@ import { FakeEmbeddingProvider } from '../src/infrastructure/embedding/fake-embe
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { nckmSamplePages } from './fixtures/nckm-pages.sample';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 interface SourceDocumentSeed {
   externalId: string;
@@ -108,7 +109,7 @@ describe('spec 19: 지침 PDF 파싱·청킹', () => {
       .useClass(FakeEmbeddingProvider)
       .compile();
     app = moduleRef.createNestApplication();
-    await app.init();
+    await bootstrapApp(app);
 
     parseService = app.get(GuidelineParseService);
     ingestService = app.get(GuidelineIngestService);

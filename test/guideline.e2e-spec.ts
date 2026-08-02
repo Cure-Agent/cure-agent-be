@@ -13,6 +13,7 @@ import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provide
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialSignUp } from './fixtures/social-auth';
 import { gyeonbitongGuideline, yotongGuideline } from './fixtures/guideline-samples';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 /**
  * docs/specs/05-guideline-evidence.md 수용 기준 동결 테스트.
@@ -47,7 +48,7 @@ describe('spec 05: Guideline·Evidence + 인제스트', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     ingestService = app.get(GuidelineIngestService);
 

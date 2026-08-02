@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { RealTimeAlertSender } from '../src/global/observability/real-time-alert.sender';
 import { TestErrorsModule } from './fixtures/test-errors.module';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
   let app: INestApplication;
@@ -21,7 +22,7 @@ describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1'); // main.ts와 동일 구성
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
   });
 
   afterAll(async () => {
