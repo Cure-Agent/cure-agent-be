@@ -16,7 +16,7 @@ function ratio(part: number, total: number): string {
 
 export function renderGroundednessReport(report: GroundednessReport): string {
   const lines: string[] = [];
-  const { verdicts, claims, mechanical } = report;
+  const { verdicts, claims, mechanical, suppressionGuard: guard } = report;
 
   lines.push('# groundedness 평가 (생성 축)');
   lines.push('');
@@ -60,17 +60,32 @@ export function renderGroundednessReport(report: GroundednessReport): string {
   lines.push(`| 마커 미사용 답변 (규칙 2) | ${mechanical.noMarkerAnswers} |`);
   lines.push('');
 
+  // 프롬프트를 조이는 개선의 부작용을 잡는 축이다 — 결함률만 보면 답변이 앙상해지는
+  // 방향의 «개선»을 성공으로 오독한다 (docs/specs/32)
+  lines.push('## 과억제 감시');
+  lines.push('');
+  lines.push('| 지표 | 값 |');
+  lines.push('| --- | --- |');
+  lines.push(`| 문항당 평균 주장 수 | ${guard.avgClaimsPerAnswer} |`);
+  lines.push(`| 평균 답변 길이 (문자) | ${guard.avgAnswerLengthChars} |`);
+  lines.push(`| 근거 부족 고지 답변 수 | ${guard.insufficiencyDisclosedCount} |`);
+  lines.push('');
+
   lines.push(`## 결함 문항 (partial·ungrounded) — ${report.flagged.length}건`);
   lines.push('');
   if (report.flagged.length === 0) {
     lines.push('없음.');
   } else {
-    lines.push('| 문항 | verdict | miscited | unsupported | 무근거 주장 예시 |');
-    lines.push('| --- | --- | --- | --- | --- |');
+    lines.push(
+      '| 문항 | verdict | miscited | unsupported | 무근거 주장 예시 | miscited 주장 예시 |',
+    );
+    lines.push('| --- | --- | --- | --- | --- | --- |');
     for (const item of report.flagged) {
-      const examples = item.unsupportedExamples.map((e) => cell(e)).join(' / ') || '—';
+      const unsupportedExamples =
+        item.unsupportedExamples.map((e) => cell(e)).join(' / ') || '—';
+      const miscitedExamples = item.miscitedExamples.map((e) => cell(e)).join(' / ') || '—';
       lines.push(
-        `| ${cell(item.itemId)} | ${item.verdict} | ${item.miscited} | ${item.unsupported} | ${examples} |`,
+        `| ${cell(item.itemId)} | ${item.verdict} | ${item.miscited} | ${item.unsupported} | ${unsupportedExamples} | ${miscitedExamples} |`,
       );
     }
   }

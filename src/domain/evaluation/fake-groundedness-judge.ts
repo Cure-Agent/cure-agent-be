@@ -30,6 +30,8 @@ export class FakeGroundednessJudge implements GroundednessJudge {
       miscited: 0,
       unsupported: unsupported.length,
       unsupportedExamples: unsupported.slice(0, 2),
+      // miscited가 항상 0이므로(근거 대조는 실물 심판의 몫) 예시도 항상 비어 있다
+      miscitedExamples: [],
       insufficiencyDisclosed: false,
       verdict: unsupported.length === 0 ? 'grounded' : 'partial',
     });

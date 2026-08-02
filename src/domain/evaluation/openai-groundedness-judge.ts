@@ -25,6 +25,10 @@ export interface OpenAiJudgeConfig {
  * ③ 근거 상태 메타 발언을 임상 주장으로 채점(037 「근거가 충분합니다」).
  * 남용 가드가 균형추다 — 비주장 문형에 실린 구체 임상 정보는 절 단위로 나눠 여전히
  * 채점한다. 면책 포장이 채점 회피 루프홀이 되면 오탐 제거가 결함 은폐로 뒤집힌다.
+ *
+ * **채점 기준은 v3에서 멈춰 있다** (docs/specs/32). miscitedExamples 출력 요구만 더했다 —
+ * 심판이 생성기(qa-v5)와 함께 변하면 전후 비교가 오염되므로 비주장 예외·판정 정의는
+ * 그대로 둔다. 이 불변은 groundedness-judge-qa-v5.spec의 기준 4b가 못박는다.
  */
 export const JUDGE_RUBRIC = [
   '당신은 한의 임상 지침 기반 답변의 근거 충실성(groundedness)을 채점하는 심판입니다.',
@@ -58,6 +62,7 @@ export const JUDGE_RUBRIC = [
   'JSON만 출력:',
   '{"claims": 총 주장 수, "supported": 수, "miscited": 수, "unsupported": 수,',
   ' "unsupportedExamples": ["무근거 주장 원문 최대 2개"],',
+  ' "miscitedExamples": ["miscited 주장 원문 최대 2개"],',
   ' "insufficiencyDisclosed": 근거가 부족한데 답변이 그 사실을 밝혔으면 true,',
   ' "verdict": "grounded"|"partial"|"ungrounded"}',
   '',
@@ -121,6 +126,10 @@ export function normalizeJudgement(raw: Record<string, unknown>): GroundednessJu
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0;
   };
+  const examples = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').slice(0, 2)
+      : [];
   const verdict = raw.verdict;
   if (!VERDICTS.includes(verdict as GroundednessVerdict)) {
     throw new Error(`심판 응답의 verdict가 계약 밖입니다: ${String(verdict)}`);
@@ -131,9 +140,8 @@ export function normalizeJudgement(raw: Record<string, unknown>): GroundednessJu
     supported: count(raw.supported),
     miscited: count(raw.miscited),
     unsupported: count(raw.unsupported),
-    unsupportedExamples: Array.isArray(raw.unsupportedExamples)
-      ? raw.unsupportedExamples.filter((e): e is string => typeof e === 'string').slice(0, 2)
-      : [],
+    unsupportedExamples: examples(raw.unsupportedExamples),
+    miscitedExamples: examples(raw.miscitedExamples),
     insufficiencyDisclosed: raw.insufficiencyDisclosed === true,
     verdict: verdict as GroundednessVerdict,
   };
