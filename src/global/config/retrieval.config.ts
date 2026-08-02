@@ -32,16 +32,8 @@ export const retrievalConfig = registerAs('retrieval', () => ({
   rerankEnabled: process.env.RETRIEVAL_RERANK_ENABLED !== 'false',
   rerankCandidates: parsePositive(process.env.RETRIEVAL_RERANK_CANDIDATES, 30),
   rerankScoreCutoff: parsePositive(process.env.RETRIEVAL_RERANK_SCORE_CUTOFF, 9),
-  /**
-   * 하이브리드 검색 (docs/specs/31). 기본 켜짐 — 끄면 §29 동작(벡터 top-K + 리랭크)이다.
-   *
-   * 벡터 단독 후보군이 리랭커의 상한이었다: prod 코퍼스 실측에서 Recall@30 0.968로,
-   * 후보에 없는 6문항은 리랭커가 손댈 수 없었다. 키워드 arm(pg_trgm)과의 RRF 합집합은
-   * 후보 커버리지 1.000·리랭크 Recall@5 0.962 → 0.973이었다.
-   *
-   * arm당 K는 `rerankCandidates`를 그대로 쓴다 — 후보군 크기 손잡이가 둘이면 동기화 사고가 난다.
-   */
-  hybridEnabled: process.env.RETRIEVAL_HYBRID_ENABLED !== 'false',
+  /** 하이브리드 검색 (docs/specs/31) — 스텁 자리다. env 규약은 구현이 채운다 */
+  hybridEnabled: false,
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.48;
