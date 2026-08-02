@@ -120,6 +120,7 @@ const fixedJudgement: GroundednessJudgement = {
   miscited: 1,
   unsupported: 1,
   unsupportedExamples: ['근거가 없는 합성 주장'],
+  miscitedExamples: [],
   insufficiencyDisclosed: true,
   verdict: 'partial',
 };

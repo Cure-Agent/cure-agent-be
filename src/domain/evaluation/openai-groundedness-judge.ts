@@ -134,6 +134,7 @@ export function normalizeJudgement(raw: Record<string, unknown>): GroundednessJu
     unsupportedExamples: Array.isArray(raw.unsupportedExamples)
       ? raw.unsupportedExamples.filter((e): e is string => typeof e === 'string').slice(0, 2)
       : [],
+    miscitedExamples: [],
     insufficiencyDisclosed: raw.insufficiencyDisclosed === true,
     verdict: verdict as GroundednessVerdict,
   };

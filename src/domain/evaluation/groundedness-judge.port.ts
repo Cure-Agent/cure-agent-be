@@ -34,6 +34,8 @@ export interface GroundednessJudgement {
   unsupported: number;
   /** 리포트가 실을 무근거 주장 원문 (최대 2개) */
   unsupportedExamples: string[];
+  /** 리포트가 실을 miscited 주장 원문 (최대 2개, docs/specs/32) — 다음 사이클 표적의 드릴다운 */
+  miscitedExamples: string[];
   /** 근거가 부족한데 답변이 그 사실을 밝혔는가 — qa-v3 규칙 3 준수 여부 */
   insufficiencyDisclosed: boolean;
   verdict: GroundednessVerdict;
