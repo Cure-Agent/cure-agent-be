@@ -37,6 +37,22 @@ export interface RelevanceDistribution {
   histogram: Record<number, number>;
 }
 
+/**
+ * 답해야 하는데 기권된 문항 (issue #236) — 기권 실패 목록의 대칭축이다.
+ * 컷을 낮출지 판단하려면 「근거가 실제로 애매한 문항인가, 리랭커가 짜게 준 정상 문항인가」를
+ * 봐야 하고, 어느 게이트가 잘랐는지가 나와야 §28(거리)·§29(점수) 중 어디를 손댈지 갈린다.
+ */
+export interface OverAbstainFailure {
+  itemId: string;
+  question: string;
+  top1Distance: number;
+  /** 거리 게이트에서 잘려 리랭크를 타지 않았으면 null */
+  top1Relevance: number | null;
+  gate: 'distance' | 'score' | 'both';
+  /** 기대 근거가 top-30에 나타난 순위 — 기권이 검색 실패 때문인지 게이트 때문인지 가른다 */
+  foundAtRank: number | null;
+}
+
 export interface AbstainFailure {
   itemId: string;
   question: string;
@@ -72,6 +88,8 @@ export interface RagEvalReport {
   failures: EvalFailure[];
   /** 기권해야 하는데 답해버린 문항 — 게이트 조정·라벨 검증의 유일한 입구 */
   abstainFailures: AbstainFailure[];
+  /** 답해야 하는데 기권된 문항 — 컷 상향의 대가를 문항 단위로 본다 */
+  overAbstainFailures: OverAbstainFailure[];
 }
 
 /**
@@ -139,6 +157,7 @@ export class RagEvalService {
     const abstainDistances: number[] = [];
     const failures: EvalFailure[] = [];
     const abstainFailures: AbstainFailure[] = [];
+    const overAbstainFailures: OverAbstainFailure[] = [];
     const answerableRelevances: number[] = [];
     const abstainRelevances: number[] = [];
     let hitAt5 = 0;
@@ -196,7 +215,18 @@ export class RagEvalService {
       if (results.length > 0) {
         const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
         answerableRelevances.push(top1Relevance);
-        if (distanceAbstained || top1Relevance < scoreCutoff) rerankAbstainedAnswerable += 1;
+        const scoreAbstained = top1Relevance < scoreCutoff;
+        if (distanceAbstained || scoreAbstained) {
+          rerankAbstainedAnswerable += 1;
+          overAbstainFailures.push({
+            itemId: item.id,
+            question: item.question,
+            top1Distance: results[0].distance,
+            top1Relevance,
+            gate: distanceAbstained && scoreAbstained ? 'both' : distanceAbstained ? 'distance' : 'score',
+            foundAtRank: rank,
+          });
+        }
         const rerankZeroBased = orderedChunkIds
           .slice(0, RETRIEVAL_TOP_K)
           .findIndex((chunkId) => expected.has(chunkId));
@@ -205,7 +235,16 @@ export class RagEvalService {
           rerankReciprocalSum += 1 / (rerankZeroBased + 1);
         }
       } else {
+        // 검색 0건 — 게이트가 아니라 코퍼스에 없다. 거리·점수 판정 자체가 성립하지 않는다
         rerankAbstainedAnswerable += 1;
+        overAbstainFailures.push({
+          itemId: item.id,
+          question: item.question,
+          top1Distance: Number.NaN,
+          top1Relevance: null,
+          gate: 'distance',
+          foundAtRank: rank,
+        });
       }
     }
 
@@ -264,6 +303,7 @@ export class RagEvalService {
       ],
       failures,
       abstainFailures,
+      overAbstainFailures,
     };
   }
 }
