@@ -31,7 +31,7 @@
 | `domain/evaluation/groundedness-judge.port.ts` | `GroundednessJudgement.miscitedExamples: string[]` (최대 2 — unsupportedExamples와 동일 규약) |
 | `domain/evaluation/openai-groundedness-judge.ts` | 루브릭 출력 JSON에 miscitedExamples 요구 추가. **채점 기준·비주장 예외 문구는 rubric v3 그대로** — 심판이 함께 변하면 전후 비교가 오염된다 |
 | `domain/evaluation/fake-groundedness-judge.ts` | 계약 충족(`miscitedExamples: []` — miscited 항상 0과 일관) |
-| `domain/evaluation/groundedness-eval.service.ts` | `FlaggedAnswer.miscitedExamples` + 과억제 감시 집계: 문항당 평균 주장 수·평균 답변 길이(문자)·근거 부족 고지(insufficiencyDisclosed) 답변 수 |
+| `domain/evaluation/groundedness-eval.service.ts` | `FlaggedAnswer.miscitedExamples` + 과억제 감시 집계 `suppressionGuard` (분모 규약은 아래) |
 | `domain/evaluation/groundedness.report.ts` | 결함 문항 표에 miscited 예시 열, 과억제 감시 절 추가 |
 
 **qa-v5 규칙 원문** (규칙 1의 연속 행으로 추가):
@@ -70,12 +70,17 @@
    않는다」·「근거가 직접 그렇게 서술할 때만」 포함 (유닛).
 4. 실물 심판 루브릭이 miscited 주장 원문 예시(최대 2)를 요구하되, rubric v3의 비주장 예외
    문구(면책·적용 지침·한계 고지·근거 상태 논평·재질의 유도)는 그대로다 (유닛 — 루브릭 텍스트 단언).
-5. `normalizeJudgement`가 miscitedExamples 누락·비배열이면 빈 배열로, 문자열만, 최대 2개로
-   정규화한다 — unsupportedExamples와 동일 규약 (유닛).
-6. 심판 판정에 miscitedExamples가 있으면 결함 문항 표의 해당 행에 그 원문이 실린다
-   (주입 fake 심판 — spec 30 기준 2의 주입 선례).
-7. 리포트에 과억제 감시 지표 3종(문항당 평균 주장 수·평균 답변 길이·근거 부족 고지 답변 수)이
-   라벨과 값으로 실린다 — fake 구성으로 결정적 (유닛 또는 e2e).
+5. `normalizeJudgement`가 miscitedExamples를 unsupportedExamples와 동일 규약으로 정규화한다
+   (유닛): ⑴ 누락이면 빈 배열 ⑵ 비배열이면 빈 배열 ⑶ 문자열 아닌 원소는 버린다
+   ⑷ 최대 2개로 자른다.
+6. 심판 판정의 miscitedExamples가 ⑴ 결함 문항(`FlaggedAnswer`)에 전파되고 ⑵ 리포트 결함 문항
+   표의 해당 행에 원문으로 실린다 (주입 fake 심판 — spec 30 기준 2의 주입 선례).
+7. 리포트에 과억제 감시 지표 3종이 라벨과 값으로 실린다 — fake 구성으로 결정적. **분모 규약**:
+   ⑴ `avgClaimsPerAnswer` = 전체 주장 수 ÷ **채점 성공 문항 수**(소수 1자리 반올림)
+   ⑵ `avgAnswerLengthChars` = 답변 길이 합 ÷ **생성 성공 문항 수**(정수 반올림)
+   ⑶ `insufficiencyDisclosedCount` = `insufficiencyDisclosed`가 true인 채점 수.
+   분모가 0이면 해당 값은 0이다. 두 분모를 분리하는 이유: 심판만 실패한 문항은 답변이 생성됐으므로
+   길이 통계에는 들어가야 하고, 주장 수 통계에는 들어갈 수 없다.
 
 ## Out of scope
 
