@@ -19,8 +19,11 @@ export type SseOutcome = 'completed' | 'aborted' | 'failed';
 /** 지침 파이프라인 **단계 자체의 결말** — 실행 status enum과는 다른 축이다 (docs/specs/22) */
 export type PipelineStageOutcome = 'success' | 'failure' | 'skipped';
 
-/** 검색 파이프라인의 단계 — 사용자 체감 지연을 임베딩과 벡터 조회로 가른다 (docs/specs/27) */
-export type RetrievalStage = 'embed' | 'vector_search';
+/**
+ * 검색 파이프라인의 단계 — 사용자 체감 지연을 임베딩과 조회로 가른다 (docs/specs/27).
+ * 하이브리드에서 키워드 arm이 더해지며 조회 축이 둘이 된다 (docs/specs/31).
+ */
+export type RetrievalStage = 'embed' | 'vector_search' | 'keyword_search';
 
 /**
  * 답변 1회의 결말 (docs/specs/27).
