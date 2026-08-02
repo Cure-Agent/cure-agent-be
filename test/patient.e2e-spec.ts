@@ -16,6 +16,7 @@ import { PatientSnapshotService } from '../src/domain/patient/service/patient-sn
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const MISSING_PATIENT_ID = '01J00000000000000000000000';
@@ -164,7 +165,7 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     authA = await signUp('patient-owner-a@clinic.kr', 'LIC-PAT-1001', '환자테스트 A한의원');
     authB = await signUp('patient-owner-b@clinic.kr', 'LIC-PAT-1002', '환자테스트 B한의원');

@@ -17,6 +17,7 @@ import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provide
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const QUESTION = '만성 요통 환자에게 침 치료가 효과적인가요?';
@@ -65,7 +66,7 @@ describe('spec 14: 임베딩 provenance 검색 필터', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     await app.get(GuidelineIngestService).ingest(yotongGuideline);
     cookie = await signUp('retrieval-provenance@clinic.kr');

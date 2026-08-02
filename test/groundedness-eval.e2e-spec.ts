@@ -39,6 +39,7 @@ import {
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { yotongGuideline } from './fixtures/guideline-samples';
 import { socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const DISTANCE_CUTOFF = 2;
 const RERANK_CANDIDATES = 30;
@@ -190,7 +191,7 @@ describe('spec 30: groundedness 평가', () => {
     const app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
     return app;
   };
 

@@ -14,6 +14,7 @@ import { AppModule } from '../src/app.module';
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 
 describe('Conversation history (e2e)', () => {
@@ -81,7 +82,7 @@ describe('Conversation history (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     ownerCookie = await signUp(
       'history-owner@example.com',

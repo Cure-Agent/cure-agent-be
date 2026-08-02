@@ -42,6 +42,7 @@ import {
   nckmSamplePages,
 } from './fixtures/nckm-pages.sample';
 import { socialSignUp, TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const JOB_TIMEOUT_MS = 30_000;
@@ -252,7 +253,7 @@ describe('이슈 #106: PARSE 단계 인제스트 대상 판정', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.listen(0);
+    await bootstrapApp(app);
 
     admin = await socialSignUp(currentApp(), {
       email: 'guideline-ingest-target-admin@clinic.kr',

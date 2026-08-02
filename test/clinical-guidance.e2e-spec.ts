@@ -23,6 +23,7 @@ import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provide
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 type ConversationType = 'PATIENT_GUIDANCE' | 'GUIDELINE_QA';
 
@@ -224,7 +225,7 @@ describe('Clinical guidance (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
     app.setGlobalPrefix('api/v1');
-    await app.init();
+    await bootstrapApp(app);
 
     await app.get(GuidelineIngestService).ingest(yotongGuideline);
 

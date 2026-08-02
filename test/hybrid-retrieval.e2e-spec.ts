@@ -41,6 +41,7 @@ import {
   yotongGuideline,
 } from './fixtures/guideline-samples';
 import { socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const QUESTION = '만성 요통 환자에게 침 치료가 효과적인가요?';
@@ -375,7 +376,7 @@ describe('spec 31: pg_trgm 키워드 arm과 RRF 합집합 하이브리드 검색
     const app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
     return app;
   };
 

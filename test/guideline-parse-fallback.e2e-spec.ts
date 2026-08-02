@@ -37,6 +37,7 @@ import { parenthesizedCoordinatePages } from './fixtures/nckm-ingest-target-samp
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { FakePdfExtractor } from './fixtures/fake-pdf-extractor';
 import { socialSignUp, type TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const JOB_TIMEOUT_MS = 30_000;
@@ -282,7 +283,7 @@ describe('이슈 #144: 대상 아님 목록의 PARSE 실패 fallback', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.listen(0);
+    await bootstrapApp(app);
 
     admin = await socialSignUp(currentApp(), {
       email: 'guideline-parse-fallback-admin@clinic.kr',

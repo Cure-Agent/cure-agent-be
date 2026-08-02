@@ -45,6 +45,7 @@ import {
   nckmSamplePages,
 } from './fixtures/nckm-pages.sample';
 import { socialSignUp, TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 import {
   openSseStream,
   parseSseEvents,
@@ -147,7 +148,7 @@ describe('spec 22: 지침 전건 파이프라인', () => {
     const nextApp = moduleRef.createNestApplication();
     nextApp.setGlobalPrefix('api/v1');
     nextApp.use(cookieParser());
-    await nextApp.listen(0);
+    await bootstrapApp(nextApp);
     return nextApp;
   };
 
