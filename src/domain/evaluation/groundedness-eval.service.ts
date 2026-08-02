@@ -116,6 +116,12 @@ export class GroundednessEvalService {
     const mechanical: MechanicalChecks = { markdownViolations: 0, noMarkerAnswers: 0 };
     const flagged: FlaggedAnswer[] = [];
     const failures: GroundednessFailure[] = [];
+    // 과억제 감시의 두 분모는 다르다 — 심판만 실패한 문항은 답변이 생성됐으므로 길이
+    // 통계에는 들어가고 주장 수 통계에는 들어갈 수 없다 (docs/specs/32 기준 7)
+    let generatedCount = 0;
+    let answerLengthSum = 0;
+    let judgedCount = 0;
+    let insufficiencyDisclosedCount = 0;
 
     for (const item of answerable) {
       let answer: string;
@@ -129,11 +135,16 @@ export class GroundednessEvalService {
         continue;
       }
 
+      generatedCount += 1;
+      answerLengthSum += answer.length;
+
       if (MARKDOWN_PATTERN.test(answer)) mechanical.markdownViolations += 1;
       if (!MARKER_PATTERN.test(answer)) mechanical.noMarkerAnswers += 1;
 
       try {
         const judgement = await this.judge.judge({ question: item.question, evidence, answer });
+        judgedCount += 1;
+        if (judgement.insufficiencyDisclosed) insufficiencyDisclosedCount += 1;
         verdicts[judgement.verdict] += 1;
         claims.total += judgement.claims;
         claims.supported += judgement.supported;
@@ -147,7 +158,7 @@ export class GroundednessEvalService {
             miscited: judgement.miscited,
             unsupported: judgement.unsupported,
             unsupportedExamples: judgement.unsupportedExamples,
-            miscitedExamples: [],
+            miscitedExamples: judgement.miscitedExamples,
           });
         }
       } catch (error) {
@@ -163,9 +174,11 @@ export class GroundednessEvalService {
       claims,
       mechanical,
       suppressionGuard: {
-        avgClaimsPerAnswer: 0,
-        avgAnswerLengthChars: 0,
-        insufficiencyDisclosedCount: 0,
+        avgClaimsPerAnswer:
+          judgedCount === 0 ? 0 : Math.round((claims.total / judgedCount) * 10) / 10,
+        avgAnswerLengthChars:
+          generatedCount === 0 ? 0 : Math.round(answerLengthSum / generatedCount),
+        insufficiencyDisclosedCount,
       },
       flagged,
       failures,
