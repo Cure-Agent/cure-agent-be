@@ -26,8 +26,13 @@ export interface DistanceDistribution {
 export interface EvalFailure {
   itemId: string;
   question: string;
-  /** 정답이 나타난 순위(1-based). 30까지 열어도 없으면 null */
+  /** 벡터 arm에서 정답이 나타난 순위(1-based). 30까지 열어도 없으면 null */
   foundAtRank: number | null;
+  /**
+   * 키워드 arm에서 정답이 나타난 순위(1-based). 없으면 null (docs/specs/31).
+   * 두 arm을 나란히 놓아야 「어느 arm이 이 문항을 구제했는가/둘 다 놓쳤는가」가 읽힌다.
+   */
+  keywordFoundAtRank: number | null;
 }
 
 /** kind별 리랭크 점수 분포 — 점수 컷을 데이터로 정하기 위한 원자료 (issue #232) */
@@ -70,6 +75,16 @@ export interface RagEvalReport {
   recallAt5: number;
   mrrAt5: number;
   recallAt30: number;
+  /**
+   * 키워드 arm 단독 Recall@K (docs/specs/31) — 벡터 원 지표와 나란히 놓는 대조 축이다.
+   * 이 값이 벡터 Recall@30을 넘는 구간이 「임베딩이 놓치고 자구가 잡는」 문항이다.
+   */
+  keywordRecallAtK: number;
+  /**
+   * 합집합 후보 커버리지 (docs/specs/31) — 기대 근거가 융합 후보(무절단)에 있는 비율.
+   * **리랭커가 도달할 수 있는 상한**이라 리랭크 지표를 읽는 기준선이 된다.
+   */
+  unionCoverage: number;
   /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
   distanceCutoff: number;
   /** 리랭크 적용 지표 (docs/specs/29 기준 10) — 원 순위 지표(recallAt5 등)는 컷·리랭크 미적용 유지 */
@@ -209,7 +224,12 @@ export class RagEvalService {
       }
       // 운영 K(5) 밖은 실패로 본다 — 30에서 찾았다는 사실은 foundAtRank가 따로 말해준다
       if (rank === null || rank > RETRIEVAL_TOP_K) {
-        failures.push({ itemId: item.id, question: item.question, foundAtRank: rank });
+        failures.push({
+          itemId: item.id,
+          question: item.question,
+          foundAtRank: rank,
+          keywordFoundAtRank: null,
+        });
       }
 
       if (results.length > 0) {
@@ -285,6 +305,8 @@ export class RagEvalService {
       recallAt5: hitAt5 / denominator,
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
+      keywordRecallAtK: 0,
+      unionCoverage: 0,
       distanceCutoff: cutoff,
       rerankedRecallAt5: rerankHitAt5 / denominator,
       rerankedMrrAt5: rerankReciprocalSum / denominator,

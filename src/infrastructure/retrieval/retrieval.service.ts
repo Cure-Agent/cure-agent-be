@@ -23,6 +23,13 @@ function elapsedSeconds(startedAt: bigint): number {
 
 export const RETRIEVAL_TOP_K = 5;
 
+/**
+ * RRF 상수 (docs/specs/31). 융합 점수는 arm마다 `1/(RRF_K + 순위)`의 합이다 —
+ * 순위만 쓰므로 코사인 거리와 trigram 유사도처럼 **척도가 다른 두 점수를 정규화 없이 합칠 수 있다.**
+ * 60은 실측에 쓴 값이며 튜닝은 spec 31 Out of scope다.
+ */
+const RRF_K = 60;
+
 export interface RetrievalFilters {
   guidelineIds?: string[];
   recommendationGrades?: string[];
@@ -39,6 +46,19 @@ export interface RetrievedEvidence {
    * 거리 임계값을 데이터로 정하려면 분포를 재야 하기 때문이다 (docs/specs/27).
    */
   distance: number;
+}
+
+/**
+ * 하이브리드 검색 결과 (docs/specs/31) — 융합 순서로 정렬된다.
+ *
+ * arm별 순위를 부기하는 이유는 **평가와 운영이 같은 코드를 타게** 하기 위해서다:
+ * 벡터 원 지표(§27·§28의 비교 축)와 키워드 arm 기여도를 한 번의 검색으로 함께 잰다.
+ */
+export interface HybridEvidence extends RetrievedEvidence {
+  /** 벡터 arm에서의 순위(1-based). 그 arm에 없으면 null */
+  vectorRank: number | null;
+  /** 키워드 arm에서의 순위(1-based). 그 arm에 없으면 null */
+  keywordRank: number | null;
 }
 
 /**
@@ -81,6 +101,24 @@ export class RetrievalService {
 
   get rerankScoreCutoff(): number {
     return this.config.rerankScoreCutoff;
+  }
+
+  /** 하이브리드 검색 설정 노출 (docs/specs/31) — 위와 같은 이유로 단일 접근 경로를 유지한다 */
+  get hybridEnabled(): boolean {
+    return this.config.hybridEnabled;
+  }
+
+  /**
+   * 하이브리드로 답한 GenerationRun의 정책 버전 (docs/specs/31 기준 6).
+   * 리랭크 적용 여부가 문자열로 갈린다 — 폴백·비활성은 rerankerModel을 주지 않는다.
+   */
+  hybridPolicyVersion(rerankerModel?: string): string {
+    const base = `hybrid-rrf${RRF_K}-top${this.config.rerankCandidates}x2`;
+    const rerank = rerankerModel
+      ? `-rerank-${rerankerModel}-cut${this.config.distanceCutoff}` +
+        `-score${this.config.rerankScoreCutoff}`
+      : `-cut${this.config.distanceCutoff}`;
+    return `${base}${rerank}-v4/${this.embeddingProvider.model}`;
   }
 
   /**
@@ -176,5 +214,24 @@ export class RetrievalService {
     if (rows.length > 0) this.metrics.recordTop1Distance(rows[0].distance);
 
     return rows;
+  }
+
+  /**
+   * 하이브리드 검색 (docs/specs/31) — 벡터 arm과 키워드 arm의 **합집합**을 RRF로 융합한다.
+   *
+   * 절단하지 않는 이유는 실측이다: RRF top-30으로 자르면 한쪽 arm에서만 깊게 잡히는 정답이
+   * 잘려 후보 커버리지가 0.978에 머물지만, 합집합 전체(≤2K)는 1.000이다.
+   *
+   * `armK`는 §27과 같은 **진단용 확장 지점**이다 — 운영은 기본값(`rerankCandidates`)을 쓴다.
+   */
+  async searchHybrid(
+    query: string,
+    filters?: RetrievalFilters,
+    armK: number = this.config.rerankCandidates,
+  ): Promise<HybridEvidence[]> {
+    void query;
+    void filters;
+    void armK;
+    return Promise.resolve([]);
   }
 }
