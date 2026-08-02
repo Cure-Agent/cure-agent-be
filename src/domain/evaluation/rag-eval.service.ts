@@ -350,7 +350,13 @@ export class RagEvalService {
 
     const denominator = answerable.length || 1;
     return {
-      retrievalPolicyVersion: this.retrieval.policyVersion,
+      // **실행한 검색 파이프라인과 일치해야 한다** (spec 27 기준 5 개정, issue #246).
+      // 이 필드의 존재 이유가 「값이 다르면 지표를 나란히 놓지 않는다」인데, 하이브리드(§31)로
+      // 잰 지표에 벡터 정책 문자열이 붙어 정반대로 동작했다. 리랭크 파라미터는 여기 넣지 않는다 —
+      // 리랭크는 검색을 바꾸지 않고, 점수 컷은 리포트의 별도 절이 싣는다.
+      retrievalPolicyVersion: this.retrieval.hybridEnabled
+        ? this.retrieval.hybridPolicyVersion()
+        : this.retrieval.policyVersion,
       corpusChunkCount: await this.retrieval.countSearchableChunks(),
       answerableCount: answerable.length,
       abstainCount: abstain.length,
