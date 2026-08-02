@@ -92,6 +92,13 @@
       "when": 1785801600000,
       "tag": "0012_hybrid_retrieval_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785801660000,
+      "tag": "0013_conversation_recent_order",
+      "breakpoints": true
     }
   ]
 }

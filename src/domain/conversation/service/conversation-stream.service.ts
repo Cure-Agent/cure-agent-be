@@ -153,6 +153,8 @@ export class ConversationStreamService {
             conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
           clientRequestId: null,
         });
+        // 목록 최근 대화순의 기준점 — 답변 실패로 끝나도 "대화한" 사실은 남으므로 수락 시점에 올린다
+        await this.repository.touchConversation(conversationId);
       });
     } catch (error) {
       // 동시 요청 경합: unique 제약이 최종 방어선

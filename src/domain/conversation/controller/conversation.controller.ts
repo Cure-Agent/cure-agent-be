@@ -40,7 +40,12 @@ export class ConversationController {
   }
 
   @Get()
-  @ApiOperation({ summary: '내 대화 목록 (커서 기반)' })
+  @ApiOperation({
+    summary: '내 대화 목록 (커서 기반)',
+    description:
+      '최근 대화순(updatedAt 내림차순) — 메시지를 주고받으면 그 대화가 맨 앞으로 온다. ' +
+      '커서는 이 정렬 키를 담으므로 정렬을 바꾸면 이전에 발급된 커서는 무효(400 BAD_REQUEST)다.',
+  })
   @ApiPageResponse(ConversationSummaryResponseDto)
   list(
     @CurrentClinician() principal: ClinicianPrincipal,
