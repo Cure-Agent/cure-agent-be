@@ -30,7 +30,15 @@ export const conversations = pgTable(
     status: conversationStatus('status').notNull().default('ACTIVE'),
     ...baseColumns,
   },
-  (table) => [index('idx_conversations_clinician').on(table.clinicianId)],
+  (table) => [
+    index('idx_conversations_clinician').on(table.clinicianId),
+    // 목록 기본 정렬(최근 대화순)의 keyset 스캔용 — ConversationRepository.list 참조
+    index('idx_conversations_clinician_recent').on(
+      table.clinicianId,
+      table.updatedAt,
+      table.id,
+    ),
+  ],
 );
 
 export const messages = pgTable(

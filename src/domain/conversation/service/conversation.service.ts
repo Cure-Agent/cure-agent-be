@@ -30,6 +30,23 @@ interface IdCursor extends Record<string, unknown> {
   id: string;
 }
 
+/** 대화 목록 커서 — 정렬 키가 (updatedAt, id)이므로 둘 다 실어야 경계가 유일해진다 */
+interface ConversationCursor extends Record<string, unknown> {
+  updatedAt: string;
+  id: string;
+}
+
+function decodeConversationCursor(cursor: string): { updatedAt: string; id: string } {
+  const decoded = decodeCursor<ConversationCursor>(cursor);
+  // updatedAt은 마이크로초까지 실려 있으므로 파싱값이 아니라 원문을 그대로 넘긴다 (Date로 바꾸면
+  // 정밀도가 깎여 경계가 어긋난다). Date.parse는 형식 검증에만 쓴다 —
+  // 정렬 키가 바뀌기 전 발급된 구형 커서(id만 담긴)도 여기서 걸러진다.
+  if (typeof decoded.id !== 'string' || Number.isNaN(Date.parse(decoded.updatedAt))) {
+    throw new ServiceException('BAD_REQUEST', { reason: 'INVALID_CURSOR' });
+  }
+  return { updatedAt: decoded.updatedAt, id: decoded.id };
+}
+
 @Injectable()
 export class ConversationService {
   constructor(
@@ -72,7 +89,7 @@ export class ConversationService {
     query: ListConversationsQueryDto,
   ): Promise<PageResult<ConversationSummaryResponseDto>> {
     const size = query.size ?? DEFAULT_SIZE;
-    const afterId = query.cursor ? decodeCursor<IdCursor>(query.cursor).id : undefined;
+    const after = query.cursor ? decodeConversationCursor(query.cursor) : undefined;
 
     const rows = await this.repository.list(
       { clinicianId: principal.clinicianId },
@@ -81,20 +98,23 @@ export class ConversationService {
         patientId: query.patientId,
         status: query.status,
         query: query.query,
-        afterId,
+        after,
         limit: size + 1,
       },
     );
     const hasNext = rows.length > size;
     const page = rows.slice(0, size);
     const latest = await this.repository.latestMessages(page.map((c) => c.id));
+    const last = page[page.length - 1];
 
     return PageResult.of(
       page.map((row) => toConversationSummary(row, latest.get(row.id))),
       {
         size,
         hasNext,
-        nextCursor: hasNext ? encodeCursor({ id: page[page.length - 1].id }) : null,
+        nextCursor: hasNext
+          ? encodeCursor({ updatedAt: last.cursorUpdatedAt, id: last.id })
+          : null,
       },
     );
   }
