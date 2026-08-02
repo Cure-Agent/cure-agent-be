@@ -142,5 +142,34 @@ export function renderEvalReport(report: RagEvalReport): string {
   }
   lines.push('');
 
+  // 기권 실패 목록의 대칭축 — 컷 상향의 대가를 문항 단위로 보여준다 (issue #236)
+  lines.push(
+    `## 과잉 기권 문항 (답해야 하는데 기권함) — ${report.overAbstainFailures.length}건`,
+  );
+  lines.push('');
+  if (report.overAbstainFailures.length === 0) {
+    lines.push('없음.');
+  } else {
+    lines.push('| 문항 | 질문 | 자른 게이트 | top-1 거리 | 리랭크 점수 | 정답 순위 |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
+    for (const failure of report.overAbstainFailures) {
+      const distance = Number.isFinite(failure.top1Distance)
+        ? failure.top1Distance.toFixed(DISTANCE_DIGITS)
+        : '—(검색 0건)';
+      const relevance = failure.top1Relevance === null ? '—' : String(failure.top1Relevance);
+      const rank = failure.foundAtRank === null ? '없음 (top-30 밖)' : `${failure.foundAtRank}위`;
+      lines.push(
+        `| ${cell(failure.itemId)} | ${cell(failure.question)} | ${failure.gate} | ` +
+          `${distance} | ${relevance} | ${rank} |`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      '「자른 게이트」가 score면 컷(§29) 조정 대상이고, distance면 거리컷(§28) 쪽이다. ' +
+        '정답 순위가 「없음」이면 게이트가 아니라 검색이 못 찾은 것이므로 기권이 옳은 판정이다.',
+    );
+  }
+  lines.push('');
+
   return lines.join('\n');
 }
