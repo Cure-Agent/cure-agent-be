@@ -115,6 +115,25 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
 
   const server = () => app.getHttpServer();
 
+  const createConversation = async (): Promise<string> =>
+    (
+      await request(server())
+        .post('/api/v1/conversations')
+        .set(CSRF)
+        .set('Cookie', cookieA)
+        .send({ type: 'GUIDELINE_QA' })
+        .expect(201)
+    ).body.data.id as string;
+
+  const listConversationIds = async (query: Record<string, string> = {}): Promise<string[]> =>
+    (
+      await request(server())
+        .get('/api/v1/conversations')
+        .query(query)
+        .set('Cookie', cookieA)
+        .expect(200)
+    ).body.data.map((conversation: { id: string }) => conversation.id) as string[];
+
   it('기준 1: 대화 생성(GUIDELINE_QA) 201 + 기본 title, PATIENT_GUIDANCE는 400', async () => {
     const created = await request(server())
       .post('/api/v1/conversations')
@@ -506,5 +525,88 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     expect(status).toBe('CANCELLED');
+  });
+
+  it('목록은 최근 대화순 — 오래된 대화에 메시지를 보내면 맨 앞으로 온다', async () => {
+    const olderConvId = await createConversation();
+    const newerConvId = await createConversation();
+
+    // 아직 대화가 없으면 생성 시각순 — 나중에 만든 쪽이 앞이다
+    const before = await listConversationIds();
+    expect(before.indexOf(newerConvId)).toBeLessThan(before.indexOf(olderConvId));
+
+    await request(server())
+      .post(`/api/v1/conversations/${olderConvId}/messages/stream`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .send({ content: QUESTION, clientRequestId: 'req-recent-order-1' })
+      .expect(200);
+
+    const after = await listConversationIds();
+    expect(after[0]).toBe(olderConvId);
+  });
+
+  it('같은 밀리초 안의 대화도 커서 경계에서 누락되지 않는다 (마이크로초 정밀도)', async () => {
+    const first = await createConversation();
+    const second = await createConversation();
+
+    // 밀리초는 같고 마이크로초만 다르게 — 커서가 Date로 깎이면 둘째가 통째로 건너뛰어진다.
+    // 미래 시각이라 이 둘이 목록 맨 앞 두 자리를 차지한다.
+    await pool.query(
+      "UPDATE conversations SET updated_at = timestamptz '2027-01-01 00:00:00.123456+00' WHERE id = $1",
+      [first],
+    );
+    await pool.query(
+      "UPDATE conversations SET updated_at = timestamptz '2027-01-01 00:00:00.123123+00' WHERE id = $1",
+      [second],
+    );
+
+    const page1 = await request(server())
+      .get('/api/v1/conversations')
+      .query({ size: 1 })
+      .set('Cookie', cookieA)
+      .expect(200);
+    expect(page1.body.data[0].id).toBe(first);
+
+    expect(await listConversationIds({ size: '1', cursor: page1.body.page.nextCursor })).toEqual([
+      second,
+    ]);
+  });
+
+  it('목록 커서는 최근 대화순 경계를 이어받는다 (구형 id 커서는 거부)', async () => {
+    const page1 = await request(server())
+      .get('/api/v1/conversations')
+      .query({ size: 2 })
+      .set('Cookie', cookieA)
+      .expect(200);
+    expect(page1.body.data).toHaveLength(2);
+    expect(page1.body.page.hasNext).toBe(true);
+
+    const page2 = await request(server())
+      .get('/api/v1/conversations')
+      .query({ size: 2, cursor: page1.body.page.nextCursor })
+      .set('Cookie', cookieA)
+      .expect(200);
+
+    // 페이지 경계에서 중복·누락이 없고, 정렬은 updatedAt 내림차순으로 이어진다
+    const page1Ids = page1.body.data.map((c: { id: string }) => c.id);
+    const page2Ids = page2.body.data.map((c: { id: string }) => c.id);
+    expect(page1Ids.filter((id: string) => page2Ids.includes(id))).toHaveLength(0);
+
+    const updatedAts = [...page1.body.data, ...page2.body.data].map((c: { updatedAt: string }) =>
+      Date.parse(c.updatedAt),
+    );
+    expect(updatedAts).toEqual([...updatedAts].sort((a, b) => b - a));
+
+    // 정렬 키 변경 전 발급된 id-only 커서는 조용히 잘못된 페이지를 주지 않고 400으로 끊는다
+    const legacyCursor = Buffer.from(JSON.stringify({ id: page1Ids[0] }), 'utf8').toString(
+      'base64url',
+    );
+    const rejected = await request(server())
+      .get('/api/v1/conversations')
+      .query({ cursor: legacyCursor })
+      .set('Cookie', cookieA)
+      .expect(400);
+    expect(rejected.body).toMatchObject({ success: false, code: 'BAD_REQUEST' });
   });
 });
