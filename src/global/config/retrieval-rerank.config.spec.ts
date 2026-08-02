@@ -38,16 +38,18 @@ describe('spec 29 기준 9: 리랭크 env 기본값 규약', () => {
     expect(retrievalConfig().rerankCandidates).toBe(30);
   });
 
-  it('기준 9b: RETRIEVAL_RERANK_SCORE_CUTOFF가 미지정이면 코드 기본값 6을 쓴다', () => {
+  // 기본값 6 → 9 상향 (issue #232): abstain 44문항 실측에서 기권 실패가 전부 6~8점에
+  // 몰렸고, answerable 183/185는 9~10점이다. 컷은 두 분포 사이로 옮겨야 한다.
+  it('기준 9b: RETRIEVAL_RERANK_SCORE_CUTOFF가 미지정이면 코드 기본값 9를 쓴다', () => {
     delete process.env.RETRIEVAL_RERANK_SCORE_CUTOFF;
 
-    expect(retrievalConfig().rerankScoreCutoff).toBe(6);
+    expect(retrievalConfig().rerankScoreCutoff).toBe(9);
   });
 
-  it('기준 9b: RETRIEVAL_RERANK_SCORE_CUTOFF가 빈 문자열이면 코드 기본값 6을 쓴다', () => {
+  it('기준 9b: RETRIEVAL_RERANK_SCORE_CUTOFF가 빈 문자열이면 코드 기본값 9를 쓴다', () => {
     process.env.RETRIEVAL_RERANK_SCORE_CUTOFF = '';
 
-    expect(retrievalConfig().rerankScoreCutoff).toBe(6);
+    expect(retrievalConfig().rerankScoreCutoff).toBe(9);
   });
 
   it("기준 9c: RETRIEVAL_RERANK_ENABLED 미지정은 true, 'false'는 false다", () => {

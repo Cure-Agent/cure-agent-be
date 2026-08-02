@@ -107,6 +107,22 @@ export function renderEvalReport(report: RagEvalReport): string {
   }
   lines.push('');
 
+  // 컷은 0~10 정수 위에서 정해진다 — 「9로 올리면 무엇이 갈리는가」에 답하려면 도수가 필요하다
+  lines.push('## 리랭크 점수 분포 (top-1 관련도)');
+  lines.push('');
+  lines.push(`| kind | ${Array.from({ length: 11 }, (_, i) => i).join(' | ')} |`);
+  lines.push(`| --- | ${Array.from({ length: 11 }, () => '---').join(' | ')} |`);
+  for (const dist of report.relevances) {
+    const cells = Array.from({ length: 11 }, (_, score) => dist.histogram[score] ?? 0);
+    lines.push(`| ${dist.kind} | ${cells.join(' | ')} |`);
+  }
+  lines.push('');
+  lines.push(
+    `현재 점수 컷은 ${report.rerankScoreCutoff}이다 — 이 값 미만이 기권이다. ` +
+      'abstain 행의 컷 이상 칸이 기권 실패이고, answerable 행의 컷 미만 칸이 과잉 기권이다.',
+  );
+  lines.push('');
+
   // 기권율만으로는 손댈 수 없다 — 게이트를 조정하려면 어느 문항이 몇 점으로 통과했는지,
   // 그게 라벨 오류(사실은 답 가능)인지 진짜 게이트 실패인지 봐야 한다
   lines.push(`## 기권 실패 문항 (기권해야 하는데 답함) — ${report.abstainFailures.length}건`);

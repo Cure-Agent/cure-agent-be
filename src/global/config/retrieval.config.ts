@@ -16,12 +16,22 @@ export const retrievalConfig = registerAs('retrieval', () => ({
   distanceCutoff: parseCutoff(process.env.RETRIEVAL_DISTANCE_CUTOFF),
   /**
    * LLM 리랭크 (docs/specs/29). 기본 켜짐 — 끄면 §28 동작(코사인 top-5 + 거리 게이트)이다.
-   * candidates 30·scoreCutoff 6은 프로덕션 74문항 실측값이다: K=30에서 Recall@30 0.983,
-   * 점수 컷 6은 answerable min 8 / 거리 통과 abstain max 4 사이의 중앙(양쪽 마진 2점).
+   * candidates 30은 프로덕션 74문항 실측값이다 (K=30에서 Recall@30 0.983).
+   *
+   * **scoreCutoff 9로 상향 (issue #232, 2026-08-02).** spec 29의 6은 「answerable min 8 /
+   * 거리 통과 abstain max 4의 중앙」이었는데 그 근거는 abstain 15문항 기준이었다. abstain을
+   * 44문항으로 늘리자(#228) 어려운 인접 질문이 6~8점 구간을 채워 전제가 무너졌고, 컷 6이
+   * abstain 덩어리 한가운데 놓이면서 기권 실패 8건이 전부 6~8점에서 샜다.
+   *
+   * 점수 분포는 사실 잘 분리돼 있다 (프로덕션 코퍼스 · answerable 185 / abstain 44):
+   * answerable 183/185가 9~10점, abstain은 9점 이상이 4건뿐이다. 컷을 9로 옮기면
+   * 기권 재현율 0.773 → **0.977**, 대가는 과잉 기권 0.000 → 0.011(2문항)·리랭크
+   * Recall@5 0.962 → 0.951이다 — 위험한 답변 9건을 막고 정상 질문 2건을 기권하는 교환이라
+   * 안전 축에서 받는다. 프롬프트로 점수 척도를 고치는 시도는 효과가 없었다(측정 후 폐기).
    */
   rerankEnabled: process.env.RETRIEVAL_RERANK_ENABLED !== 'false',
   rerankCandidates: parsePositive(process.env.RETRIEVAL_RERANK_CANDIDATES, 30),
-  rerankScoreCutoff: parsePositive(process.env.RETRIEVAL_RERANK_SCORE_CUTOFF, 6),
+  rerankScoreCutoff: parsePositive(process.env.RETRIEVAL_RERANK_SCORE_CUTOFF, 9),
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.48;
