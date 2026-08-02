@@ -542,9 +542,9 @@ describe('spec 27: RAG 평가 기반', () => {
         .evaluate(evaluationItems);
       const markdown = renderEvalReport(report);
 
-      // spec 28에서 정책 버전이 실사용 컷을 포함한 v2로 범프됐다 — 컷 2는 setup-env의 중립값
+      // issue #246, spec 27 기준 5 개정 — 기본 활성화된 하이브리드 검색 파이프라인의 v4를 기록한다.
       expect(report.retrievalPolicyVersion).toBe(
-        'cosine-top5-cut2-v2/fake-embedding-v1',
+        'hybrid-rrf60-top30x2-cut2-v4/fake-embedding-v1',
       );
       expect(markdown).toContain('retrievalPolicyVersion');
       expect(markdown).toContain(report.retrievalPolicyVersion);
