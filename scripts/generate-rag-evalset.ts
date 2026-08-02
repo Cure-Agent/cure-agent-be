@@ -39,9 +39,27 @@ const ABSTAIN_SYSTEM = [
   '규칙:',
   '1. 목록의 어느 지침으로도 답할 수 없는 **인접 임상 질문**을 만든다.',
   '2. 그럼에도 한의·의료 맥락은 유지한다 — 완전히 무관한 잡담은 시험이 되지 않는다.',
-  '3. 한 문장, 물음표로 끝낸다.',
-  '4. 질문 텍스트만 출력한다.',
+  '3. 목록의 지침이 **부분적으로라도 다루는 소재**(동반 증상·이상반응·감별진단 포함)는 피한다 —',
+  '   답할 수 있는 질문에 기권 라벨이 붙으면 지표가 거꾸로 오염된다.',
+  '4. 「코퍼스에 없는」처럼 평가 장치를 가리키는 말을 쓰지 않는다 — 임상의의 실제 질문이어야 한다.',
+  '5. 한 문장, 물음표로 끝낸다.',
+  '6. 질문 텍스트만 출력한다.',
 ].join('\n');
+
+/**
+ * 이미 만든 질문을 회차마다 실어 **주제 반복을 막는다** (#228 실측).
+ * 회차 번호만 다른 독립 호출은 같은 응급 주제(충수염·심근경색)로 수렴해,
+ * 40건 생성분의 절반이 서로 중복이었다 — 모델은 앞 회차를 기억하지 못한다.
+ */
+function abstainUserPrompt(topicList: string, previous: string[], index: number): string {
+  const avoid = previous.length
+    ? `\n\n이미 만든 질문(주제·소재가 겹치지 않게 하세요):\n${previous.map((q) => `- ${q}`).join('\n')}`
+    : '';
+  return (
+    `코퍼스가 다루는 주제:\n${topicList}\n\n` +
+    `(${index + 1}번째 질문 — 앞서 만든 것과 다른 임상 영역을 고르세요)${avoid}`
+  );
+}
 
 interface ChatResponse {
   choices?: { message?: { content?: string } }[];
@@ -124,12 +142,13 @@ async function main(): Promise<void> {
     }
 
     const topicList = titles.map((title) => `- ${title}`).join('\n');
+    const previousAbstain: string[] = [];
     for (let index = 0; index < abstainCount; index += 1) {
-      // 같은 프롬프트를 반복하면 같은 질문이 나오므로 회차를 실어 분산시킨다
       const question = await askOnce(
         ABSTAIN_SYSTEM,
-        `코퍼스가 다루는 주제:\n${topicList}\n\n(${index + 1}번째 질문 — 앞서 만든 것과 다른 임상 영역을 고르세요)`,
+        abstainUserPrompt(topicList, previousAbstain, index),
       );
+      previousAbstain.push(question);
       candidates.push({
         id: `evalgen-abstain-${String(index + 1).padStart(3, '0')}`,
         kind: 'abstain',
