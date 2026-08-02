@@ -30,6 +30,14 @@ export interface EvalFailure {
   foundAtRank: number | null;
 }
 
+export interface AbstainFailure {
+  itemId: string;
+  question: string;
+  top1Distance: number;
+  top1Relevance: number;
+  top1Guideline: string;
+}
+
 export interface RagEvalReport {
   /** 검색 정책 — 이 값이 다르면 지표를 나란히 비교하지 않는다 */
   retrievalPolicyVersion: string;
@@ -54,6 +62,8 @@ export interface RagEvalReport {
   overAbstainRate: number;
   distances: DistanceDistribution[];
   failures: EvalFailure[];
+  /** 기권해야 하는데 답해버린 문항 — 게이트 조정·라벨 검증의 유일한 입구 */
+  abstainFailures: AbstainFailure[];
 }
 
 /**
@@ -106,6 +116,7 @@ export class RagEvalService {
     const answerableDistances: number[] = [];
     const abstainDistances: number[] = [];
     const failures: EvalFailure[] = [];
+    const abstainFailures: AbstainFailure[] = [];
     let hitAt5 = 0;
     let hitAtK = 0;
     let reciprocalRankSum = 0;
@@ -181,7 +192,20 @@ export class RagEvalService {
 
       if (results.length > 0) {
         const { top1Relevance } = await rerankOf(item.question, results);
-        if (distanceAbstained || top1Relevance < scoreCutoff) rerankAbstainedAbstain += 1;
+        if (distanceAbstained || top1Relevance < scoreCutoff) {
+          rerankAbstainedAbstain += 1;
+        } else {
+          // 기권 실패는 숫자만으로는 손댈 수 없다 — 게이트를 조정하려면 어느 문항이 어떤
+          // 근거를 몇 점으로 통과시켰는지 봐야 하고, 라벨 오류(사실은 답 가능한 문항)와
+          // 진짜 게이트 실패도 이 목록 없이는 구분되지 않는다.
+          abstainFailures.push({
+            itemId: item.id,
+            question: item.question,
+            top1Distance: results[0].distance,
+            top1Relevance,
+            top1Guideline: results[0].guideline.title,
+          });
+        }
       } else {
         rerankAbstainedAbstain += 1;
       }
@@ -209,6 +233,7 @@ export class RagEvalService {
         distributionOf('abstain', abstainDistances),
       ],
       failures,
+      abstainFailures,
     };
   }
 }

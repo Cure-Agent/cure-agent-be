@@ -2708,5 +2708,237 @@
     "expectedEvidence": [],
     "status": "approved",
     "origin": "manual"
+  },
+  {
+    "id": "evalgen-abstain-016",
+    "kind": "abstain",
+    "question": "급성 충수염이 의심되는 환자에게 한의치료를 적용하기 전에 어떤 응급 징후를 우선 평가해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-017",
+    "kind": "abstain",
+    "question": "만성신부전 환자에게 투석 중 발생하는 저혈압을 한의치료로 줄이는 방법이 있나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-018",
+    "kind": "abstain",
+    "question": "급성 신우신염 환자에서 한약과 침 치료를 병행할 때 항생제 치료를 대체할 수 있는 근거가 있나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-019",
+    "kind": "abstain",
+    "question": "임신 32주 산모가 태반조기박리로 제왕절개를 받은 뒤 심한 오한과 출혈이 지속될 때 한의치료를 어떻게 적용하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-020",
+    "kind": "abstain",
+    "question": "역류성 식도염 환자에게 한의치료를 적용할 때 가장 권고되는 변증과 치료는 무엇인가요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-021",
+    "kind": "abstain",
+    "question": "수술 후 지속되는 손 저림 환자에서 손목터널증후군과 경추신경근병증을 어떻게 감별하고 한의치료를 선택하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-022",
+    "kind": "abstain",
+    "question": "입원 중 발생한 섬망 환자에게 한의치료를 적용할 때 권장되는 중재는 무엇인가요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-023",
+    "kind": "abstain",
+    "question": "급성 방광염으로 배뇨통과 빈뇨가 있는 환자에게 한의치료를 병행할 수 있나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-024",
+    "kind": "abstain",
+    "question": "다발성 경화증 환자의 보행 불안정과 근력 저하에 대해 한의치료를 고려할 때 어떤 중재와 평가 지표를 사용할 수 있나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-025",
+    "kind": "abstain",
+    "question": "수술은 하지 않았지만 최근 갑자기 심해진 한쪽 무릎 통증과 부종이 있는 환자에게 한의치료를 시작하기 전에 감별해야 할 급성 질환은 무엇인가요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-026",
+    "kind": "abstain",
+    "question": "성인 환자에서 밤에 다리에 불편감이 심해 잠을 설치는 증상이 있을 때, 한의치료를 시작하기 전에 어떤 하지 질환을 먼저 감별해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-027",
+    "kind": "abstain",
+    "question": "자궁근종 수술 후에도 과다월경과 골반통이 지속되는 환자에게 한의치료를 시작하기 전에 먼저 어떤 부인과 질환을 감별해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-028",
+    "kind": "abstain",
+    "question": "갑작스러운 두통과 발열, 목 경직을 보이는 환자에게 한의치료를 시작하기 전에 어떤 응급 신경계 질환을 먼저 감별해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-029",
+    "kind": "abstain",
+    "question": "수면 중 호흡이 끊기고 심한 주간 졸림이 동반되는 환자에게 한의치료를 시작하기 전에 어떤 호흡기 질환을 먼저 평가해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-030",
+    "kind": "abstain",
+    "question": "수면 중 다리가 반복적으로 떨리고 몸이 쥐어나는 환자에게 한의치료를 시작하기 전에 어떤 신경계 질환이나 약물 이상반응을 먼저 감별해야 하나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-031",
+    "kind": "abstain",
+    "question": "급성 바이러스성 심근염 환자에게 입원 치료와 함께 한약을 보조적으로 사용하는 것이 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-032",
+    "kind": "abstain",
+    "question": "급성 담낭염 환자에게 수술 전후 한약을 보조적으로 사용하는 것이 통증과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-033",
+    "kind": "abstain",
+    "question": "급성 바이러스성 간염 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 간기능 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-034",
+    "kind": "abstain",
+    "question": "급성 편도염 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 증상 호전과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-035",
+    "kind": "abstain",
+    "question": "급성 췌장염 환자에게 입원 치료와 함께 한약이나 침 치료를 보조적으로 사용하는 것이 통증과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-036",
+    "kind": "abstain",
+    "question": "급성 폐색성 장질환 환자에게 수술이나 내시경 치료 전후 한의치료를 보조적으로 사용하는 것이 통증과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-037",
+    "kind": "abstain",
+    "question": "급성 기관지염 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 기침과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-038",
+    "kind": "abstain",
+    "question": "급성 심낭염 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 흉통과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-039",
+    "kind": "abstain",
+    "question": "노인성 황반변성 환자에게 침이나 한약을 보조적으로 사용하는 것이 시력 유지와 삶의 질 향상에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-040",
+    "kind": "abstain",
+    "question": "급성 세균성 결막염 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 증상 호전과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-041",
+    "kind": "abstain",
+    "question": "만성신장병 환자에게 한의치료를 보조적으로 사용하는 것이 신기능 저하 속도를 늦추고 삶의 질을 높이는 데 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-042",
+    "kind": "abstain",
+    "question": "급성 화농성 골수염 환자에게 항생제와 수술 치료를 받는 동안 한약이나 침 치료를 보조적으로 사용하는 것이 통증과 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-043",
+    "kind": "abstain",
+    "question": "급성 신장결석 환자에게 한약이나 침 치료를 보조적으로 사용하는 것이 통증과 결석 배출에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-abstain-044",
+    "kind": "abstain",
+    "question": "급성 바이러스성 근육염 환자에게 침이나 한약을 보조적으로 사용하는 것이 통증과 근력 회복에 도움이 되나요?",
+    "expectedEvidence": [],
+    "status": "approved",
+    "origin": "reverse-generated"
   }
 ]

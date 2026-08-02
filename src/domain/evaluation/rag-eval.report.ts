@@ -107,5 +107,24 @@ export function renderEvalReport(report: RagEvalReport): string {
   }
   lines.push('');
 
+  // 기권율만으로는 손댈 수 없다 — 게이트를 조정하려면 어느 문항이 몇 점으로 통과했는지,
+  // 그게 라벨 오류(사실은 답 가능)인지 진짜 게이트 실패인지 봐야 한다
+  lines.push(`## 기권 실패 문항 (기권해야 하는데 답함) — ${report.abstainFailures.length}건`);
+  lines.push('');
+  if (report.abstainFailures.length === 0) {
+    lines.push('없음.');
+  } else {
+    lines.push('| 문항 | 질문 | top-1 거리 | 리랭크 점수 | top-1 지침 |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const failure of report.abstainFailures) {
+      lines.push(
+        `| ${cell(failure.itemId)} | ${cell(failure.question)} | ` +
+          `${failure.top1Distance.toFixed(DISTANCE_DIGITS)} | ${failure.top1Relevance} | ` +
+          `${cell(failure.top1Guideline)} |`,
+      );
+    }
+  }
+  lines.push('');
+
   return lines.join('\n');
 }
