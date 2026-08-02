@@ -826,6 +826,1770 @@
     "origin": "reverse-generated"
   },
   {
+    "id": "evalgen-answerable-064",
+    "kind": "answerable",
+    "question": "조현병 스펙트럼장애에서 양성·음성 증상을 함께 개선하려면 항정신병약 단독보다 어떤 한약 처방을 병용하는 것을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "조현병스펙트럼장애 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-065",
+    "kind": "answerable",
+    "question": "조현병 스펙트럼장애에서 양성·음성 증상 보완을 위해 항정신병약물과 함께 고려할 수 있는 한약 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "조현병스펙트럼장애 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-066",
+    "kind": "answerable",
+    "question": "성인 근막통증증후군 환자에서 통증과 기능 개선을 목표로 할 때, 의과 주사 치료보다 침 치료를 우선 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "근막통증증후군의 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회\t",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-067",
+    "kind": "answerable",
+    "question": "성인 근막통증증후군 환자에서 통증과 다른 증상을 줄이기 위해 의과 약물보다 침 치료를 우선 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "근막통증증후군의 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회\t",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-068",
+    "kind": "answerable",
+    "question": "슬관절전치환술 후 한의치료를 계획할 때 초기에는 어떤 변증을 우선 고려하고, 어떤 증상들을 함께 관찰해 세부 변증을 판단해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "슬관절전치환술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-069",
+    "kind": "answerable",
+    "question": "슬관절 전치환술 후 환자에게 침치료를 고려할 때, 수술 시기와 환자 상태를 어떻게 반영해 어떤 경락과 경혈을 선택해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "슬관절전치환술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-070",
+    "kind": "answerable",
+    "question": "과민대장증후군 환자에서 증상과 삶의 질을 개선하기 위해 위약보다 한약 치료를 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "과민대장증후군 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-071",
+    "kind": "answerable",
+    "question": "과민대장증후군 환자의 증상 완화를 위해 위약 대신 고려해볼 수 있는 한약은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "과민대장증후군 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-072",
+    "kind": "answerable",
+    "question": "과민대장증후군 환자의 증상과 삶의 질 개선을 위해 양방약물보다 한약 치료를 우선 고려할 수 있습니까?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "과민대장증후군 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-073",
+    "kind": "answerable",
+    "question": "성인 손목터널증후군 환자에서 전침 치료를 고려할 때, 어떤 혈자리를 중심으로 어떤 방식으로 시행하는 것이 적절한가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "손목터널증후군 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-074",
+    "kind": "answerable",
+    "question": "성인 손목터널증후군에서 약물치료나 야간 부목보다 전침을 쓰는 것이 증상이나 기능 개선에 더 도움이 될까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "손목터널증후군 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-076",
+    "kind": "answerable",
+    "question": "심장신경증 환자에서 증상 완화를 위해 양약만 쓰는 것보다 어떤 한방 처방을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "자율신경실조증 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-077",
+    "kind": "answerable",
+    "question": "심장신경증 환자에서 양약만 쓰는 것보다 소요산을 기본 처방으로 고려하는 게 더 적절한가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "자율신경실조증 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R2-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-078",
+    "kind": "answerable",
+    "question": "사상체질병증 치료 전후 평가에서 소증과 현증의 심한 정도가 서로 다르게 나올 때는 무엇을 기준으로 중증도를 판단해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "사상체질병증 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R02"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-079",
+    "kind": "answerable",
+    "question": "소음인 망양병이 중증으로, 열감과 자한에 더해 복만·변비·번조가 뚜렷한 환자에서 어떤 체질한약을 우선 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "사상체질병증 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R03"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-080",
+    "kind": "answerable",
+    "question": "소아 식욕부진을 진단한 뒤에는 어떤 변증들을 기본으로 나누어 추가 평가를 하는 것이 좋을까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "소아식욕부진 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-081",
+    "kind": "answerable",
+    "question": "소아 식욕부진에서 한약치료를 고려할 때 변증에 따라 어떤 처방들을 우선 선택할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "소아식욕부진 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-082",
+    "kind": "answerable",
+    "question": "안면신경마비 환자의 예후를 가늠하려고 급성기가 지난 뒤 근전도나 신경전도검사를 시행하는 것을 고려해야 할까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "안면신경마비 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-083",
+    "kind": "answerable",
+    "question": "안면신경마비 환자에서 급성기가 지난 뒤 객관적 평가를 위해 표면근전도 검사를 고려할 수 있습니까?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "안면신경마비 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-084",
+    "kind": "answerable",
+    "question": "월경전증후군 환자에서 증상 완화를 위해 소요산이나 소요산 가미방을 써도 되는지, 그리고 치료 기간은 어느 정도로 잡는 게 좋을까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "월경전증후군 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-085",
+    "kind": "answerable",
+    "question": "간울기체형으로 변증된 월경전증후군 환자에서 증상 개선을 위해 시호소간산이나 시호소간산 가미방을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "월경전증후군 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-086",
+    "kind": "answerable",
+    "question": "급성 요저류가 없는 50~80세 전립선비대증 환자에서 IPSS 8점 이상이고 빈뇨·절박뇨·야간뇨 점수 합이 6점 이상일 때 통륭계폐탕을 우선 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "전립선증식증 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-087",
+    "kind": "answerable",
+    "question": "급성 요저류가 없는 전립선비대증 환자에서 증상과 요류검사 개선을 위해 표준약물보다 진무탕을 우선 고려해도 될까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "전립선증식증 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-088",
+    "kind": "answerable",
+    "question": "청소년 특발성 측만증에서 증상 완화와 통증 감소를 목적으로 추나치료를 고려할 수 있는 경우는 언제인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "변형성배병증(척추측만증) 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-089",
+    "kind": "answerable",
+    "question": "청소년 특발성 척추측만증 환자에서 보조기 치료와 함께 추나를 병행하는 것을 증상 개선 목적으로 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "변형성배병증(척추측만증) 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-090",
+    "kind": "answerable",
+    "question": "성인에서 심부전이 의심될 때 진단에 우선 어떤 혈액검사를 시행해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성심부전 한의표준임상진료지침\t",
+        "publisher": "대한한방내과학회, 대한중풍순환신경학회\t",
+        "recommendationNumber": "R1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-091",
+    "kind": "answerable",
+    "question": "성인 심부전 환자에서 중증도와 예후를 평가하거나 치료 반응을 확인할 때 어떤 검사를 우선적으로 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성심부전 한의표준임상진료지침\t",
+        "publisher": "대한한방내과학회, 대한중풍순환신경학회\t",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-092",
+    "kind": "answerable",
+    "question": "성인 만성심부전 환자에서 양방치료만 하는 것보다 한약을 함께 쓰는 것을 권고하는가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성심부전 한의표준임상진료지침\t",
+        "publisher": "대한한방내과학회, 대한중풍순환신경학회\t",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-093",
+    "kind": "answerable",
+    "question": "ADHD 소아·청소년에게 약물치료 대신 침 치료를 선택할 때, 어떤 임상 상황을 고려하고 자주 쓰는 혈위와 치료 빈도는 어떻게 잡아야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "주의력결핍 과잉행동장애 한의표준임상진료지침\t",
+        "publisher": "대한한방신경정신과학회\t",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-094",
+    "kind": "answerable",
+    "question": "ADHD 소아·청소년에게 뜸 치료를 적용할 때 권장 시술 방식, 횟수와 시간, 주의해야 할 안전 수칙은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "주의력결핍 과잉행동장애 한의표준임상진료지침\t",
+        "publisher": "대한한방신경정신과학회\t",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-095",
+    "kind": "answerable",
+    "question": "골다공증 환자에서 골밀도와 통증 개선을 위해 침 치료를 표준 치료와 함께 시행하는 것이 권장되며, 병행할 때 어떤 침 자극 방식들을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "골다공증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-096",
+    "kind": "answerable",
+    "question": "골다공증 환자에서 한약치료에 침이나 뜸을 함께 병행하는 것을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "골다공증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-098",
+    "kind": "answerable",
+    "question": "성인 원발성 불면 환자에서 불면 증상 완화를 위해 온담탕가감을 고려할 수 있는 경우와, 어떤 변증·증상에서 변방이나 가감을 적용하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "불면장애 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-2-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-099",
+    "kind": "answerable",
+    "question": "성인 범불안장애 환자의 불안 증상 완화를 위해 일반적인 불안장애 약물 대신 고려해볼 수 있는 한약 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "불안장애 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-100",
+    "kind": "answerable",
+    "question": "성인 범불안장애 환자의 불안 증상 개선을 위해 약물치료 대신 고려할 수 있는 한방 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "불안장애 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-101",
+    "kind": "answerable",
+    "question": "성인 수족냉증 환자를 볼 때 함께 감별해서 확인해야 하는 동반 질환에는 어떤 것들이 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "수족냉증 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-102",
+    "kind": "answerable",
+    "question": "성인 수족냉증 환자에서 변증 진단을 적용할 때 어떤 변증 유형들을 함께 고려해야 할까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "수족냉증 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R1-4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-104",
+    "kind": "answerable",
+    "question": "원인불명 난임 여성에게 뜸치료를 적용할 때 복부의 어떤 혈위를 중심으로 온구법이나 격강구 같은 간접구를 우선 고려하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "여성난임 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-105",
+    "kind": "answerable",
+    "question": "경미한 임신오조 환자가 한의원에 처음 왔을 때 비타민 B6 대신 어떤 단미 한약을 먼저 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "임신오조 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-106",
+    "kind": "answerable",
+    "question": "임신오조에서 진토제 같은 양약을 원하지 않는 경증 환자에게 대체로 고려할 수 있는 한약 단독치료는 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "임신오조 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-107",
+    "kind": "answerable",
+    "question": "특발성 파킨슨병에서 떨림, 근육 강직, 운동완서가 뚜렷한 간양상항형 환자에게 항파킨슨제와 함께 고려할 수 있는 한약 처방은 무엇인가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "파킨슨병 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R2-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-108",
+    "kind": "answerable",
+    "question": "특발성 파킨슨병에서 전신 쇠약과 수면장애, 배뇨장애, 운동 제한이 동반된 혈어·신허 양상 환자에게 항파킨슨제와 함께 어떤 한약 처방을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "파킨슨병 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R2-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-109",
+    "kind": "answerable",
+    "question": "허실변증을 판단할 때 맥진기기를 쓰는 것이 권고되며, 맥파 정보를 얻기 위해서는 국제표준 방식의 맥영상시스템을 우선 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "팔강변증 한의표준임상진료지침",
+        "publisher": "한의병리학회",
+        "recommendationNumber": "R12"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-110",
+    "kind": "answerable",
+    "question": "허실변증을 판단할 때 설진기기를 쓰는 것이 권고되며, 설질과 설색 영상을 얻기 위해 국제표준 방식의 설진영상시스템을 고려할 수 있습니까?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "팔강변증 한의표준임상진료지침",
+        "publisher": "한의병리학회",
+        "recommendationNumber": "R13"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-111",
+    "kind": "answerable",
+    "question": "유방암 치료 중 피로를 호소하는 환자에서 보완요법으로 침 치료를 적용할 때 고려할 수 있는 주요 혈자리는 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "유방암의 보완치료 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-112",
+    "kind": "answerable",
+    "question": "유방암 환자에서 피로가 심할 때 보완치료로 뜸을 고려해도 되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "유방암의 보완치료 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-113",
+    "kind": "answerable",
+    "question": "성인 류마티스 관절염 환자에서 증상 개선을 위한 침 치료를 할 때, 어떤 혈자리를 병용할 수 있고 치료 빈도는 어떻게 조절해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "류마티스 관절염 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-114",
+    "kind": "answerable",
+    "question": "성인 류마티스 관절염 환자의 증상 완화를 위해 약침을 쓸 때, 시술 부위와 함께 어떤 취혈 원칙을 적용하고 봉약침 사용 전에는 어떤 안전 조치가 필요한가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "류마티스 관절염 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-115",
+    "kind": "answerable",
+    "question": "회전근개 수술 후 환자를 한의적으로 변증할 때 우선 어떤 패턴을 먼저 염두에 두고, 어떤 증상들을 함께 살펴 세부 변증을 정할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "회전근개 수술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-116",
+    "kind": "answerable",
+    "question": "회전근개 수술 직후 환자의 어깨 통증과 기능 회복을 위해 어떤 부위의 경혈을 선택해 침치료를 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "회전근개 수술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-117",
+    "kind": "answerable",
+    "question": "경항통 환자에서 통증과 기능 개선을 위해 초음파 유도 침도 치료가 비유도 침도 치료보다 더 적절한가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "근골격계 초음파 유도 한의 중재 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-118",
+    "kind": "answerable",
+    "question": "요추 추간판 탈출증 환자에게 약침을 놓을 때 초음파를 보면서 하는 것이 비초음파 방식보다 통증과 기능 개선에 더 도움이 되며, 혈관·신경 손상을 줄이기 위해 어떤 구조를 먼저 확인해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "근골격계 초음파 유도 한의 중재 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-119",
+    "kind": "answerable",
+    "question": "알레르기 비염 환자의 주 증상 개선을 위해 옥병풍산이나 옥병풍산 가미방을 쓸 때 어떤 변증을 함께 고려하고, 이상반응은 어떤 점을 주의해서 봐야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "알레르기 비염 한의표준임상진료지침",
+        "publisher": "한방안이비인후피부과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-120",
+    "kind": "answerable",
+    "question": "알레르기 비염 환자에서 주된 증상을 줄이기 위해 우선 고려할 수 있는 한약 처방은 무엇이며, 보통 어느 기간 정도 투여하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "알레르기 비염 한의표준임상진료지침",
+        "publisher": "한방안이비인후피부과학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-121",
+    "kind": "answerable",
+    "question": "경항통을 호소하는 19~70세 WAD 1·2급 환자에서 증상 완화를 위해 침치료를 어떤 치료와 함께 시행하는 것을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "교통사고 상해 증후군 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-122",
+    "kind": "answerable",
+    "question": "요통을 주증으로 하는 19세 이상 70세 이하의 교통사고상해증후군 1·2형 환자에게 침치료를 물리치료나 운동 같은 표준치료와 함께 시행하는 것을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "교통사고 상해 증후군 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-123",
+    "kind": "answerable",
+    "question": "성인 대상포진 환자에서 증상 완화와 대상포진후신경통 예방을 위해 전침을 통상적인 의과 치료에 추가해 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "대상포진 및 대상포진후신경통 한의표준임상진료지침",
+        "publisher": "대한침구의학회\t",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-124",
+    "kind": "answerable",
+    "question": "성인 대상포진 환자에서 증상 완화와 대상포진후신경통 예방을 위해 통상적인 의과치료 대신 화침을 고려할 수 있는 상황은 언제이며, 급성기에는 어느 정도 빈도로 시행하고 어떤 부위에 적용하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "대상포진 및 대상포진후신경통 한의표준임상진료지침",
+        "publisher": "대한침구의학회\t",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-125",
+    "kind": "answerable",
+    "question": "성인 견비통 환자에서 통증과 기능을 함께 개선하려면 일반침 치료에 어떤 치료를 같이 시행하는 것이 권고되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "견비통 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-126",
+    "kind": "answerable",
+    "question": "성인 견비통 환자에서 치료 효과를 높이기 위해 일반 침치료와 함께 어떤 치료를 병행하는 것이 권고되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "견비통 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-127",
+    "kind": "answerable",
+    "question": "성인 경항통 환자에서 통상적인 양방 치료와 비교할 때 증상 개선을 위해 침치료 시행을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "경항통 한의표준임상진료지침",
+        "publisher": "척추신경추나의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-128",
+    "kind": "answerable",
+    "question": "성인 경항통 환자가 이미 진통제나 물리치료 같은 양방의 통상 치료를 받고 있을 때, 증상 완화를 위해 침 치료를 함께 권고할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "경항통 한의표준임상진료지침",
+        "publisher": "척추신경추나의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-129",
+    "kind": "answerable",
+    "question": "성인 고혈압 환자에서 습담변증이 의심될 때 혈압을 낮추기 위해 반하백출천마탕 단독 처방을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "고혈압 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-130",
+    "kind": "answerable",
+    "question": "성인 고혈압 환자에서 혈압을 낮추는 목적이라면 이수제를 단독으로 쓰는 것을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "고혈압 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-131",
+    "kind": "answerable",
+    "question": "산후신통이나 산후 감각장애가 있는 산모에서 통증과 감각 이상을 줄이기 위해 한약을 선택해야 한다면 어떤 처방을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "산후풍 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-132",
+    "kind": "answerable",
+    "question": "산후풍으로 산후신통이 있거나 감각장애가 있는 산모에게 변증에 따라 어떤 한약치료를 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "산후풍 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-133",
+    "kind": "answerable",
+    "question": "성인 주요우울장애 환자에서 심비양허 소견이 있고 불면과 기억력 저하가 동반될 때 항우울제 대신 고려할 수 있는 한방 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "우울증 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-134",
+    "kind": "answerable",
+    "question": "성인 주요우울장애 환자에서 우울 증상 개선을 위해 항우울제 대신 고려할 수 있는 한약 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "우울증 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-135",
+    "kind": "answerable",
+    "question": "원발성 월경통에서 침치료를 한다면 언제부터 얼마나 치료하는 것이 통증 개선에 도움이 될까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "월경통 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-136",
+    "kind": "answerable",
+    "question": "원발성 월경통 환자에서 증상 완화를 위해 평소 관리만 하기보다 침치료를 고려해야 하고, 사용할 수 있는 경혈로는 어떤 혈자리를 생각할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "월경통 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-137",
+    "kind": "answerable",
+    "question": "원발성 월경통 환자의 증상 완화를 위해 플라시보 침보다 실제 침치료를 시행하는 것을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "월경통 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-138",
+    "kind": "answerable",
+    "question": "편두통 환자에서 증상 완화나 삶의 질 향상을 목표로 침치료를 고려할 때, 두부와 원위 혈자리로 어떤 혈들을 주로 선택할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "편두통 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-139",
+    "kind": "answerable",
+    "question": "편두통 환자에서 전침치료를 고려할 때, 일반적인 양약치료보다 증상 호전이나 두통 강도 완화에 도움이 될 수 있는가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "편두통 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-140",
+    "kind": "answerable",
+    "question": "퇴행성 요추척추관협착증 환자에서 침도치료를 적용할 때 어떤 점들을 특히 주의해서 판단해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 요추척추관협착증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-141",
+    "kind": "answerable",
+    "question": "퇴행성 요추척추관협착증 환자에서 한약을 사용할 때 비수술적 치료와 함께 병행하는 방안을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 요추척추관협착증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-142",
+    "kind": "answerable",
+    "question": "성인 기능성 소화불량 환자의 증상 완화를 위해 반하사심탕을 고려할 때, 어떤 증상 양상에서 한열착잡형으로 보고 적용할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "기능성 소화불량 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-143",
+    "kind": "answerable",
+    "question": "성인 기능성 소화불량 환자에서 증상과 삶의 질을 개선하기 위해 육군자탕을 고려할 수 있는 경우는 어떤 환자군인가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "기능성 소화불량 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-144",
+    "kind": "answerable",
+    "question": "퇴행성 무릎관절염 환자에서 통증을 줄이고 기능을 개선하기 위해 일반적인 의학적 치료에 침 치료를 함께 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 슬관절염 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-145",
+    "kind": "answerable",
+    "question": "퇴행성 슬관절염 환자에게 한의치료를 할 때 통증과 기능, 전체 증상을 더 좋게 만들기 위해 침 치료를 함께 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 슬관절염 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-146",
+    "kind": "answerable",
+    "question": "퇴행성 고관절염 환자의 기능을 개선하려고 할 때, 일반침 치료를 통상적 의과치료보다 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 관절염(고관절·수지관절염) 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-147",
+    "kind": "answerable",
+    "question": "퇴행성 고관절염 환자에서 통증과 기능을 개선하기 위해 전침치료를 통상적인 치료에 더해 고려할 수 있다면, 실제 적용 시 자극 빈도·강도·유지 시간은 어떻게 잡아야 할까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "퇴행성 관절염(고관절·수지관절염) 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-148",
+    "kind": "answerable",
+    "question": "긴장성 두통 환자에서 예방약보다 일반 침 치료가 증상 완화에 더 도움이 되는지, 그리고 실제로 어떤 혈자리를 주로 쓰는지 궁금합니다?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "긴장성 두통 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-149",
+    "kind": "answerable",
+    "question": "긴장성 두통 환자에서 양약 대신 평형침을 고려한다면 두통혈, 경통혈, 승제혈 같은 혈위를 사용할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "긴장성 두통 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-150",
+    "kind": "answerable",
+    "question": "족관절 염좌 환자에서 인대 손상 정도를 평가하기 위해 MRI 검사를 고려해야 하는 경우는 언제인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "족관절 염좌 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-151",
+    "kind": "answerable",
+    "question": "급성 족관절 염좌 환자에서 골절이 있는지 진단기기 없이 먼저 가려낼 때 Ottawa Ankle Rule을 적용해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "족관절 염좌 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-152",
+    "kind": "answerable",
+    "question": "성인 턱관절 장애 환자에서 일반적 보존치료보다 침치료를 우선적으로 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "턱관절 장애 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-153",
+    "kind": "answerable",
+    "question": "성인 턱관절 장애 환자가 일반적인 보존치료를 받고 있을 때, 증상 개선을 위해 침 치료를 함께 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "턱관절 장애 한의표준임상진료지침",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-154",
+    "kind": "answerable",
+    "question": "갱년기 장애나 폐경기후 증후군 환자에게 침치료를 할 때 기본으로 고려할 혈자리와, 오심번열이나 안면홍조가 심할 때 추가로 쓸 수 있는 혈자리는 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "갱년기 장애 및 폐경기후 증후군 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-155",
+    "kind": "answerable",
+    "question": "갱년기나 폐경 후 안면홍조에는 침치료가 대조치료나 생활관리보다 더 도움이 되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "갱년기 장애 및 폐경기후 증후군 한의표준임상진료지침",
+        "publisher": "대한한방부인과학회",
+        "recommendationNumber": "R2-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-156",
+    "kind": "answerable",
+    "question": "성인 감기 환자에서 발열은 있지만 땀이 잘 나지 않고 입마름·갈증·인후통과 함께 콧물이나 가래가 끈적한 경우 은교산을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "감기 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-157",
+    "kind": "answerable",
+    "question": "성인 감기 환자에서 어떤 한약 처방을 증상 호전을 위해 고려할 수 있으며, 어떤 변증과 증상에서 활용할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "감기 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-158",
+    "kind": "answerable",
+    "question": "대퇴골절 수술 후 통증과 회복을 돕기 위해 통상 치료 대신 한약을 고려할 때, 어떤 처방과 약재를 환자 상태에 맞춰 선택하거나 가감할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "골절 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-159",
+    "kind": "answerable",
+    "question": "수술한 대퇴골절 환자에게 통증과 회복을 돕기 위해 통상 치료에 한약을 함께 쓰는 것을 고려해야 할까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "골절 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-160",
+    "kind": "answerable",
+    "question": "금연 치료에서 금연 성공률, 치료 반응, 정신심리 지표를 높이기 위해 니코틴 대체요법보다 일반침을 단독으로 사용하는 것을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "금연 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-161",
+    "kind": "answerable",
+    "question": "금연 치료에서 행동치료보다 금연 성공률이나 흡연량 감소를 높이기 위해 일반침을 단독으로 사용하는 것이 권고되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "금연 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-162",
+    "kind": "answerable",
+    "question": "성인 비만 환자에서 비만 지표 개선을 목적으로 태음조위탕을 고려할 때, 어떤 동반질환이나 환자 특성을 함께 보고 처방을 결정해야 하며 어떤 이상반응을 주의해서 관찰해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "비만 한의표준임상진료지침",
+        "publisher": "한방비만학회",
+        "recommendationNumber": "R1-1"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-163",
+    "kind": "answerable",
+    "question": "성인 비만 환자에서 비만 관련 지표를 개선하기 위해 실열 양상을 보이는 경우 방풍통성산을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "비만 한의표준임상진료지침",
+        "publisher": "한방비만학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-164",
+    "kind": "answerable",
+    "question": "근치적 위절제술 후 소화관 기능장애와 영양 상태 개선을 위해 장관영양과 한약을 병행하는 치료를 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "위암 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-165",
+    "kind": "answerable",
+    "question": "위암으로 근치적 위절제술을 받은 뒤 소화불량 같은 위장관 기능장애가 있을 때, 침·뜸과 향사육군자탕가감을 함께 쓰는 치료를 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "위암 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-166",
+    "kind": "answerable",
+    "question": "중풍 환자의 전반적 증상을 좋게 하려고 침 치료를 함께 적용할 때, 어떤 경혈과 부위를 우선적으로 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "중풍 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-167",
+    "kind": "answerable",
+    "question": "중풍 환자의 일상생활 수행능력 향상을 위해 침 치료를 함께 시행할 때, 회복기 이후에 임상적으로 고려할 수 있는 대표적인 침 혈위와 두침 부위는 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "중풍 한의표준임상진료지침",
+        "publisher": "대한중풍순환신경학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-168",
+    "kind": "answerable",
+    "question": "알츠하이머병 치매 환자에서 항치매약물보다 한약치료를 선호할 때 인지기능과 일상생활능력 개선 목적으로 고려해볼 수 있는 처방은 무엇인가?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "치매 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-169",
+    "kind": "answerable",
+    "question": "알츠하이머 치매 환자에서 항치매약물보다 한약을 더 선호한다면 인지기능과 행동심리증상 개선을 위해 육미지황탕을 우선 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "치매 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R1-3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-170",
+    "kind": "answerable",
+    "question": "급성 통풍 환자의 증상 완화를 위해 침에 열자극을 주는 치료를 고려한다면, 주로 어떤 혈자리와 유침 시간을 기준으로 시행해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "통풍 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-171",
+    "kind": "answerable",
+    "question": "성인 급성 통풍 환자에서 전침 치료를 시행한다면 기본적으로 어떤 혈위와 자극 조건을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "통풍 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-172",
+    "kind": "answerable",
+    "question": "비소세포폐암 근치적 절제술 후 폐기능을 높이기 위해 병행할 수 있는 호흡도인요법에는 어떤 종류가 있고, 각 방법은 어떻게 시행하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "폐암 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-173",
+    "kind": "answerable",
+    "question": "비소세포폐암 근치적 절제술 후 환자의 삶의 질을 높이기 위해 어떤 호흡도인요법을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "폐암 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-174",
+    "kind": "answerable",
+    "question": "화병 환자의 신체 증상 호전을 위해 전중(CV17)이나 견정(GB21)에 약침을 적용하는 것을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "화병 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-175",
+    "kind": "answerable",
+    "question": "화병 환자에서 소화불량이나 복부 불편감이 있을 때 뜸 치료를 고려한다면, 주로 어느 혈자리를 쓰고 시행 시간과 화상 예방 측면에서 어떤 점을 유의해야 할까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "화병 한의표준임상진료지침",
+        "publisher": "대한한방신경정신과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-176",
+    "kind": "answerable",
+    "question": "자폐 스펙트럼 장애 소아에서 한약치료를 시작할 때, 효과를 기대하려면 최소 어느 정도의 치료 기간을 잡아야 하고 우선 고려할 만한 처방은 무엇인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "자폐 스펙트럼 장애 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-177",
+    "kind": "answerable",
+    "question": "자폐 스펙트럼 장애 소아에서 핵심 증상 개선을 위해 행동·교육치료를 시행 중일 때 한약을 함께 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "자폐 스펙트럼 장애 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-178",
+    "kind": "answerable",
+    "question": "요추 수술 후 환자를 한의치료할 때 변증은 어떤 항목을 우선으로 보고, 이후 어떤 기준으로 세부 변증을 더 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "요추 수술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-179",
+    "kind": "answerable",
+    "question": "요추 수술 후 환자에서 침치료나 전침치료를 시행해 통증 완화를 기대할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "요추 수술후 한의치료 (수술후 증후군 한의표준임상진료지침)",
+        "publisher": "한방재활의학과학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-180",
+    "kind": "answerable",
+    "question": "성인 요추 추간판 탈출증 환자의 전반적인 증상 개선을 위해 침 치료에 온열 자극이나 전기 자극을 함께 적용하는 것이 권고되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "요추 추간판 탈출증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-181",
+    "kind": "answerable",
+    "question": "성인 요추 추간판 탈출증 환자에서 침 치료를 할 때 얕게 놓는 것보다 깊게 자입하는 방법을 고려해볼 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "요추 추간판 탈출증 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-182",
+    "kind": "answerable",
+    "question": "만성피로나 특발성 만성 피로 환자에서 비기허나 중기부족으로 변증되면 증상 개선을 위해 보중익기탕을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성 피로 한의표준임상진료지침",
+        "publisher": "대한한의진단학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-184",
+    "kind": "answerable",
+    "question": "성인 만성 비특이적 요통 환자에서 통증과 기능 개선을 목표로 침치료를 다른 치료나 아무 처치와 비교해 시행을 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성 요통 증후군 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R4"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-185",
+    "kind": "answerable",
+    "question": "성인 만성 비특이적 요통 환자에서 통증과 기능 개선을 위해 침치료와 함께 다른 한방치료를 병행해도 되나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "만성 요통 증후군 한의표준임상진료지침",
+        "publisher": "대한침구의학회",
+        "recommendationNumber": "R7"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-186",
+    "kind": "answerable",
+    "question": "현훈 환자에서 증상 호전을 위해 공진단 투여를 고려할 수 있는 경우는 어떤가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "현훈(어지럼증) 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R(Ⅰ-B-1)"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-187",
+    "kind": "answerable",
+    "question": "현훈 환자에서 침 치료만 하는 것보다 한약을 함께 쓰는 것이 증상과 추골동맥·기저동맥 혈류 개선에 도움이 될 때가 있고, 풍담증이나 심비양허증으로 보면 각각 어떤 처방을 고려해야 하나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "현훈(어지럼증) 한의표준임상진료지침",
+        "publisher": "사상체질의학회",
+        "recommendationNumber": "R(Ⅰ-B-2)"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-188",
+    "kind": "answerable",
+    "question": "특발성 저신장 소아·청소년에서 성장 개선을 위해 생활습관 교정보다 한약치료를 우선 고려할 수 있나요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "소아·청소년 성장장애 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-189",
+    "kind": "answerable",
+    "question": "특발성 저신장인 학령기에서 사춘기 시작 시기의 소아·청소년에게 성장호르몬 치료보다 한약치료를 우선 고려할 수 있는 상황인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "소아·청소년 성장장애 한의표준임상진료지침",
+        "publisher": "대한한방소아과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-190",
+    "kind": "answerable",
+    "question": "암성 피로 환자의 주된 증상을 줄이기 위해 전침 치료를 적용할 때 어떤 혈자리를 선택하고, 치료 빈도와 기간은 어떻게 잡는 것이 좋을까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "암 관련 증상 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-191",
+    "kind": "answerable",
+    "question": "암성 피로 환자에서 증상 완화를 위해 침 치료를 일상관리와 함께 적용하는 것이 필요한가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "암 관련 증상 한의표준임상진료지침",
+        "publisher": "대한암한의학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-192",
+    "kind": "answerable",
+    "question": "당뇨병 전단계의 임신하지 않은 성인 환자에서 혈당을 낮추기 위해 메트포르민보다 육미지황환 가감을 우선 고려해야 하는 경우는 언제인가요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "2형당뇨병 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R2"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
+    "id": "evalgen-answerable-193",
+    "kind": "answerable",
+    "question": "당뇨병 전단계로 진단된 임산부가 아닌 성인 환자의 혈당 조절을 위해 침 치료를 고려해도 될까요?",
+    "expectedEvidence": [
+      {
+        "guidelineTitle": "2형당뇨병 한의표준임상진료지침",
+        "publisher": "대한한방내과학회",
+        "recommendationNumber": "R3"
+      }
+    ],
+    "status": "approved",
+    "origin": "reverse-generated"
+  },
+  {
     "id": "evalgen-abstain-001",
     "kind": "abstain",
     "question": "임신 28주 산모에게 갑작스런 질출혈과 복통이 동반될 때 한의치료를 어떻게 적용해야 하나요?",
