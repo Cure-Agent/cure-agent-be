@@ -44,6 +44,23 @@ export function renderEvalReport(report: RagEvalReport): string {
   );
   lines.push('');
 
+  // 벡터 지표만 보면 「리랭커가 왜 이만큼밖에 못 올렸나」에 답할 수 없다 —
+  // 후보에 없던 것인지 순서가 나빴던 것인지가 이 두 줄에서 갈린다 (docs/specs/31)
+  lines.push('## 하이브리드 후보군 (docs/specs/31)');
+  lines.push('');
+  lines.push('| 지표 | 값 |');
+  lines.push('| --- | --- |');
+  lines.push(`| 키워드 arm Recall@K | ${ratio(report.keywordRecallAtK)} |`);
+  lines.push(`| 합집합 후보 커버리지 | ${ratio(report.unionCoverage)} |`);
+  lines.push('');
+  lines.push(
+    '키워드 arm은 문자 n-gram(pg_trgm) 단독 회수량이고, 합집합 커버리지는 두 arm을 합친 ' +
+      '후보에 기대 근거가 있는 비율 — **리랭커가 도달할 수 있는 상한**이다. ' +
+      '커버리지와 리랭크 Recall@5의 차이가 리랭커의 남은 몫이고, 커버리지 자체가 낮으면 ' +
+      '리랭커를 아무리 고쳐도 그 위로 못 간다.',
+  );
+  lines.push('');
+
   lines.push('## 리랭크 적용 지표 (docs/specs/29)');
   lines.push('');
   lines.push(`- 리랭크 점수 컷: ${report.rerankScoreCutoff}`);
@@ -98,12 +115,25 @@ export function renderEvalReport(report: RagEvalReport): string {
   if (report.failures.length === 0) {
     lines.push('없음.');
   } else {
-    lines.push('| 문항 | 질문 | 발견 순위 |');
-    lines.push('| --- | --- | --- |');
+    lines.push('| 문항 | 질문 | 벡터 순위 | 키워드 순위 |');
+    lines.push('| --- | --- | --- | --- |');
     for (const failure of report.failures) {
       const rank = failure.foundAtRank === null ? '없음 (top-30 밖)' : `${failure.foundAtRank}위`;
-      lines.push(`| ${cell(failure.itemId)} | ${cell(failure.question)} | ${rank} |`);
+      const keywordRank =
+        failure.keywordFoundAtRank === null
+          ? '없음 (top-K 밖)'
+          : `${failure.keywordFoundAtRank}위`;
+      lines.push(
+        `| ${cell(failure.itemId)} | ${cell(failure.question)} | ${rank} | ${keywordRank} |`,
+      );
     }
+    lines.push('');
+    // 어느 arm이 이 문항을 구제했는지가 다음 개입을 고르는 축이다:
+    // 한쪽만 찾았으면 융합이 답이고, 둘 다 없으면 임베딩·코퍼스 쪽이다
+    lines.push(
+      '두 arm의 순위를 나란히 둔다 — 한쪽만 찾은 문항은 융합이 구제하고, ' +
+        '둘 다 「없음」이면 후보군 확장으로는 풀리지 않는다(임베딩 교체·코퍼스 보강).',
+    );
   }
   lines.push('');
 

@@ -185,36 +185,52 @@ export class ConversationStreamService {
       });
 
       sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
-      // 리랭크가 켜져 있으면 후보를 넓게 연다(K=30) — 순서는 리랭커가 다시 세운다 (docs/specs/29)
+      /**
+       * 하이브리드가 켜져 있으면 두 arm의 합집합을 후보로 연다 (docs/specs/31) —
+       * 임베딩이 후보에조차 못 넣던 문항을 자구 일치가 데려온다. 꺼져 있으면 §29 그대로다.
+       * 리랭크가 켜져 있으면 후보를 넓게 연다(K=30) — 순서는 리랭커가 다시 세운다 (docs/specs/29)
+       */
+      const hybridActive = this.retrievalService.hybridEnabled;
       const rerankActive = this.retrievalService.rerankEnabled;
-      const retrieved = rerankActive
-        ? await this.retrievalService.search(
-            dto.content,
-            dto.filters,
-            this.retrievalService.rerankCandidates,
-          )
-        : await this.retrievalService.search(dto.content, dto.filters);
+      const retrieved = hybridActive
+        ? await this.retrievalService.searchHybrid(dto.content, dto.filters)
+        : rerankActive
+          ? await this.retrievalService.search(
+              dto.content,
+              dto.filters,
+              this.retrievalService.rerankCandidates,
+            )
+          : await this.retrievalService.search(dto.content, dto.filters);
 
       /**
-       * 게이트 ① 거리 (docs/specs/28) — **top-1만 본다.** 통과하면 2~5위에 컷 밖 청크가
-       * 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28 실측 조사).
+       * 게이트 ① 거리 (docs/specs/28) — **후보 최소 거리만 본다.** 통과하면 나머지에 컷 밖
+       * 청크가 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28).
        * 거리 기권이면 리랭커는 호출되지 않는다 — 확실히 먼 질문에 리랭크 비용을 쓰지 않는다.
+       *
+       * 하이브리드에서는 첫 행이 최소 거리가 아닐 수 있다(융합 순서는 RRF다). 최소값은 벡터 arm
+       * top-1과 같으므로(전 코퍼스 최소) 이 판정은 §28과 같은 의미를 유지한다.
        */
+      const minDistance = retrieved.reduce(
+        (min, row) => Math.min(min, row.distance),
+        Number.POSITIVE_INFINITY,
+      );
       let abstainReason: AbstainReason | null =
         retrieved.length === 0
           ? 'no_candidates'
-          : retrieved[0].distance > this.retrievalService.distanceCutoff
+          : minDistance > this.retrievalService.distanceCutoff
             ? 'beyond_cutoff'
             : null;
 
       /**
-       * 게이트 ② 리랭크 → ③ 점수 (docs/specs/29). 실패는 코사인 순위 폴백이다 —
+       * 게이트 ② 리랭크 → ③ 점수 (docs/specs/29). 실패는 검색 순위 폴백이다 —
        * 리랭커는 품질 향상 계층이지 가용성 의존성이 아니다. 점수 기권은 거리 기권과
        * 같은 사유(beyond_cutoff)로 통합한다: 사용자에게는 「관련 근거를 찾지 못했다」는
        * 같은 사실이고, 내부 원인은 로그가 구분한다.
        */
       let evidenceRows = retrieved.slice(0, RETRIEVAL_TOP_K);
-      let retrievalPolicyVersion = this.retrievalService.policyVersion;
+      let retrievalPolicyVersion = hybridActive
+        ? this.retrievalService.hybridPolicyVersion()
+        : this.retrievalService.policyVersion;
       if (!abstainReason && rerankActive) {
         const rerankStartedAt = process.hrtime.bigint();
         const elapsedSec = (): number =>
@@ -239,9 +255,9 @@ export class ConversationStreamService {
               .slice(0, RETRIEVAL_TOP_K);
             if (reranked.length > 0) {
               evidenceRows = reranked;
-              retrievalPolicyVersion = this.retrievalService.rerankedPolicyVersion(
-                this.reranker.model,
-              );
+              retrievalPolicyVersion = hybridActive
+                ? this.retrievalService.hybridPolicyVersion(this.reranker.model)
+                : this.retrievalService.rerankedPolicyVersion(this.reranker.model);
             }
           }
         } catch (error) {

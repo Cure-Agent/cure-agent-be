@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, cosineDistance, eq, inArray, sql } from 'drizzle-orm';
+import { SQL, and, asc, cosineDistance, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   EvidenceChunkRow,
   GuidelineRow,
@@ -23,6 +23,13 @@ function elapsedSeconds(startedAt: bigint): number {
 
 export const RETRIEVAL_TOP_K = 5;
 
+/**
+ * RRF 상수 (docs/specs/31). 융합 점수는 arm마다 `1/(RRF_K + 순위)`의 합이다 —
+ * 순위만 쓰므로 코사인 거리와 trigram 유사도처럼 **척도가 다른 두 점수를 정규화 없이 합칠 수 있다.**
+ * 60은 실측에 쓴 값이며 튜닝은 spec 31 Out of scope다.
+ */
+const RRF_K = 60;
+
 export interface RetrievalFilters {
   guidelineIds?: string[];
   recommendationGrades?: string[];
@@ -39,6 +46,19 @@ export interface RetrievedEvidence {
    * 거리 임계값을 데이터로 정하려면 분포를 재야 하기 때문이다 (docs/specs/27).
    */
   distance: number;
+}
+
+/**
+ * 하이브리드 검색 결과 (docs/specs/31) — 융합 순서로 정렬된다.
+ *
+ * arm별 순위를 부기하는 이유는 **평가와 운영이 같은 코드를 타게** 하기 위해서다:
+ * 벡터 원 지표(§27·§28의 비교 축)와 키워드 arm 기여도를 한 번의 검색으로 함께 잰다.
+ */
+export interface HybridEvidence extends RetrievedEvidence {
+  /** 벡터 arm에서의 순위(1-based). 그 arm에 없으면 null */
+  vectorRank: number | null;
+  /** 키워드 arm에서의 순위(1-based). 그 arm에 없으면 null */
+  keywordRank: number | null;
 }
 
 /**
@@ -81,6 +101,24 @@ export class RetrievalService {
 
   get rerankScoreCutoff(): number {
     return this.config.rerankScoreCutoff;
+  }
+
+  /** 하이브리드 검색 설정 노출 (docs/specs/31) — 위와 같은 이유로 단일 접근 경로를 유지한다 */
+  get hybridEnabled(): boolean {
+    return this.config.hybridEnabled;
+  }
+
+  /**
+   * 하이브리드로 답한 GenerationRun의 정책 버전 (docs/specs/31 기준 6).
+   * 리랭크 적용 여부가 문자열로 갈린다 — 폴백·비활성은 rerankerModel을 주지 않는다.
+   */
+  hybridPolicyVersion(rerankerModel?: string): string {
+    const base = `hybrid-rrf${RRF_K}-top${this.config.rerankCandidates}x2`;
+    const rerank = rerankerModel
+      ? `-rerank-${rerankerModel}-cut${this.config.distanceCutoff}` +
+        `-score${this.config.rerankScoreCutoff}`
+      : `-cut${this.config.distanceCutoff}`;
+    return `${base}${rerank}-v4/${this.embeddingProvider.model}`;
   }
 
   /**
@@ -129,9 +167,92 @@ export class RetrievalService {
     const [embedding] = await this.embeddingProvider.embed([query]);
     this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
 
-    const conditions = [
+    // 정렬에만 쓰던 거리를 SELECT에도 싣는다 — 같은 식이므로 추가 연산 비용은 없다
+    const distance = cosineDistance(evidenceChunks.embedding, embedding);
+
+    const searchStartedAt = process.hrtime.bigint();
+    const rows = await this.evidenceQuery(distance)
+      .where(and(...this.corpusConditions(filters)))
+      .orderBy(asc(distance))
+      .limit(topK);
+    this.metrics.recordRetrievalStage('vector_search', elapsedSeconds(searchStartedAt));
+
+    // 0건도 기록한다 — 그 0이 abstain의 원인이고, 급등은 인제스트 사고의 조기 경보다
+    this.metrics.recordRetrievedChunks(rows.length);
+    if (rows.length > 0) this.metrics.recordTop1Distance(rows[0].distance);
+
+    return rows;
+  }
+
+  /**
+   * 하이브리드 검색 (docs/specs/31) — 벡터 arm과 키워드 arm의 **합집합**을 RRF로 융합한다.
+   *
+   * 절단하지 않는 이유는 실측이다: RRF top-30으로 자르면 한쪽 arm에서만 깊게 잡히는 정답이
+   * 잘려 후보 커버리지가 0.978에 머물지만, 합집합 전체(≤2K)는 1.000이다.
+   *
+   * 두 arm을 **병렬로 던진다** — 키워드 arm은 전수 스캔이라 프로덕션 코퍼스에서 ~1s이고,
+   * 순차로 쌓으면 그만큼이 그대로 TTFT에 더해진다. arm별 소요를 따로 재는 것도 여기서만 가능하다.
+   *
+   * `armK`는 §27과 같은 **진단용 확장 지점**이다 — 운영은 기본값(`rerankCandidates`)을 쓴다.
+   */
+  async searchHybrid(
+    query: string,
+    filters?: RetrievalFilters,
+    armK: number = this.config.rerankCandidates,
+  ): Promise<HybridEvidence[]> {
+    const embedStartedAt = process.hrtime.bigint();
+    const [embedding] = await this.embeddingProvider.embed([query]);
+    this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
+
+    const conditions = this.corpusConditions(filters);
+    const distance = cosineDistance(evidenceChunks.embedding, embedding);
+    /**
+     * `word_similarity`는 **비대칭**이다 — 1번 인자의 트라이그램 집합이 2번 인자의 연속 구간과
+     * 얼마나 맞는지를 보므로, 짧은 질문이 앞이고 긴 본문이 뒤다. 뒤집으면 다른 값이 된다.
+     * 어절 경계 공백이 소실된 코퍼스(docs/specs/19)라 tsvector 어절 매칭이 성립하지 않고,
+     * 문자 n-gram은 조사·붙임에 강건하다.
+     */
+    const similarity = sql`word_similarity(${query}, ${evidenceChunks.content})`;
+
+    const vectorStartedAt = process.hrtime.bigint();
+    const vectorArm = this.evidenceQuery(distance)
+      .where(and(...conditions))
+      .orderBy(asc(distance))
+      .limit(armK)
+      .then((rows) => {
+        this.metrics.recordRetrievalStage('vector_search', elapsedSeconds(vectorStartedAt));
+        return rows;
+      });
+
+    const keywordStartedAt = process.hrtime.bigint();
+    // 동점 평원이 넓다 — 한 질문의 top-30 경계에 같은 값 72건이 몰린 실측이 있다.
+    // id 2차 정렬이 없으면 같은 질의가 실행마다 다른 후보를 낸다.
+    const keywordArm = this.evidenceQuery(distance)
+      .where(and(...conditions))
+      .orderBy(desc(similarity), asc(evidenceChunks.id))
+      .limit(armK)
+      .then((rows) => {
+        this.metrics.recordRetrievalStage('keyword_search', elapsedSeconds(keywordStartedAt));
+        return rows;
+      });
+
+    const [vectorRows, keywordRows] = await Promise.all([vectorArm, keywordArm]);
+    const fused = fuseByRrf(vectorRows, keywordRows);
+
+    // 벡터 전용 경로와 같은 축으로 관측한다 — 후보 수와 **최소** 거리다.
+    // 최소 거리는 벡터 arm top-1과 같다(전 코퍼스 최소값): §28 거리 게이트의 의미가 보존된다.
+    this.metrics.recordRetrievedChunks(fused.length);
+    if (vectorRows.length > 0) this.metrics.recordTop1Distance(vectorRows[0].distance);
+
+    return fused;
+  }
+
+  /** 두 검색 경로가 **같은 코퍼스**를 보게 하는 단일 지점 — 한쪽만 고치면 경계가 새는 곳이다 */
+  private corpusConditions(filters?: RetrievalFilters): SQL[] {
+    return [
       // 좌표계가 다른 벡터는 코사인 거리가 무의미하다 — 같은 모델로 만든 청크만 본다 (docs/specs/14).
       // 모델을 바꾸면 재인제스트 전까지 근거 0건(abstain)이 되며, 이것이 조용한 오답보다 안전하다.
+      // 키워드 arm에도 같은 조건을 건다: 자구가 맞아도 좌표계가 다른 청크는 검색 대상이 아니다.
       eq(evidenceChunks.embeddingModel, this.embeddingProvider.model),
       // 폐기된 판본·회차는 새 답변에 인용되지 않는다 (docs/specs/21).
       // 과거 인용은 message_citations로 계속 조회되므로 역사적 정확성은 유지된다.
@@ -148,13 +269,12 @@ export class RetrievalService {
       filters?.evidenceLevels?.length
         ? inArray(sql`${evidenceChunks.evidenceLevel}->>'code'`, filters.evidenceLevels)
         : undefined,
-    ].filter((c) => c !== undefined);
+    ].filter((condition): condition is SQL => condition !== undefined);
+  }
 
-    // 정렬에만 쓰던 거리를 SELECT에도 싣는다 — 같은 식이므로 추가 연산 비용은 없다
-    const distance = cosineDistance(evidenceChunks.embedding, embedding);
-
-    const searchStartedAt = process.hrtime.bigint();
-    const rows = await this.txManager.conn
+  /** 근거 1행의 모양은 두 arm이 같다 — 조인·선택 목록을 한 곳에 둔다 */
+  private evidenceQuery(distance: SQL) {
+    return this.txManager.conn
       .select({
         chunk: evidenceChunks,
         section: guidelineSections,
@@ -165,16 +285,45 @@ export class RetrievalService {
       .from(evidenceChunks)
       .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
       .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
-      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(asc(distance))
-      .limit(topK);
-    this.metrics.recordRetrievalStage('vector_search', elapsedSeconds(searchStartedAt));
-
-    // 0건도 기록한다 — 그 0이 abstain의 원인이고, 급등은 인제스트 사고의 조기 경보다
-    this.metrics.recordRetrievedChunks(rows.length);
-    if (rows.length > 0) this.metrics.recordTop1Distance(rows[0].distance);
-
-    return rows;
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id));
   }
+}
+
+/**
+ * Reciprocal Rank Fusion (docs/specs/31). 점수는 arm마다 `1/(RRF_K + 순위)`의 합이다 —
+ * **순위만 쓰므로** 코사인 거리와 트라이그램 유사도처럼 척도가 다른 두 신호를 정규화 없이 합친다.
+ *
+ * 동점이 흔하다(두 arm에서 같은 순위면 점수가 정확히 같다). 벡터 arm을 앞에 두는 이유는
+ * §28 거리 게이트·§29 리랭크가 그 위에서 정의된 1차 신호이기 때문이고, id는 최종 결정성이다.
+ */
+function fuseByRrf(
+  vectorRows: RetrievedEvidence[],
+  keywordRows: RetrievedEvidence[],
+): HybridEvidence[] {
+  const fused = new Map<string, HybridEvidence>();
+
+  const merge = (rows: RetrievedEvidence[], arm: 'vectorRank' | 'keywordRank'): void => {
+    rows.forEach((row, index) => {
+      const existing = fused.get(row.chunk.id);
+      const target =
+        existing ?? { ...row, vectorRank: null, keywordRank: null };
+      target[arm] = index + 1;
+      fused.set(row.chunk.id, target);
+    });
+  };
+
+  merge(vectorRows, 'vectorRank');
+  merge(keywordRows, 'keywordRank');
+
+  const scoreOf = (row: HybridEvidence): number =>
+    (row.vectorRank === null ? 0 : 1 / (RRF_K + row.vectorRank)) +
+    (row.keywordRank === null ? 0 : 1 / (RRF_K + row.keywordRank));
+
+  return [...fused.values()].sort((a, b) => {
+    const byScore = scoreOf(b) - scoreOf(a);
+    if (byScore !== 0) return byScore;
+    const byVectorRank = (a.vectorRank ?? Infinity) - (b.vectorRank ?? Infinity);
+    if (byVectorRank !== 0) return byVectorRank;
+    return a.chunk.id < b.chunk.id ? -1 : a.chunk.id > b.chunk.id ? 1 : 0;
+  });
 }

@@ -5,7 +5,11 @@
  * 나쁜 것(리랭커)과 애초에 못 찾는 것(하이브리드·모델 교체)을 가르는 축이기 때문이다.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { RetrievalService, RETRIEVAL_TOP_K } from '../../infrastructure/retrieval/retrieval.service';
+import {
+  HybridEvidence,
+  RETRIEVAL_TOP_K,
+  RetrievalService,
+} from '../../infrastructure/retrieval/retrieval.service';
 import { RERANKER, Reranker } from '../../infrastructure/retrieval/reranker.port';
 import { EvalKind, EvalSetItem } from './evalset.types';
 import { LabelResolver } from './label-resolver';
@@ -26,8 +30,13 @@ export interface DistanceDistribution {
 export interface EvalFailure {
   itemId: string;
   question: string;
-  /** 정답이 나타난 순위(1-based). 30까지 열어도 없으면 null */
+  /** 벡터 arm에서 정답이 나타난 순위(1-based). 30까지 열어도 없으면 null */
   foundAtRank: number | null;
+  /**
+   * 키워드 arm에서 정답이 나타난 순위(1-based). 없으면 null (docs/specs/31).
+   * 두 arm을 나란히 놓아야 「어느 arm이 이 문항을 구제했는가/둘 다 놓쳤는가」가 읽힌다.
+   */
+  keywordFoundAtRank: number | null;
 }
 
 /** kind별 리랭크 점수 분포 — 점수 컷을 데이터로 정하기 위한 원자료 (issue #232) */
@@ -70,6 +79,16 @@ export interface RagEvalReport {
   recallAt5: number;
   mrrAt5: number;
   recallAt30: number;
+  /**
+   * 키워드 arm 단독 Recall@K (docs/specs/31) — 벡터 원 지표와 나란히 놓는 대조 축이다.
+   * 이 값이 벡터 Recall@30을 넘는 구간이 「임베딩이 놓치고 자구가 잡는」 문항이다.
+   */
+  keywordRecallAtK: number;
+  /**
+   * 합집합 후보 커버리지 (docs/specs/31) — 기대 근거가 융합 후보(무절단)에 있는 비율.
+   * **리랭커가 도달할 수 있는 상한**이라 리랭크 지표를 읽는 기준선이 된다.
+   */
+  unionCoverage: number;
   /** 기권 판정에 쓰인 거리 임계값 (docs/specs/28) */
   distanceCutoff: number;
   /** 리랭크 적용 지표 (docs/specs/29 기준 10) — 원 순위 지표(recallAt5 등)는 컷·리랭크 미적용 유지 */
@@ -114,6 +133,25 @@ function relevanceHistogramOf(kind: EvalKind, scores: number[]): RelevanceDistri
     histogram[bucket] = (histogram[bucket] ?? 0) + 1;
   }
   return { kind, histogram };
+}
+
+/**
+ * 융합 결과에서 한 arm의 순위 순서를 복원한다 (docs/specs/31).
+ * 그 arm에 없는 행(순위 null)은 빠진다 — 벡터 원 지표가 융합 순서에 오염되지 않게 하는 지점이다.
+ */
+function orderByArm(
+  rows: HybridEvidence[],
+  arm: 'vectorRank' | 'keywordRank',
+): HybridEvidence[] {
+  return rows
+    .filter((row) => row[arm] !== null)
+    .sort((a, b) => (a[arm] as number) - (b[arm] as number));
+}
+
+/** 기대 근거가 나타난 순위(1-based). 없으면 null */
+function rankIn(rows: HybridEvidence[], expected: Set<string>): number | null {
+  const zeroBased = rows.findIndex((row) => expected.has(row.chunk.id));
+  return zeroBased === -1 ? null : zeroBased + 1;
 }
 
 function distributionOf(kind: EvalKind, distances: number[]): DistanceDistribution {
@@ -163,6 +201,10 @@ export class RagEvalService {
     let hitAt5 = 0;
     let hitAtK = 0;
     let reciprocalRankSum = 0;
+    // 하이브리드 대조 축 (docs/specs/31): 키워드 arm 단독 회수량과 합집합 상한.
+    // 리랭크 지표를 읽으려면 「후보에 있기는 했는가」가 먼저 있어야 한다.
+    let keywordHitAtK = 0;
+    let unionHits = 0;
     // 컷 기권 시뮬레이션 (docs/specs/28 기준 8) — 런타임 게이트와 같은 판정:
     // 결과 0건 또는 top-1 > 컷이면 기권이다. 순위 지표는 이와 무관하게 계속 잰다(기준 9).
     let abstainedAbstain = 0;
@@ -175,9 +217,26 @@ export class RagEvalService {
     let rerankAbstainedAbstain = 0;
     let rerankAbstainedAnswerable = 0;
 
+    /**
+     * 검색 1회 — **운영과 같은 파이프라인을 탄다** (docs/specs/31).
+     *
+     * 리랭크는 플래그와 무관하게 항상 재지만(§29) 하이브리드는 그러지 않는다: 하이브리드는
+     * 리랭커의 **입력 순서 자체**를 바꾸므로, 꺼진 배포에서 융합 순서 기준 리랭크 지표를
+     * 보고하면 운영과 다른 파이프라인을 측정하는 셈이 된다.
+     * 꺼진 경우 벡터 결과를 그대로 vectorRank만 채운 형태로 올린다 — 키워드 arm이 없으니
+     * 키워드 Recall@K는 0, 합집합 커버리지는 벡터 Recall@30과 같아진다.
+     */
+    const searchOf = async (question: string): Promise<HybridEvidence[]> => {
+      if (this.retrieval.hybridEnabled) {
+        return this.retrieval.searchHybrid(question, undefined, EVAL_DIAGNOSTIC_K);
+      }
+      const rows = await this.retrieval.search(question, undefined, EVAL_DIAGNOSTIC_K);
+      return rows.map((row, index) => ({ ...row, vectorRank: index + 1, keywordRank: null }));
+    };
+
     const rerankOf = async (
       question: string,
-      results: Awaited<ReturnType<RetrievalService['search']>>,
+      results: HybridEvidence[],
     ): Promise<{ orderedChunkIds: string[]; top1Relevance: number }> => {
       const result = await this.reranker.rerank(
         question,
@@ -191,14 +250,20 @@ export class RagEvalService {
     };
 
     for (const item of answerable) {
-      const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
-      if (results.length > 0) answerableDistances.push(results[0].distance);
-      const distanceAbstained = results.length === 0 || results[0].distance > cutoff;
+      // 검색 1회로 두 arm 순위를 함께 얻는다 (docs/specs/31) — 벡터 원 지표는 vectorRank로
+      // 계산되므로 §27·§28과 같은 축이 유지되고, 코퍼스 변화가 두 측정 사이에 끼어들 여지도 없다.
+      const results = await searchOf(item.question);
+      const vectorOrdered = orderByArm(results, 'vectorRank');
+      if (vectorOrdered.length > 0) answerableDistances.push(vectorOrdered[0].distance);
+      const distanceAbstained =
+        vectorOrdered.length === 0 || vectorOrdered[0].distance > cutoff;
       if (distanceAbstained) abstainedAnswerable += 1;
 
       const expected = expectedByItem.get(item.id) ?? new Set<string>();
-      const zeroBased = results.findIndex((row) => expected.has(row.chunk.id));
-      const rank = zeroBased === -1 ? null : zeroBased + 1;
+      const rank = rankIn(vectorOrdered, expected);
+      const keywordRank = rankIn(orderByArm(results, 'keywordRank'), expected);
+      if (keywordRank !== null) keywordHitAtK += 1;
+      if (results.some((row) => expected.has(row.chunk.id))) unionHits += 1;
 
       if (rank !== null) {
         hitAtK += 1;
@@ -209,7 +274,12 @@ export class RagEvalService {
       }
       // 운영 K(5) 밖은 실패로 본다 — 30에서 찾았다는 사실은 foundAtRank가 따로 말해준다
       if (rank === null || rank > RETRIEVAL_TOP_K) {
-        failures.push({ itemId: item.id, question: item.question, foundAtRank: rank });
+        failures.push({
+          itemId: item.id,
+          question: item.question,
+          foundAtRank: rank,
+          keywordFoundAtRank: keywordRank,
+        });
       }
 
       if (results.length > 0) {
@@ -221,7 +291,7 @@ export class RagEvalService {
           overAbstainFailures.push({
             itemId: item.id,
             question: item.question,
-            top1Distance: results[0].distance,
+            top1Distance: vectorOrdered[0].distance,
             top1Relevance,
             gate: distanceAbstained && scoreAbstained ? 'both' : distanceAbstained ? 'distance' : 'score',
             foundAtRank: rank,
@@ -249,9 +319,11 @@ export class RagEvalService {
     }
 
     for (const item of abstain) {
-      const results = await this.retrieval.search(item.question, undefined, EVAL_DIAGNOSTIC_K);
-      if (results.length > 0) abstainDistances.push(results[0].distance);
-      const distanceAbstained = results.length === 0 || results[0].distance > cutoff;
+      const results = await searchOf(item.question);
+      const vectorOrdered = orderByArm(results, 'vectorRank');
+      if (vectorOrdered.length > 0) abstainDistances.push(vectorOrdered[0].distance);
+      const distanceAbstained =
+        vectorOrdered.length === 0 || vectorOrdered[0].distance > cutoff;
       if (distanceAbstained) abstainedAbstain += 1;
 
       if (results.length > 0) {
@@ -266,7 +338,7 @@ export class RagEvalService {
           abstainFailures.push({
             itemId: item.id,
             question: item.question,
-            top1Distance: results[0].distance,
+            top1Distance: vectorOrdered[0].distance,
             top1Relevance,
             top1Guideline: results[0].guideline.title,
           });
@@ -285,6 +357,8 @@ export class RagEvalService {
       recallAt5: hitAt5 / denominator,
       mrrAt5: reciprocalRankSum / denominator,
       recallAt30: hitAtK / denominator,
+      keywordRecallAtK: keywordHitAtK / denominator,
+      unionCoverage: unionHits / denominator,
       distanceCutoff: cutoff,
       rerankedRecallAt5: rerankHitAt5 / denominator,
       rerankedMrrAt5: rerankReciprocalSum / denominator,
