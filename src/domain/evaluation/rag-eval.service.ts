@@ -30,6 +30,13 @@ export interface EvalFailure {
   foundAtRank: number | null;
 }
 
+/** kind별 리랭크 점수 분포 — 점수 컷을 데이터로 정하기 위한 원자료 (issue #232) */
+export interface RelevanceDistribution {
+  kind: EvalKind;
+  /** 점수(0~10) → 문항 수. 컷을 어디에 두면 무엇이 갈리는지 이 표 하나로 답한다 */
+  histogram: Record<number, number>;
+}
+
 export interface AbstainFailure {
   itemId: string;
   question: string;
@@ -61,6 +68,7 @@ export interface RagEvalReport {
   /** 답해야 하는 문항 중 top-1 > 컷으로 억울하게 기권되는 비율 (docs/specs/28 기준 8) */
   overAbstainRate: number;
   distances: DistanceDistribution[];
+  relevances: RelevanceDistribution[];
   failures: EvalFailure[];
   /** 기권해야 하는데 답해버린 문항 — 게이트 조정·라벨 검증의 유일한 입구 */
   abstainFailures: AbstainFailure[];
@@ -74,6 +82,20 @@ function percentile(sortedAscending: number[], fraction: number): number {
   if (sortedAscending.length === 0) return 0;
   const rank = Math.ceil(fraction * sortedAscending.length);
   return sortedAscending[Math.min(Math.max(rank, 1), sortedAscending.length) - 1];
+}
+
+/**
+ * 점수 히스토그램 — 백분위 대신 전수 도수를 싣는다 (issue #232).
+ * 컷은 0~10 정수 위에서 정해지므로 「9로 올리면 abstain 몇 건이 걸리고 answerable 몇 건을
+ * 잃는가」에 답하려면 각 점수의 문항 수가 그대로 필요하다.
+ */
+function relevanceHistogramOf(kind: EvalKind, scores: number[]): RelevanceDistribution {
+  const histogram: Record<number, number> = {};
+  for (const score of scores) {
+    const bucket = Math.max(0, Math.min(10, Math.round(score)));
+    histogram[bucket] = (histogram[bucket] ?? 0) + 1;
+  }
+  return { kind, histogram };
 }
 
 function distributionOf(kind: EvalKind, distances: number[]): DistanceDistribution {
@@ -117,6 +139,8 @@ export class RagEvalService {
     const abstainDistances: number[] = [];
     const failures: EvalFailure[] = [];
     const abstainFailures: AbstainFailure[] = [];
+    const answerableRelevances: number[] = [];
+    const abstainRelevances: number[] = [];
     let hitAt5 = 0;
     let hitAtK = 0;
     let reciprocalRankSum = 0;
@@ -171,6 +195,7 @@ export class RagEvalService {
 
       if (results.length > 0) {
         const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
+        answerableRelevances.push(top1Relevance);
         if (distanceAbstained || top1Relevance < scoreCutoff) rerankAbstainedAnswerable += 1;
         const rerankZeroBased = orderedChunkIds
           .slice(0, RETRIEVAL_TOP_K)
@@ -192,6 +217,7 @@ export class RagEvalService {
 
       if (results.length > 0) {
         const { top1Relevance } = await rerankOf(item.question, results);
+        abstainRelevances.push(top1Relevance);
         if (distanceAbstained || top1Relevance < scoreCutoff) {
           rerankAbstainedAbstain += 1;
         } else {
@@ -231,6 +257,10 @@ export class RagEvalService {
       distances: [
         distributionOf('answerable', answerableDistances),
         distributionOf('abstain', abstainDistances),
+      ],
+      relevances: [
+        relevanceHistogramOf('answerable', answerableRelevances),
+        relevanceHistogramOf('abstain', abstainRelevances),
       ],
       failures,
       abstainFailures,
