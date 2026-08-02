@@ -47,6 +47,22 @@ export interface FlaggedAnswer {
   miscited: number;
   unsupported: number;
   unsupportedExamples: string[];
+  /** miscited 주장 원문 (docs/specs/32) — 다음 사이클 표적의 드릴다운 */
+  miscitedExamples: string[];
+}
+
+/**
+ * 과억제 감시 (docs/specs/32) — 프롬프트를 조이는 개선이 답변을 앙상하게 만드는
+ * 부작용을 잡는다. 값은 반올림해 저장한다(평균 주장 수 소수 1자리·답변 길이 정수) —
+ * 리포트가 그대로 실어 객체와 마크다운이 같은 값을 가리킨다. answerable 0이면 전부 0.
+ */
+export interface SuppressionGuard {
+  /** 문항당 평균 주장 수 — 기준선 3.5(645/185) 대비 25% 이상 급감이면 과억제 신호 */
+  avgClaimsPerAnswer: number;
+  /** 평균 답변 길이 (문자) */
+  avgAnswerLengthChars: number;
+  /** 근거 부족 고지(insufficiencyDisclosed) 답변 수 */
+  insufficiencyDisclosedCount: number;
 }
 
 /** 생성 또는 채점이 실패한 문항 — 조용히 빠지면 지표가 낙관 오염된다 (docs/specs/27 계보) */
@@ -69,6 +85,7 @@ export interface GroundednessReport {
     unsupported: number;
   };
   mechanical: MechanicalChecks;
+  suppressionGuard: SuppressionGuard;
   flagged: FlaggedAnswer[];
   failures: GroundednessFailure[];
 }
@@ -99,6 +116,12 @@ export class GroundednessEvalService {
     const mechanical: MechanicalChecks = { markdownViolations: 0, noMarkerAnswers: 0 };
     const flagged: FlaggedAnswer[] = [];
     const failures: GroundednessFailure[] = [];
+    // 과억제 감시의 두 분모는 다르다 — 심판만 실패한 문항은 답변이 생성됐으므로 길이
+    // 통계에는 들어가고 주장 수 통계에는 들어갈 수 없다 (docs/specs/32 기준 7)
+    let generatedCount = 0;
+    let answerLengthSum = 0;
+    let judgedCount = 0;
+    let insufficiencyDisclosedCount = 0;
 
     for (const item of answerable) {
       let answer: string;
@@ -112,11 +135,16 @@ export class GroundednessEvalService {
         continue;
       }
 
+      generatedCount += 1;
+      answerLengthSum += answer.length;
+
       if (MARKDOWN_PATTERN.test(answer)) mechanical.markdownViolations += 1;
       if (!MARKER_PATTERN.test(answer)) mechanical.noMarkerAnswers += 1;
 
       try {
         const judgement = await this.judge.judge({ question: item.question, evidence, answer });
+        judgedCount += 1;
+        if (judgement.insufficiencyDisclosed) insufficiencyDisclosedCount += 1;
         verdicts[judgement.verdict] += 1;
         claims.total += judgement.claims;
         claims.supported += judgement.supported;
@@ -130,6 +158,7 @@ export class GroundednessEvalService {
             miscited: judgement.miscited,
             unsupported: judgement.unsupported,
             unsupportedExamples: judgement.unsupportedExamples,
+            miscitedExamples: judgement.miscitedExamples,
           });
         }
       } catch (error) {
@@ -144,6 +173,13 @@ export class GroundednessEvalService {
       verdicts,
       claims,
       mechanical,
+      suppressionGuard: {
+        avgClaimsPerAnswer:
+          judgedCount === 0 ? 0 : Math.round((claims.total / judgedCount) * 10) / 10,
+        avgAnswerLengthChars:
+          generatedCount === 0 ? 0 : Math.round(answerLengthSum / generatedCount),
+        insufficiencyDisclosedCount,
+      },
       flagged,
       failures,
     };

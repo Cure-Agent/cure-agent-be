@@ -1,8 +1,10 @@
 /**
  * qa-v3·qa-v4에서 추가된 프롬프트 규칙.
- * 전부 실측으로 확인된 결함을 막는다 — 모델을 바꿔도 유지되어야 한다.
+ * 전부 실측으로 확인된 결함을 막는다 — 모델을 바꿔도, **프롬프트 버전이 올라가도**
+ * 유지되어야 한다. 현행 버전 핀은 prompt-rules-qa-v5.spec(docs/specs/32 기준 1)이
+ * 갖는다 — 두 곳에서 핀을 잡으면 버전을 올릴 때마다 양쪽을 고쳐야 한다.
  */
-import { PROMPT_VERSION, buildPrompt } from './prompt-builder';
+import { buildPrompt } from './prompt-builder';
 import type { LlmStreamRequest } from './llm-provider.port';
 
 const request: LlmStreamRequest = {
@@ -40,10 +42,5 @@ describe('프롬프트 규칙 (qa-v3·qa-v4)', () => {
     expect(system).toContain('직접 서술한 내용에만 단다');
     expect(system).toContain('각 근거가 모두 그 문장을 지지할 때만');
     expect(system).toContain('종합해 만든 목록이나 결론에는');
-  });
-
-  it('규칙을 추가했으므로 promptVersion이 qa-v3에서 올라가 있다', () => {
-    // GenerationRun.promptVersion으로 답변 품질 변화를 추적한다
-    expect(PROMPT_VERSION).toBe('qa-v4');
   });
 });
