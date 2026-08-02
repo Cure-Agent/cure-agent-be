@@ -36,6 +36,9 @@
   하위 후보의 노이즈는 리랭커와 ③이 거른다(벡터 arm도 이미 같은 성질이다).
 - `word_similarity(질문, content)` **인자 순서를 고정한다** — 이 함수는 비대칭이라(1번 인자의
   트라이그램이 2번 인자의 연속 구간과 얼마나 맞는지) 뒤집으면 다른 값이 된다.
+- **융합 정렬은 RRF 점수 내림차순 → 벡터 순위 오름차순(없으면 뒤) → 청크 id 오름차순**이다.
+  두 arm에서 같은 순위를 차지한 후보는 RRF 점수가 정확히 같으므로 동점이 흔하다 — 벡터 arm을
+  앞에 두는 것은 §28·§29가 그 위에서 정의된 1차 신호이기 때문이고, id는 최종 결정성 보장이다.
 - **① 거리 게이트는 후보 최소 코사인 거리로 판정한다** — 벡터 arm top-1과 동치이므로(전 코퍼스
   최소값) §28 의미가 그대로 보존된다. 키워드가 강하게 일치해도 거리 기권이면 기권이다:
   어휘 중첩형 범위 밖 질문은 ③이 잡는 게 §29 실측으로 확인된 역할 분담이다.
@@ -54,10 +57,10 @@
 | 진입점 | 변경 |
 |---|---|
 | drizzle 마이그레이션 (신규) | `CREATE EXTENSION IF NOT EXISTS pg_trgm` — prod 미설치 확인(2026-08-02). 인덱스 없음(실측 후 보류, §12) |
-| `retrieval.service.ts` | `searchHybrid()` 신규 — 단일 SQL(벡터 CTE + 키워드 CTE + RRF 융합), 전 후보에 코사인 `distance` 포함, 키워드 동점은 id 2차 정렬(동점 평원이 넓어 없으면 재현 불가). 반환 행에 arm별 순위(`vectorRank`/`keywordRank`, 그 arm에 없으면 null) 부기 — 평가·관측이 같은 코드를 탄다. policyVersion **v4**(K = `rerankCandidates`): 리랭크 적용은 `hybrid-rrf60-top{K}x2-rerank-{리랭크모델}-cut{거리컷}-score{점수컷}-v4/{임베딩모델}`, 리랭크 미적용(폴백·비활성)은 `hybrid-rrf60-top{K}x2-cut{거리컷}-v4/{임베딩모델}` |
+| `retrieval.service.ts` | `searchHybrid()` 신규 — **두 arm 쿼리를 병렬 실행 후 RRF 융합**(단일 SQL이 아니다: 한 문장이면 arm이 순차 실행돼 지연 근거인 병렬성이 사라지고 arm별 소요도 잴 수 없다). 전 후보에 코사인 `distance` 포함, 키워드 동점은 id 2차 정렬(동점 평원이 넓어 없으면 재현 불가). 반환 행에 arm별 순위(`vectorRank`/`keywordRank`, 그 arm에 없으면 null) 부기 — 평가·관측이 같은 코드를 탄다. policyVersion **v4**(K = `rerankCandidates`): 리랭크 적용은 `hybrid-rrf60-top{K}x2-rerank-{리랭크모델}-cut{거리컷}-score{점수컷}-v4/{임베딩모델}`, 리랭크 미적용(폴백·비활성)은 `hybrid-rrf60-top{K}x2-cut{거리컷}-v4/{임베딩모델}` |
 | `retrieval.config.ts` | `hybridEnabled`(`RETRIEVAL_HYBRID_ENABLED`, 기본 true) — 기본값 코드 소유(#156 규약) |
 | `conversation-stream.service.ts` | hybridEnabled면 `searchHybrid()` 사용. 거리 게이트 판정을 「첫 행 거리」에서 「후보 최소 거리」로 — 융합 순서에서 첫 행이 최소 거리가 아닐 수 있다 |
-| `metrics.service.ts` | `rag_retrieval_duration_seconds{stage="keyword_search"}` 추가. `rag_top1_distance`는 최소 거리를 기록(의미 유지) |
+| `metrics.service.ts` | `rag_retrieval_duration_seconds{stage="keyword_search"}` 추가. 하이브리드도 기존 두 관측을 유지한다 — `rag_retrieved_chunks`는 융합 후보 수, `rag_top1_distance`는 후보 최소 거리(= 벡터 top-1, 의미 불변) |
 | `rag-eval.service.ts` · `report.ts` | **키워드 arm Recall@K**(기대 근거가 키워드 arm top-K에 있는 answerable 비율)·**합집합 후보 커버리지**(무절단 융합 후보에 있는 비율 = 리랭크 상한) 추가, 실패 문항 표에 arm별 발견 순위 열. **벡터 원 지표(Recall@5·30, MRR@5)는 벡터 arm 순위로 그대로 유지** — §28·§29와 같은 비교 축 보존 |
 | `.env.example` · compose | `RETRIEVAL_HYBRID_ENABLED` (compose는 빈 통과) |
 
