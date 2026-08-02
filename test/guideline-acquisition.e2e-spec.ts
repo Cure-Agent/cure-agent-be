@@ -20,6 +20,7 @@ import {
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeGuidelineSource } from './fixtures/fake-guideline-source';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 /**
  * docs/specs/18-guideline-acquisition.md 수용 기준 동결 테스트.
@@ -85,7 +86,7 @@ describe('spec 18: NCKM 지침 원본 수집', () => {
       .useValue(fakeSource)
       .compile();
     app = moduleRef.createNestApplication();
-    await app.init();
+    await bootstrapApp(app);
 
     acquisitionService = app.get(GuidelineAcquisitionService);
   });

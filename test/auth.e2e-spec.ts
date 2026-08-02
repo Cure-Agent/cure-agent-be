@@ -14,6 +14,7 @@ import { AesGcmUtil } from '../src/global/security/crypto/aes-gcm.util';
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeOAuthProviderRegistry, encodeFakeCode } from './fixtures/fake-oauth';
 import { socialCallback, socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const WEB_BASE_URL = 'http://localhost:3001';
@@ -58,7 +59,7 @@ describe('Auth — 소셜 로그인 (Testcontainers)', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
   });
 
   afterAll(async () => {

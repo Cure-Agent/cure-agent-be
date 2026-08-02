@@ -24,6 +24,7 @@ import {
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import { FakeGuidelineSource } from './fixtures/fake-guideline-source';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 jest.setTimeout(120_000);
 
@@ -99,7 +100,7 @@ describe('지침 수집 실패 사유 보존', () => {
       .useValue(fakeSource)
       .compile();
     app = moduleRef.createNestApplication();
-    await app.init();
+    await bootstrapApp(app);
 
     acquisitionService = app.get(GuidelineAcquisitionService);
     pipelineService = app.get(GuidelinePipelineService);

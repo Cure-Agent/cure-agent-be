@@ -33,6 +33,7 @@ import {
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { yotongGuideline } from './fixtures/guideline-samples';
 import { socialSignUp } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const QUESTION = '만성 요통 환자에게 침 치료가 효과적인가요?';
@@ -174,7 +175,7 @@ describe('spec 27: RAG 평가 기반', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     await app.get(GuidelineIngestService).ingest(yotongGuideline);
     cookie = (

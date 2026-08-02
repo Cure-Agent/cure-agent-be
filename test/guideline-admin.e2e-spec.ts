@@ -47,6 +47,7 @@ import { FakeGuidelineSource } from './fixtures/fake-guideline-source';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { nckmSamplePages } from './fixtures/nckm-pages.sample';
 import { socialSignUp, TestSession } from './fixtures/social-auth';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const UNAUTHORIZED_MESSAGE = '인증이 필요합니다.';
@@ -216,7 +217,7 @@ describe('spec 21: 지침 코퍼스 관리 API', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
-    await app.init();
+    await bootstrapApp(app);
 
     admin = await socialSignUp(app, {
       email: 'guideline-admin@clinic.kr',

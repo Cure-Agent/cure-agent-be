@@ -30,6 +30,7 @@ import {
 } from './fixtures/rag-eval/evalset.sample';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { yotongGuideline } from './fixtures/guideline-samples';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const DISTANCE_CUTOFF = 2;
 const RERANK_CANDIDATES = 30;
@@ -96,7 +97,7 @@ describe('issue #246: eval 리포트 검색 정책 버전', () => {
       .compile();
 
     const app = moduleRef.createNestApplication();
-    await app.init();
+    await bootstrapApp(app);
     return app;
   };
 

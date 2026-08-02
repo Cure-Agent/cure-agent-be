@@ -18,6 +18,7 @@ import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provide
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import { socialLogin, socialSignUp } from './fixtures/social-auth';
 import { yotongGuideline } from './fixtures/guideline-samples';
+import { bootstrapApp } from './fixtures/app-bootstrap';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
 const QUESTION = '만성 요통 환자에게 침 치료가 효과적인가요?';
@@ -81,7 +82,7 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     const instance = moduleRef.createNestApplication();
     instance.setGlobalPrefix('api/v1');
     instance.use(cookieParser());
-    await instance.init();
+    await bootstrapApp(instance);
     return instance;
   };
 
@@ -463,7 +464,8 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
   });
 
   it('기준 11: 스트리밍 중 클라이언트 abort → 메시지 CANCELLED (§8-4)', async () => {
-    await app.listen(0);
+    // listen은 bootstrapApp이 beforeAll에서 이미 했다 (issue #250) — 여기서 다시 부르면
+    // "Listen method has been called more than once"로 죽는다. URL만 받아 쓴다.
     const url = await app.getUrl();
 
     const created = await request(server())
