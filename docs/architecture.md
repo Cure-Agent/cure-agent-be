@@ -926,7 +926,7 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 - **마이그레이션 불변 원칙**: 한번 적용된 마이그레이션 파일 수정 금지, baseline부터 순번 관리. `CREATE EXTENSION vector`는 초기 마이그레이션에서 관리.
 - **pgvector 인덱스 전략**: MVP 규모(지침 수십 개, chunk 수천~수만)에서는 **인덱스 없이 exact search로 시작**한다 — 더 정확하고 충분히 빠르다. HNSW/IVFFlat은 측정 후 도입.
-- **hybrid search (P1 백로그)**: 한국어 의료 용어는 임베딩 단독 검색이 약할 수 있다. tsvector 키워드 검색 + 벡터 검색 결합을 P1로 등록.
+- **hybrid search (도입 완료, docs/specs/31)**: 임베딩 단독은 희귀 병명 신호가 일반 임상 어휘에 희석돼 후보군에조차 못 넣는다(실측 Recall@30 0.968). 벡터 검색 + **문자 n-gram**(`pg_trgm`의 `word_similarity`) 키워드 검색을 RRF로 융합해 두 arm의 합집합을 후보로 연다 — 후보 커버리지 1.000. P1 등록 당시 상정한 tsvector가 아닌 이유는 어절 경계 공백이 소실된 코퍼스(docs/specs/19)에서 어절 매칭이 성립하지 않기 때문이다. 두 arm은 병렬 실행하며, trgm 인덱스는 여기서도 **측정 후**다(실측 전수 스캔 ~1s / GiST KNN 323ms).
 
 ---
 
@@ -1045,3 +1045,4 @@ FE UI
 | 16 | cron 폴백 제거 — push 단독 동기화로 확정, 토큰 부재·만료는 contract-notify hard-fail로 감지 |
 | 17 | SDD 테스트 교차 작성: 동결 테스트는 Codex가 스펙에서 독립 파생, Claude는 리뷰·동결·구현 담당 (8단계부터 적용, Codex 불가 시 Claude 폴백) |
 | 18 | 이메일·비밀번호 인증 제거, 소셜 로그인(Google/Kakao/Naver) 전용 전환 — §4 전면 개정, 온보딩 티켓·`/signup?ticket=` 화면 신설 (spec 17) |
+| 19 | hybrid search P1 해소 — 벡터 + 문자 n-gram(pg_trgm) RRF 융합 도입, tsvector 계획은 공백 소실 코퍼스라 폐기 (spec 31) |

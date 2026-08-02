@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, cosineDistance, eq, inArray, sql } from 'drizzle-orm';
+import { SQL, and, asc, cosineDistance, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   EvidenceChunkRow,
   GuidelineRow,
@@ -167,44 +167,12 @@ export class RetrievalService {
     const [embedding] = await this.embeddingProvider.embed([query]);
     this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
 
-    const conditions = [
-      // 좌표계가 다른 벡터는 코사인 거리가 무의미하다 — 같은 모델로 만든 청크만 본다 (docs/specs/14).
-      // 모델을 바꾸면 재인제스트 전까지 근거 0건(abstain)이 되며, 이것이 조용한 오답보다 안전하다.
-      eq(evidenceChunks.embeddingModel, this.embeddingProvider.model),
-      // 폐기된 판본·회차는 새 답변에 인용되지 않는다 (docs/specs/21).
-      // 과거 인용은 message_citations로 계속 조회되므로 역사적 정확성은 유지된다.
-      eq(guidelineVersions.status, 'ACTIVE'),
-      filters?.guidelineIds?.length
-        ? inArray(guidelineVersions.guidelineId, filters.guidelineIds)
-        : undefined,
-      filters?.recommendationGrades?.length
-        ? inArray(
-            sql`${evidenceChunks.recommendationGrade}->>'code'`,
-            filters.recommendationGrades,
-          )
-        : undefined,
-      filters?.evidenceLevels?.length
-        ? inArray(sql`${evidenceChunks.evidenceLevel}->>'code'`, filters.evidenceLevels)
-        : undefined,
-    ].filter((c) => c !== undefined);
-
     // 정렬에만 쓰던 거리를 SELECT에도 싣는다 — 같은 식이므로 추가 연산 비용은 없다
     const distance = cosineDistance(evidenceChunks.embedding, embedding);
 
     const searchStartedAt = process.hrtime.bigint();
-    const rows = await this.txManager.conn
-      .select({
-        chunk: evidenceChunks,
-        section: guidelineSections,
-        version: guidelineVersions,
-        guideline: guidelines,
-        distance: sql<number>`${distance}`.mapWith(Number),
-      })
-      .from(evidenceChunks)
-      .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
-      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
-      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+    const rows = await this.evidenceQuery(distance)
+      .where(and(...this.corpusConditions(filters)))
       .orderBy(asc(distance))
       .limit(topK);
     this.metrics.recordRetrievalStage('vector_search', elapsedSeconds(searchStartedAt));
@@ -222,6 +190,9 @@ export class RetrievalService {
    * 절단하지 않는 이유는 실측이다: RRF top-30으로 자르면 한쪽 arm에서만 깊게 잡히는 정답이
    * 잘려 후보 커버리지가 0.978에 머물지만, 합집합 전체(≤2K)는 1.000이다.
    *
+   * 두 arm을 **병렬로 던진다** — 키워드 arm은 전수 스캔이라 프로덕션 코퍼스에서 ~1s이고,
+   * 순차로 쌓으면 그만큼이 그대로 TTFT에 더해진다. arm별 소요를 따로 재는 것도 여기서만 가능하다.
+   *
    * `armK`는 §27과 같은 **진단용 확장 지점**이다 — 운영은 기본값(`rerankCandidates`)을 쓴다.
    */
   async searchHybrid(
@@ -229,9 +200,130 @@ export class RetrievalService {
     filters?: RetrievalFilters,
     armK: number = this.config.rerankCandidates,
   ): Promise<HybridEvidence[]> {
-    void query;
-    void filters;
-    void armK;
-    return Promise.resolve([]);
+    const embedStartedAt = process.hrtime.bigint();
+    const [embedding] = await this.embeddingProvider.embed([query]);
+    this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
+
+    const conditions = this.corpusConditions(filters);
+    const distance = cosineDistance(evidenceChunks.embedding, embedding);
+    /**
+     * `word_similarity`는 **비대칭**이다 — 1번 인자의 트라이그램 집합이 2번 인자의 연속 구간과
+     * 얼마나 맞는지를 보므로, 짧은 질문이 앞이고 긴 본문이 뒤다. 뒤집으면 다른 값이 된다.
+     * 어절 경계 공백이 소실된 코퍼스(docs/specs/19)라 tsvector 어절 매칭이 성립하지 않고,
+     * 문자 n-gram은 조사·붙임에 강건하다.
+     */
+    const similarity = sql`word_similarity(${query}, ${evidenceChunks.content})`;
+
+    const vectorStartedAt = process.hrtime.bigint();
+    const vectorArm = this.evidenceQuery(distance)
+      .where(and(...conditions))
+      .orderBy(asc(distance))
+      .limit(armK)
+      .then((rows) => {
+        this.metrics.recordRetrievalStage('vector_search', elapsedSeconds(vectorStartedAt));
+        return rows;
+      });
+
+    const keywordStartedAt = process.hrtime.bigint();
+    // 동점 평원이 넓다 — 한 질문의 top-30 경계에 같은 값 72건이 몰린 실측이 있다.
+    // id 2차 정렬이 없으면 같은 질의가 실행마다 다른 후보를 낸다.
+    const keywordArm = this.evidenceQuery(distance)
+      .where(and(...conditions))
+      .orderBy(desc(similarity), asc(evidenceChunks.id))
+      .limit(armK)
+      .then((rows) => {
+        this.metrics.recordRetrievalStage('keyword_search', elapsedSeconds(keywordStartedAt));
+        return rows;
+      });
+
+    const [vectorRows, keywordRows] = await Promise.all([vectorArm, keywordArm]);
+    const fused = fuseByRrf(vectorRows, keywordRows);
+
+    // 벡터 전용 경로와 같은 축으로 관측한다 — 후보 수와 **최소** 거리다.
+    // 최소 거리는 벡터 arm top-1과 같다(전 코퍼스 최소값): §28 거리 게이트의 의미가 보존된다.
+    this.metrics.recordRetrievedChunks(fused.length);
+    if (vectorRows.length > 0) this.metrics.recordTop1Distance(vectorRows[0].distance);
+
+    return fused;
   }
+
+  /** 두 검색 경로가 **같은 코퍼스**를 보게 하는 단일 지점 — 한쪽만 고치면 경계가 새는 곳이다 */
+  private corpusConditions(filters?: RetrievalFilters): SQL[] {
+    return [
+      // 좌표계가 다른 벡터는 코사인 거리가 무의미하다 — 같은 모델로 만든 청크만 본다 (docs/specs/14).
+      // 모델을 바꾸면 재인제스트 전까지 근거 0건(abstain)이 되며, 이것이 조용한 오답보다 안전하다.
+      // 키워드 arm에도 같은 조건을 건다: 자구가 맞아도 좌표계가 다른 청크는 검색 대상이 아니다.
+      eq(evidenceChunks.embeddingModel, this.embeddingProvider.model),
+      // 폐기된 판본·회차는 새 답변에 인용되지 않는다 (docs/specs/21).
+      // 과거 인용은 message_citations로 계속 조회되므로 역사적 정확성은 유지된다.
+      eq(guidelineVersions.status, 'ACTIVE'),
+      filters?.guidelineIds?.length
+        ? inArray(guidelineVersions.guidelineId, filters.guidelineIds)
+        : undefined,
+      filters?.recommendationGrades?.length
+        ? inArray(
+            sql`${evidenceChunks.recommendationGrade}->>'code'`,
+            filters.recommendationGrades,
+          )
+        : undefined,
+      filters?.evidenceLevels?.length
+        ? inArray(sql`${evidenceChunks.evidenceLevel}->>'code'`, filters.evidenceLevels)
+        : undefined,
+    ].filter((condition): condition is SQL => condition !== undefined);
+  }
+
+  /** 근거 1행의 모양은 두 arm이 같다 — 조인·선택 목록을 한 곳에 둔다 */
+  private evidenceQuery(distance: SQL) {
+    return this.txManager.conn
+      .select({
+        chunk: evidenceChunks,
+        section: guidelineSections,
+        version: guidelineVersions,
+        guideline: guidelines,
+        distance: sql<number>`${distance}`.mapWith(Number),
+      })
+      .from(evidenceChunks)
+      .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id));
+  }
+}
+
+/**
+ * Reciprocal Rank Fusion (docs/specs/31). 점수는 arm마다 `1/(RRF_K + 순위)`의 합이다 —
+ * **순위만 쓰므로** 코사인 거리와 트라이그램 유사도처럼 척도가 다른 두 신호를 정규화 없이 합친다.
+ *
+ * 동점이 흔하다(두 arm에서 같은 순위면 점수가 정확히 같다). 벡터 arm을 앞에 두는 이유는
+ * §28 거리 게이트·§29 리랭크가 그 위에서 정의된 1차 신호이기 때문이고, id는 최종 결정성이다.
+ */
+function fuseByRrf(
+  vectorRows: RetrievedEvidence[],
+  keywordRows: RetrievedEvidence[],
+): HybridEvidence[] {
+  const fused = new Map<string, HybridEvidence>();
+
+  const merge = (rows: RetrievedEvidence[], arm: 'vectorRank' | 'keywordRank'): void => {
+    rows.forEach((row, index) => {
+      const existing = fused.get(row.chunk.id);
+      const target =
+        existing ?? { ...row, vectorRank: null, keywordRank: null };
+      target[arm] = index + 1;
+      fused.set(row.chunk.id, target);
+    });
+  };
+
+  merge(vectorRows, 'vectorRank');
+  merge(keywordRows, 'keywordRank');
+
+  const scoreOf = (row: HybridEvidence): number =>
+    (row.vectorRank === null ? 0 : 1 / (RRF_K + row.vectorRank)) +
+    (row.keywordRank === null ? 0 : 1 / (RRF_K + row.keywordRank));
+
+  return [...fused.values()].sort((a, b) => {
+    const byScore = scoreOf(b) - scoreOf(a);
+    if (byScore !== 0) return byScore;
+    const byVectorRank = (a.vectorRank ?? Infinity) - (b.vectorRank ?? Infinity);
+    if (byVectorRank !== 0) return byVectorRank;
+    return a.chunk.id < b.chunk.id ? -1 : a.chunk.id > b.chunk.id ? 1 : 0;
+  });
 }
