@@ -99,6 +99,13 @@
       "when": 1785801660000,
       "tag": "0013_conversation_recent_order",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785801720000,
+      "tag": "0014_conversation_last_message_at",
+      "breakpoints": true
     }
   ]
 }
