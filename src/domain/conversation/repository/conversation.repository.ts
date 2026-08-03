@@ -48,7 +48,10 @@ export class ConversationRepository {
   // ── conversations ────────────────────────────────────
 
   async insertConversation(
-    row: Pick<ConversationRow, 'id' | 'clinicianId' | 'clinicId' | 'type' | 'patientId' | 'title'>,
+    row: Pick<
+      ConversationRow,
+      'id' | 'clinicianId' | 'clinicId' | 'type' | 'patientId' | 'title' | 'titleSource'
+    >,
   ): Promise<void> {
     await this.txManager.conn.insert(conversations).values(row);
   }
@@ -110,6 +113,19 @@ export class ConversationRepository {
       .where(eq(conversations.id, id));
   }
 
+  /**
+   * 자동 제목 1회 확정 — 아직 기본 제목인 대화에만 적중한다.
+   * 「이미 제목이 있나」 판정을 별도 조회가 아니라 UPDATE의 WHERE에 실었으므로, 매 메시지마다
+   * 호출되거나 동시 요청이 겹쳐도 첫 한 번만 성립한다(0행 갱신은 정상 경로다).
+   * 소유 검증은 호출부(stream 진입 시 findById)가 이미 마쳤다 — touchLastMessageAt과 같다.
+   */
+  async applyAutoTitle(id: string, title: string): Promise<void> {
+    await this.txManager.conn
+      .update(conversations)
+      .set({ title, titleSource: 'AUTO' })
+      .where(and(eq(conversations.id, id), eq(conversations.titleSource, 'DEFAULT')));
+  }
+
   /** 소유 스코프에서만 갱신 — 0행이면 미존재/타인 (docs/specs/11) */
   async updateTitle(
     scope: ConversationScope,
@@ -118,7 +134,8 @@ export class ConversationRepository {
   ): Promise<ConversationRow | null> {
     const rows = await this.txManager.conn
       .update(conversations)
-      .set({ title })
+      // 사용자가 직접 정한 제목이므로 이후 자동 제목이 덮지 못하도록 출처를 확정한다
+      .set({ title, titleSource: 'USER' })
       .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
       .returning();
     return rows[0] ?? null;

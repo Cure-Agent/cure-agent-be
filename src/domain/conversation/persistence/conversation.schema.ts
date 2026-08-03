@@ -14,6 +14,11 @@ import { evidenceChunks } from '../../guideline/persistence/guideline.schema';
 
 export const conversationType = pgEnum('conversation_type', ['GUIDELINE_QA', 'PATIENT_GUIDANCE']);
 export const conversationStatus = pgEnum('conversation_status', ['ACTIVE', 'ARCHIVED']);
+export const conversationTitleSource = pgEnum('conversation_title_source', [
+  'DEFAULT',
+  'AUTO',
+  'USER',
+]);
 export const messageRole = pgEnum('message_role', ['USER', 'ASSISTANT']);
 export const messageStatus = pgEnum('message_status', [
   'STREAMING',
@@ -36,6 +41,13 @@ export const conversations = pgTable(
     type: conversationType('type').notNull(),
     patientId: text('patient_id'), // 9단계(PATIENT_GUIDANCE)에서 사용
     title: text('title').notNull(),
+    /**
+     * 제목의 출처 — 자동 제목이 이 대화를 덮어도 되는지를 이 값 하나로 판정한다.
+     * DEFAULT(기본 제목, 아직 미생성) → AUTO(첫 질문에서 1회 생성) → USER(직접 지정·변경).
+     * 자동 생성은 DEFAULT일 때만 조건부 UPDATE 하므로, 매 턴 재호출되거나 동시 요청이 겹쳐도
+     * 제목이 흔들리지 않고 사용자가 바꾼 제목을 되돌리지도 않는다.
+     */
+    titleSource: conversationTitleSource('title_source').notNull().default('DEFAULT'),
     status: conversationStatus('status').notNull().default('ACTIVE'),
     /**
      * 목록 정렬 키 — 마지막 메시지 시각(메시지가 없으면 생성 시각).

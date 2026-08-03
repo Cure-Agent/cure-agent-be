@@ -368,6 +368,28 @@ describe('Clinical guidance (e2e)', () => {
     expect(snapshotRows.rowCount).toBe(1);
   });
 
+  it('PATIENT_GUIDANCE 대화는 첫 질문으로 제목을 자동 생성하지 않는다', async () => {
+    // 첫 질문에는 진단명·투약처럼 §4.5가 암호화 저장하는 항목이 섞인다. title은 평문
+    // text 컬럼(ILIKE 검색 대상)이라 그대로 옮기면 암호화 경계를 우회하게 된다.
+    const patient = await createPatient();
+    const conversationId = await createConversation(
+      ownerCookie,
+      'PATIENT_GUIDANCE',
+      patient.id,
+    );
+    await streamCompleted(
+      ownerCookie,
+      conversationId,
+      '류마티스 관절염에 메토트렉세이트를 복용 중인 이 환자의 침 치료 지침을 알려 주세요.',
+    );
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/v1/conversations/${conversationId}`)
+      .set('Cookie', ownerCookie)
+      .expect(200);
+    expect(detail.body.data.title).toBe('새 대화');
+  });
+
   it('3. 환자 변경 뒤에도 생성 시점의 스냅샷은 불변이다', async () => {
     const initialWeightKg = 61;
     const changedWeightKg = 73;

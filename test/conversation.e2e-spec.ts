@@ -134,6 +134,18 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
         .expect(200)
     ).body.data.map((conversation: { id: string }) => conversation.id) as string[];
 
+  const conversationTitle = async (id: string): Promise<string> =>
+    (await request(server()).get(`/api/v1/conversations/${id}`).set('Cookie', cookieA).expect(200))
+      .body.data.title as string;
+
+  const ask = async (conversationId: string, content: string, clientRequestId: string) =>
+    request(server())
+      .post(`/api/v1/conversations/${conversationId}/messages/stream`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .send({ content, clientRequestId })
+      .expect(200);
+
   it('기준 1: 대화 생성(GUIDELINE_QA) 201 + 기본 title, PATIENT_GUIDANCE는 400', async () => {
     const created = await request(server())
       .post('/api/v1/conversations')
@@ -582,6 +594,47 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       [quietConvId],
     );
     expect(rows[0].updated_at.getTime()).toBeGreaterThan(rows[0].last_message_at.getTime());
+  });
+
+  it('첫 질문이 대화 제목이 된다 — 공백을 접고 한 번만 확정한다', async () => {
+    const autoTitled = await createConversation();
+    expect(await conversationTitle(autoTitled)).toBe('새 대화');
+
+    await ask(autoTitled, '  만성 요통\n\n환자에게   침 치료가 효과적인가요? ', 'req-auto-title-1');
+    expect(await conversationTitle(autoTitled)).toBe('만성 요통 환자에게 침 치료가 효과적인가요?');
+
+    // 두 번째 질문은 제목을 건드리지 않는다 — 제목은 목록에서 대화를 다시 찾는 고정 앵커다
+    await ask(autoTitled, '침 치료의 부작용은 무엇인가요?', 'req-auto-title-2');
+    expect(await conversationTitle(autoTitled)).toBe('만성 요통 환자에게 침 치료가 효과적인가요?');
+  });
+
+  it('긴 첫 질문은 40자에서 잘리고 말줄임표가 붙는다', async () => {
+    const longTitled = await createConversation();
+    await ask(longTitled, `${'가'.repeat(45)} 끝`, 'req-auto-title-long');
+    expect(await conversationTitle(longTitled)).toBe(`${'가'.repeat(40)}…`);
+  });
+
+  it('사용자가 정한 제목은 자동 제목이 덮지 않는다 (변경분·생성 시 지정분 모두)', async () => {
+    const renamed = await createConversation();
+    await request(server())
+      .patch(`/api/v1/conversations/${renamed}`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .send({ title: '직접 지은 제목' })
+      .expect(200);
+    await ask(renamed, QUESTION, 'req-auto-title-renamed');
+    expect(await conversationTitle(renamed)).toBe('직접 지은 제목');
+
+    const presetTitled = (
+      await request(server())
+        .post('/api/v1/conversations')
+        .set(CSRF)
+        .set('Cookie', cookieA)
+        .send({ type: 'GUIDELINE_QA', title: '생성 시 지정한 제목' })
+        .expect(201)
+    ).body.data.id as string;
+    await ask(presetTitled, QUESTION, 'req-auto-title-preset');
+    expect(await conversationTitle(presetTitled)).toBe('생성 시 지정한 제목');
   });
 
   it('같은 밀리초 안의 대화도 커서 경계에서 누락되지 않는다 (마이크로초 정밀도)', async () => {
