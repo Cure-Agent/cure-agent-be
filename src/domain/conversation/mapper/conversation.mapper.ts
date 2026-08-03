@@ -18,7 +18,6 @@ export function toConversationSummary(
     status: row.status,
     lastMessagePreview: lastMessage ? truncate(lastMessage.content, PREVIEW_LIMIT) : undefined,
     lastMessageAt: row.lastMessageAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
   };
 }
 

@@ -54,7 +54,6 @@ interface PatientDetail {
   allergies: string[];
   clinicalNotes?: string;
   status: 'ACTIVE' | 'ARCHIVED';
-  updatedAt: string;
   version: number;
 }
 
@@ -140,7 +139,6 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
         medications: body.medications,
         allergies: body.allergies,
         status: 'ACTIVE',
-        updatedAt: expect.any(String),
         version: 1,
       }),
     );
@@ -270,9 +268,10 @@ describe('docs/specs/09: Patient 수용 기준 1~9', () => {
           sex: 'FEMALE',
           bmi: 22.5,
           status: 'ACTIVE',
-          updatedAt: expect.any(String),
         }),
       );
+      // 감사 컬럼은 계약 표면에 노출하지 않는다 — 클라이언트가 소비하지 않는다
+      expect(summary).not.toHaveProperty('updatedAt');
       expect(summary).not.toHaveProperty('diagnoses');
       expect(summary).not.toHaveProperty('medications');
       expect(summary).not.toHaveProperty('allergies');

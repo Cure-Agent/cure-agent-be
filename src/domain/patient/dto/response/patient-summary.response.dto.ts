@@ -21,7 +21,4 @@ export class PatientSummaryResponseDto {
 
   @ApiProperty({ enum: PATIENT_STATUSES })
   status!: (typeof PATIENT_STATUSES)[number];
-
-  @ApiProperty({ description: 'ISO 8601' })
-  updatedAt!: string;
 }
