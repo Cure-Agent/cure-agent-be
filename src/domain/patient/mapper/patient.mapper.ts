@@ -18,7 +18,6 @@ export function toPatientSummary(row: PatientRow): PatientSummaryResponseDto {
     sex: row.sex ?? undefined,
     bmi: computeBmi(row.heightCm, row.weightKg),
     status: row.status,
-    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
