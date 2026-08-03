@@ -41,6 +41,17 @@ export type AbstainReason = 'no_candidates' | 'beyond_cutoff';
 /** 리랭크 1회의 결말 (docs/specs/29) — fallback 상시화는 이 축이 잡는다 */
 export type RerankOutcome = 'reranked' | 'fallback';
 
+/**
+ * 참고안 조립 1회의 결말 (docs/specs/33).
+ * `structured` 구조화 채택 · `fallback` 호출 실패·타임아웃 또는 검증 전멸 · `skipped` 인용 0건이라
+ * 미호출 · `disabled` 킬스위치가 내려가 미호출.
+ *
+ * fallback이 조용히 상시화되면 참고안이 예전 인용 재배열로 되돌아간 것이므로 이 축이 잡는다.
+ * `disabled`를 fallback과 섞지 않는 이유가 이것이다 — 킬스위치 상태를 fallback으로 세면
+ * 100% fallback이 정상 운영으로 보이고, 진짜 폴백 급등이 왔을 때 구분되지 않는다.
+ */
+export type GuidanceComposeOutcome = 'structured' | 'fallback' | 'skipped' | 'disabled';
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -213,6 +224,22 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** 참고안 조립 결말 (docs/specs/33) */
+  private readonly guidanceComposes = new Counter({
+    name: 'guidance_compose_total',
+    help: '참고안 조립 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
+  /** 구조화 호출 소요 — 상한 20s(docs/specs/33)에 얼마나 붙는지 보는 축. 미호출은 기록하지 않는다 */
+  private readonly guidanceStructureDuration = new Histogram({
+    name: 'guidance_structure_duration_seconds',
+    help: '참고안 구조화 호출 소요 시간(초)',
+    buckets: [0.5, 1, 2, 3, 5, 8, 12, 16, 20],
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -252,6 +279,12 @@ export class MetricsService {
   recordRerank(outcome: RerankOutcome, durationSec: number): void {
     this.rerankTotal.inc({ outcome });
     this.rerankDuration.observe(durationSec);
+  }
+
+  /** durationSec이 null이면 구조화기를 부르지 않은 것이다 — 0초 호출로 오해되지 않게 기록에서 뺀다 */
+  recordGuidanceCompose(outcome: GuidanceComposeOutcome, durationSec: number | null): void {
+    this.guidanceComposes.inc({ outcome });
+    if (durationSec !== null) this.guidanceStructureDuration.observe(durationSec);
   }
 
   recordHttpRequest(method: string, route: string, status: number, durationSec: number): void {
