@@ -37,6 +37,7 @@ import { toCitationDto, toMessageDto } from '../mapper/conversation.mapper';
 import { MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
 import { SseStream } from '../../../global/common/sse/sse-stream';
+import { deriveConversationTitle } from './conversation-title.util';
 
 /** 프로바이더가 모델을 보고하지 않는 경우(fake·테스트 프로바이더)의 기록값 */
 const MODEL_LABEL = 'gateway-routed';
@@ -155,6 +156,24 @@ export class ConversationStreamService {
         });
         // 목록 최근 대화순의 기준점 — 답변 실패로 끝나도 "대화한" 사실은 남으므로 수락 시점에 올린다
         await this.repository.touchLastMessageAt(conversationId);
+
+        /**
+         * 첫 질문으로 대화 제목을 1회 확정한다 (기본 제목인 대화에만 적중 — applyAutoTitle).
+         *
+         * 답변 완료가 아니라 수락 시점인 이유: (1) 답변이 실패·기권으로 끝나도 목록에서 그 대화를
+         * 알아볼 수 있어야 하고, (2) 같은 tx라 메시지 없이 제목만 남는 상태가 생기지 않으며,
+         * (3) FE가 스트림 종결 후 대화 목록을 재조회할 때(chat-panel의 CONVERSATIONS_KEY
+         * invalidate) 이미 커밋돼 있어 전용 SSE 이벤트나 폴링이 필요 없다.
+         *
+         * PATIENT_GUIDANCE는 제외한다 — 환자 맞춤 질문의 첫 문장에는 진단명·투약처럼 §4.5가
+         * AES-GCM으로 암호화 저장하는 항목이 자연어로 섞인다. title은 평문 text 컬럼이자
+         * ILIKE 검색 대상이라, 그대로 옮기면 암호화 경계를 제목 컬럼으로 우회하는 셈이 된다.
+         * (환자 이름·차트번호는 애초에 저장하지 않는다 — 식별자는 비식별 caseLabel뿐이다.)
+         */
+        if (conversation.type === 'GUIDELINE_QA') {
+          const autoTitle = deriveConversationTitle(dto.content);
+          if (autoTitle) await this.repository.applyAutoTitle(conversationId, autoTitle);
+        }
       });
     } catch (error) {
       // 동시 요청 경합: unique 제약이 최종 방어선

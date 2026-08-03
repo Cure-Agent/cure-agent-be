@@ -77,6 +77,8 @@ export class ConversationService {
       type: dto.type,
       patientId,
       title: dto.title ?? DEFAULT_TITLE,
+      // 생성 시 제목을 지정했다면 그건 이미 사용자 의도다 — 첫 질문 자동 제목이 덮지 않는다
+      titleSource: dto.title ? 'USER' : 'DEFAULT',
     });
 
     const row = await this.repository.findById({ clinicianId: principal.clinicianId }, id);
