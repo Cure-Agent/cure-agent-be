@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { createGuidanceStructurer } from './guidance/guidance-structurer.factory';
+import { GUIDANCE_STRUCTURER } from './guidance/guidance-structurer.port';
 import { LlmGateway } from './llm-gateway';
 import { LLM_PROVIDERS, LlmProvider } from './llm-provider.port';
 import { FakeLlmProvider } from './provider/fake-llm.provider';
@@ -23,7 +25,9 @@ import { RateLimitBlockStore } from './resilience/rate-limit-block-store';
     CircuitBreaker,
     RateLimitBlockStore,
     LlmGateway,
+    // OPENAI_API_KEY 있으면 실물, 없으면 결정적 fake (docs/specs/33 — 리랭커 팩토리 선례)
+    { provide: GUIDANCE_STRUCTURER, useFactory: () => createGuidanceStructurer(process.env) },
   ],
-  exports: [LLM_PROVIDERS, LlmGateway],
+  exports: [LLM_PROVIDERS, LlmGateway, GUIDANCE_STRUCTURER],
 })
 export class LlmModule {}

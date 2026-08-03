@@ -9,12 +9,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { LlmGateway } from '../../infrastructure/llm/llm-gateway';
 import { PROMPT_VERSION } from '../../infrastructure/llm/prompt-builder';
 import { RERANKER, Reranker } from '../../infrastructure/retrieval/reranker.port';
-import {
-  RETRIEVAL_TOP_K,
-  RetrievalService,
-  RetrievedEvidence,
-} from '../../infrastructure/retrieval/retrieval.service';
+import { RetrievalService } from '../../infrastructure/retrieval/retrieval.service';
 import { EvalSetItem } from './evalset.types';
+import { generateRealPathAnswer } from './real-path-generator';
 import {
   GROUNDEDNESS_JUDGE,
   GroundednessJudge,
@@ -185,60 +182,20 @@ export class GroundednessEvalService {
     };
   }
 
-  /**
-   * 실경로 재현 — 검색 K=30 → 리랭크 → top-5 → LlmGateway.
-   * 리랭크 실패는 코사인 순위 폴백이다(docs/specs/29 기준 6과 같은 규약) — 평가가
-   * 리랭커 가용성에 묶이면 생성 축 측정이 검색 축 장애로 중단된다.
-   */
+  /** 실경로 재현은 real-path-generator가 갖는다 — guidance 평가(docs/specs/33)와 공유한다 */
   private async generate(
     question: string,
   ): Promise<{ answer: string; evidence: JudgedEvidence[] }> {
-    const results = await this.retrieval.search(
-      question,
-      undefined,
-      this.retrieval.rerankCandidates,
+    const { answer, top } = await generateRealPathAnswer(
+      { retrieval: this.retrieval, reranker: this.reranker, llmGateway: this.llmGateway },
+      { retrievalQuestion: question },
     );
-    let top = results.slice(0, RETRIEVAL_TOP_K);
-    try {
-      const reranked = await this.reranker.rerank(
-        question,
-        results.map((row) => ({
-          chunkId: row.chunk.id,
-          content: row.chunk.content,
-          guidelineTitle: row.guideline.title,
-        })),
-      );
-      const byChunkId = new Map(results.map((row) => [row.chunk.id, row]));
-      const ordered = reranked.order
-        .map((chunkId) => byChunkId.get(chunkId))
-        .filter((row): row is RetrievedEvidence => row !== undefined)
-        .slice(0, RETRIEVAL_TOP_K);
-      if (ordered.length > 0) top = ordered;
-    } catch {
-      // 코사인 순위 유지
-    }
 
     const evidence: JudgedEvidence[] = top.map((row, index) => ({
       marker: index + 1,
       content: row.chunk.content,
       guidelineTitle: row.guideline.title,
     }));
-
-    let answer = '';
-    await this.llmGateway.stream(
-      {
-        question,
-        evidence: top.map((row, index) => ({
-          marker: index + 1,
-          content: row.chunk.content,
-          guidelineTitle: row.guideline.title,
-          sectionPath: row.section.path,
-        })),
-      },
-      (delta) => {
-        answer += delta;
-      },
-    );
 
     return { answer, evidence };
   }

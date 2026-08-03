@@ -79,6 +79,9 @@ services:
       GUIDELINE_REVISION_SCAN_CRON: ${GUIDELINE_REVISION_SCAN_CRON:-0 19 * * *}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 참고안 구조화 킬스위치 (docs/specs/33 기준 8). 'false'만 발동한다.
+      # OPENAI_API_KEY를 비우는 방식으로는 끌 수 없다 — 그 키는 메인 LLM과 공유라 답변이 죽는다.
+      GUIDANCE_STRUCTURE_ENABLED: ${GUIDANCE_STRUCTURE_ENABLED:-}
       # ⚠️ LLM 튜닝값의 기본값은 llm.config.ts DEFAULTS가 단독으로 소유한다.
       # 여기에 기본값을 적어두면 코드가 올라가도 컨테이너는 옛 값을 받는다 —
       # 실제로 LLM_MAX_OUTPUT_TOKENS를 `:-1024`로 박아둔 탓에 코드의 4096 상향이 무효였다.

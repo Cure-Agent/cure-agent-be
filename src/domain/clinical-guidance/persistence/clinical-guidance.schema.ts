@@ -31,6 +31,13 @@ export interface GuidanceConsiderationJson {
   title: string;
   rationale: string;
   citations: GuidanceCitationJson[];
+  /**
+   * 구조화 경로(docs/specs/33)에서만 채워진다 — 폴백 행·기존 행에는 없다.
+   * 어휘는 `GUIDANCE_APPLICABILITIES`(§7 DTO)가 집행한다.
+   */
+  applicability?: 'APPLICABLE' | 'CAUTION' | 'NOT_APPLICABLE';
+  /** 이 판단이 딛고 선 환자 프로필 필드명 — missingInformation과 같은 어휘의 여집합 */
+  patientFactors?: string[];
 }
 
 export interface SafetyAlertJson {
@@ -58,6 +65,12 @@ export const clinicalGuidances = pgTable(
     considerations: jsonb('considerations').$type<GuidanceConsiderationJson[]>().notNull(),
     safetyAlerts: jsonb('safety_alerts').$type<SafetyAlertJson[]>().notNull(),
     missingInformation: text('missing_information').array().notNull(),
+    /**
+     * 이 행을 만든 조립 경로 (docs/specs/33) — `deterministic-v1` | `guidance-v1`.
+     * §5.7 재현성 계약의 가이던스 축이다: 프롬프트 버전처럼 «당시 왜 이 참고안이 나왔는지»를
+     * 되짚는 키라서, 응답 DTO에는 싣지 않고 기록으로만 남긴다.
+     */
+    composerVersion: text('composer_version').notNull().default('deterministic-v1'),
     reviewStatus: guidanceReviewStatus('review_status').notNull().default('DRAFT'),
     ...baseColumns,
   },

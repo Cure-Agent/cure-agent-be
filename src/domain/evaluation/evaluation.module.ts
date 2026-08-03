@@ -11,6 +11,7 @@ import { EvalsetSampler } from './evalset-sampler';
 import { createGroundednessJudge } from './groundedness-judge.factory';
 import { GROUNDEDNESS_JUDGE } from './groundedness-judge.port';
 import { GroundednessEvalService } from './groundedness-eval.service';
+import { GuidanceEvalService } from './guidance-eval.service';
 import { LabelResolver } from './label-resolver';
 import { RagEvalService } from './rag-eval.service';
 
@@ -22,6 +23,8 @@ import { RagEvalService } from './rag-eval.service';
     LabelResolver,
     RagEvalService,
     GroundednessEvalService,
+    // 구조화기는 LlmModule이 등록·export한다 (docs/specs/33)
+    GuidanceEvalService,
     // OPENAI_API_KEY 있으면 실물, 없으면 결정적 fake (리랭커 팩토리 선례)
     { provide: GROUNDEDNESS_JUDGE, useFactory: () => createGroundednessJudge(process.env) },
   ],
@@ -30,6 +33,7 @@ import { RagEvalService } from './rag-eval.service';
     LabelResolver,
     RagEvalService,
     GroundednessEvalService,
+    GuidanceEvalService,
     GROUNDEDNESS_JUDGE,
   ],
 })

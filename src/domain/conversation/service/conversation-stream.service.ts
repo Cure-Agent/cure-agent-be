@@ -18,6 +18,14 @@ import {
   LlmEvidenceContext,
   LlmProviderError,
 } from '../../../infrastructure/llm/llm-provider.port';
+import { GUIDANCE_PROMPT_VERSION } from '../../../infrastructure/llm/guidance/guidance-prompt';
+import {
+  GUIDANCE_STRUCTURER,
+  GuidanceEvidenceContext,
+  GuidanceStructureResult,
+  GuidanceStructurer,
+} from '../../../infrastructure/llm/guidance/guidance-structurer.port';
+import { structureWithTimeout } from '../../../infrastructure/llm/guidance/structure-runner';
 import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
 import {
   RETRIEVAL_TOP_K,
@@ -27,6 +35,8 @@ import {
 import { RERANKER, Reranker } from '../../../infrastructure/retrieval/reranker.port';
 import { ClinicalGuidanceResponseDto } from '../../clinical-guidance/dto/response/clinical-guidance.response.dto';
 import { ClinicalGuidanceComposer } from '../../clinical-guidance/service/clinical-guidance-composer.service';
+import { presentGuidanceProfileFields } from '../../clinical-guidance/service/guidance-profile-fields';
+import { composeGuidanceQuestion } from '../../clinical-guidance/service/guidance-question';
 import { toEvidenceDetail } from '../../guideline/mapper/guideline.mapper';
 import {
   PatientSnapshotPayload,
@@ -109,6 +119,7 @@ export class ConversationStreamService {
     private readonly traceContext: TraceContext,
     private readonly patientSnapshotService: PatientSnapshotService,
     private readonly guidanceComposer: ClinicalGuidanceComposer,
+    @Inject(GUIDANCE_STRUCTURER) private readonly guidanceStructurer: GuidanceStructurer,
     private readonly metrics: MetricsService,
   ) {}
 
@@ -406,7 +417,20 @@ export class ConversationStreamService {
         quote: truncate(row.chunk.content, QUOTE_LIMIT),
       }));
 
+    // 구조화는 영속화 tx **밖**에서 한다 — 외부 호출을 tx 안에 두면 커넥션을 상한(20s)만큼 붙잡는다
+    const structuring = args.guidanceContext
+      ? await this.structureGuidance({
+          guidanceContext: args.guidanceContext,
+          retrieved,
+          usedMarkers,
+          answerText: outcome.text,
+          clientSignal,
+          traceId,
+        })
+      : null;
+
     let guidance: ClinicalGuidanceResponseDto | null = null;
+    let composerVersion: string | null = null;
     await this.txManager.run(async () => {
       await this.repository.updateMessage(assistantMessageId, {
         content: outcome.text,
@@ -431,7 +455,7 @@ export class ConversationStreamService {
       // 가이던스 행은 답변 영속화와 같은 tx에서 생성 — 부분 커밋으로 답변만 남는 상태를 막는다
       if (args.guidanceContext) {
         const citationDetails = await this.repository.listCitationDetails([assistantMessageId]);
-        guidance = await this.guidanceComposer.compose({
+        const composed = await this.guidanceComposer.compose({
           messageId: assistantMessageId,
           patientId: args.guidanceContext.patientId,
           patientSnapshotId: args.guidanceContext.snapshotId,
@@ -439,9 +463,21 @@ export class ConversationStreamService {
           answerText: outcome.text,
           citations: citationDetails.map(toCitationDto),
           profile: args.guidanceContext.profile,
+          structured: structuring?.structured ?? null,
         });
+        guidance = composed.guidance;
+        composerVersion = composed.composerVersion;
       }
     });
+
+    // 채택 여부는 조립이 끝나야 정해진다 — 구조화가 성공해도 검증이 전멸하면 폴백이다
+    if (structuring) {
+      this.metrics.recordGuidanceCompose(
+        structuring.skipped ??
+          (composerVersion === GUIDANCE_PROMPT_VERSION ? 'structured' : 'fallback'),
+        structuring.durationSec,
+      );
+    }
 
     const message = await this.loadMessageDto(assistantMessageId, args.principal);
     // GUIDELINE_QA 완료 이벤트에는 guidance 속성 자체가 없어야 한다 (spec 10 기준 5)
@@ -450,6 +486,59 @@ export class ConversationStreamService {
     } else {
       sse.send({ eventType: 'answer.completed', message });
     }
+  }
+
+  /**
+   * 답변이 **실제로 인용한** 청크 원문과 환자 프로필로 참고안을 구조화한다 (docs/specs/33).
+   * 새 검색도 새 근거도 없다 — 두 다리 모두 이미 이 요청 안에 있던 것이다.
+   * 인용이 0건이면 근거 다리를 세울 수 없으므로 호출 자체를 생략한다.
+   */
+  private async structureGuidance(args: {
+    guidanceContext: GuidanceContext;
+    retrieved: RetrievedEvidence[];
+    usedMarkers: Set<number>;
+    answerText: string;
+    clientSignal: AbortSignal;
+    traceId: string;
+  }): Promise<{
+    structured: GuidanceStructureResult | null;
+    /** 구조화기를 부르지 않은 사유 — 실제로 호출했으면 null */
+    skipped: 'disabled' | 'skipped' | null;
+    durationSec: number | null;
+  }> {
+    // 킬스위치 (docs/specs/33 기준 8) — 근거를 모으기도 전에 빠진다
+    if (this.guidanceStructurer.disabled === true) {
+      return { structured: null, skipped: 'disabled', durationSec: null };
+    }
+
+    const evidence: GuidanceEvidenceContext[] = args.retrieved
+      .map((row, index) => ({ row, marker: index + 1 }))
+      .filter(({ marker }) => args.usedMarkers.has(marker))
+      .map(({ row, marker }) => ({
+        marker,
+        // quote 발췌가 아니라 청크 원문이다 — 조건·금기는 발췌 밖에 있는 경우가 많다
+        content: row.chunk.content,
+        guidelineTitle: row.guideline.title,
+        sectionPath: row.section.path,
+      }));
+    if (evidence.length === 0) {
+      return { structured: null, skipped: 'skipped', durationSec: null };
+    }
+
+    const startedAt = Date.now();
+    const structured = await structureWithTimeout(
+      this.guidanceStructurer,
+      {
+        answerText: args.answerText,
+        evidence,
+        profileFields: presentGuidanceProfileFields(args.guidanceContext.profile),
+      },
+      { signal: args.clientSignal },
+    );
+    if (!structured) {
+      this.logger.warn(`[${args.traceId}] 참고안 구조화 실패·상한 초과 — 결정적 조립으로 폴백`);
+    }
+    return { structured, skipped: null, durationSec: (Date.now() - startedAt) / 1000 };
   }
 
   private async handleStreamFailure(
@@ -490,17 +579,6 @@ export class ConversationStreamService {
 
 function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}…`;
-}
-
-/** 복호화 프로필을 질문 앞에 합성 — 프로필은 LLM 컨텍스트로만 쓰고 저장하지 않는다 (§4.5) */
-function composeGuidanceQuestion(profile: PatientSnapshotPayload, question: string): string {
-  const parts = [
-    `진단: ${profile.diagnoses.join(', ') || '정보 없음'}`,
-    `투약: ${profile.medications.join(', ') || '정보 없음'}`,
-    `알레르기: ${profile.allergies.join(', ') || '없음'}`,
-  ];
-  if (profile.clinicalNotes) parts.push(`임상 메모: ${profile.clinicalNotes}`);
-  return `[환자 프로필] ${parts.join(' / ')}\n${question}`;
 }
 
 function estimateTokens(text: string): number {
