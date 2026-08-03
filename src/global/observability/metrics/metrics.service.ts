@@ -43,10 +43,14 @@ export type RerankOutcome = 'reranked' | 'fallback';
 
 /**
  * 참고안 조립 1회의 결말 (docs/specs/33).
- * `structured` 구조화 채택 · `fallback` 호출 실패·타임아웃 또는 검증 전멸 · `skipped` 인용 0건이라 미호출.
+ * `structured` 구조화 채택 · `fallback` 호출 실패·타임아웃 또는 검증 전멸 · `skipped` 인용 0건이라
+ * 미호출 · `disabled` 킬스위치가 내려가 미호출.
+ *
  * fallback이 조용히 상시화되면 참고안이 예전 인용 재배열로 되돌아간 것이므로 이 축이 잡는다.
+ * `disabled`를 fallback과 섞지 않는 이유가 이것이다 — 킬스위치 상태를 fallback으로 세면
+ * 100% fallback이 정상 운영으로 보이고, 진짜 폴백 급등이 왔을 때 구분되지 않는다.
  */
-export type GuidanceComposeOutcome = 'structured' | 'fallback' | 'skipped';
+export type GuidanceComposeOutcome = 'structured' | 'fallback' | 'skipped' | 'disabled';
 
 @Injectable()
 export class MetricsService {

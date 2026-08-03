@@ -473,11 +473,8 @@ export class ConversationStreamService {
     // 채택 여부는 조립이 끝나야 정해진다 — 구조화가 성공해도 검증이 전멸하면 폴백이다
     if (structuring) {
       this.metrics.recordGuidanceCompose(
-        !structuring.attempted
-          ? 'skipped'
-          : composerVersion === GUIDANCE_PROMPT_VERSION
-            ? 'structured'
-            : 'fallback',
+        structuring.skipped ??
+          (composerVersion === GUIDANCE_PROMPT_VERSION ? 'structured' : 'fallback'),
         structuring.durationSec,
       );
     }
@@ -505,9 +502,15 @@ export class ConversationStreamService {
     traceId: string;
   }): Promise<{
     structured: GuidanceStructureResult | null;
-    attempted: boolean;
+    /** 구조화기를 부르지 않은 사유 — 실제로 호출했으면 null */
+    skipped: 'disabled' | 'skipped' | null;
     durationSec: number | null;
   }> {
+    // 킬스위치 (docs/specs/33 기준 8) — 근거를 모으기도 전에 빠진다
+    if (this.guidanceStructurer.disabled === true) {
+      return { structured: null, skipped: 'disabled', durationSec: null };
+    }
+
     const evidence: GuidanceEvidenceContext[] = args.retrieved
       .map((row, index) => ({ row, marker: index + 1 }))
       .filter(({ marker }) => args.usedMarkers.has(marker))
@@ -519,7 +522,7 @@ export class ConversationStreamService {
         sectionPath: row.section.path,
       }));
     if (evidence.length === 0) {
-      return { structured: null, attempted: false, durationSec: null };
+      return { structured: null, skipped: 'skipped', durationSec: null };
     }
 
     const startedAt = Date.now();
@@ -535,7 +538,7 @@ export class ConversationStreamService {
     if (!structured) {
       this.logger.warn(`[${args.traceId}] 참고안 구조화 실패·상한 초과 — 결정적 조립으로 폴백`);
     }
-    return { structured, attempted: true, durationSec: (Date.now() - startedAt) / 1000 };
+    return { structured, skipped: null, durationSec: (Date.now() - startedAt) / 1000 };
   }
 
   private async handleStreamFailure(
