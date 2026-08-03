@@ -445,7 +445,7 @@ describe('spec 33: 환자 프로필 × 인용 근거 적용 판단 (e2e)', () =>
 
     it('기준 1e: 구조화가 채택된 행은 composer_version을 guidance-v1으로 기록한다', async () => {
       await expect(composerVersionOf(guidance.id)).resolves.toBe(
-        'guidance-v1',
+        'guidance-v2',
       );
     });
   });
@@ -593,7 +593,7 @@ describe('spec 33: 환자 프로필 × 인용 근거 적용 판단 (e2e)', () =>
     ).toBeGreaterThanOrEqual(1);
 
     // 같은 응답이 폴백이 아니라 구조화 성공 경로였다는 필수 양성 대조다.
-    await expect(composerVersionOf(guidance.id)).resolves.toBe('guidance-v1');
+    await expect(composerVersionOf(guidance.id)).resolves.toBe('guidance-v2');
     expect(guidance.considerations.length).toBeGreaterThanOrEqual(1);
     guidance.considerations.forEach((consideration) => {
       expect(APPLICABILITIES).toContain(consideration.applicability);
