@@ -23,6 +23,7 @@
     "verify:templates": "ts-node -T scripts/verify-templates.ts",
     "eval:rag": "ts-node -T scripts/eval-rag.ts",
     "eval:groundedness": "ts-node -T scripts/eval-groundedness.ts",
+    "eval:guidance": "ts-node -T scripts/eval-guidance.ts",
     "evalset:generate": "ts-node -T scripts/generate-rag-evalset.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"

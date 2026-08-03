@@ -8,8 +8,10 @@
 import {
   GuidanceProfileField,
   GuidanceStructureResult,
+  StructuredConsideration,
 } from '../../../infrastructure/llm/guidance/guidance-structurer.port';
 import { AnswerCitationResponseDto } from '../../conversation/dto/response/answer-citation.response.dto';
+import { GUIDANCE_APPLICABILITIES, GuidanceApplicability } from '../dto/response/clinical-guidance.response.dto';
 import { GuidanceConsiderationJson } from '../persistence/clinical-guidance.schema';
 
 export interface ValidateStructuredConsiderationsInput {
@@ -25,7 +27,55 @@ export interface ValidateStructuredConsiderationsInput {
  * **빈 배열이 폴백 신호다** (docs/specs/33 기준 2⑻).
  */
 export function validateStructuredConsiderations(
-  _input: ValidateStructuredConsiderationsInput,
+  input: ValidateStructuredConsiderationsInput,
 ): GuidanceConsiderationJson[] {
-  throw new Error('not implemented');
+  const citationByMarker = new Map(input.citations.map((citation) => [citation.marker, citation]));
+  const allowedFields = new Set(input.profileFields.map((field) => field.field));
+  const considerations = Array.isArray(input.structured?.considerations)
+    ? input.structured.considerations
+    : [];
+
+  return considerations.flatMap((item) => {
+    const accepted = accept(item, citationByMarker, allowedFields);
+    return accepted === null ? [] : [accepted];
+  });
+}
+
+function accept(
+  item: StructuredConsideration,
+  citationByMarker: Map<number, AnswerCitationResponseDto>,
+  allowedFields: Set<string>,
+): GuidanceConsiderationJson | null {
+  if (!isFilled(item?.title) || !isFilled(item?.rationale)) return null;
+  if (!isApplicability(item.applicability)) return null;
+
+  // 두 다리는 **1개 이상**이어야 한다 — 빈 배열은 부분집합 조건을 자동 통과하므로 따로 막는다
+  const markers = Array.isArray(item.markers) ? item.markers : [];
+  if (markers.length === 0) return null;
+  const citations = markers.map((marker) => citationByMarker.get(marker));
+  if (citations.some((citation) => citation === undefined)) return null;
+
+  const patientFactors = Array.isArray(item.patientFactors) ? item.patientFactors : [];
+  if (patientFactors.length === 0) return null;
+  if (!patientFactors.every((field) => typeof field === 'string' && allowedFields.has(field))) {
+    return null;
+  }
+
+  return {
+    title: item.title.trim(),
+    rationale: item.rationale.trim(),
+    applicability: item.applicability,
+    patientFactors: [...patientFactors],
+    citations: citations as AnswerCitationResponseDto[],
+  };
+}
+
+function isFilled(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isApplicability(value: unknown): value is GuidanceApplicability {
+  return (
+    typeof value === 'string' && (GUIDANCE_APPLICABILITIES as readonly string[]).includes(value)
+  );
 }

@@ -23,10 +23,36 @@ export interface StructureWithTimeoutOptions {
  * 실패·타임아웃·abort를 **null 하나로 접는다** — 호출측은 폴백 여부만 알면 되고,
  * 참고안 구조화 실패가 답변 스트림 실패로 번지지 않는 것이 계약이다 (docs/specs/33 기준 3).
  */
-export function structureWithTimeout(
-  _structurer: GuidanceStructurer,
-  _input: GuidanceStructureInput,
-  _options: StructureWithTimeoutOptions = {},
+export async function structureWithTimeout(
+  structurer: GuidanceStructurer,
+  input: GuidanceStructureInput,
+  options: StructureWithTimeoutOptions = {},
 ): Promise<GuidanceStructureResult | null> {
-  throw new Error('not implemented');
+  if (options.signal?.aborted) return null;
+
+  const timeoutMs = options.timeoutMs ?? GUIDANCE_STRUCTURE_TIMEOUT_MS;
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const expiry = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        // 진행 중인 HTTP 호출을 끊는다 — 상한을 넘긴 응답은 어차피 쓰지 않는다
+        controller.abort();
+        resolve(null);
+      }, timeoutMs);
+    });
+
+    return await Promise.race([
+      structurer.structure({ ...input, signal: controller.signal }),
+      expiry,
+    ]);
+  } catch {
+    return null;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
 }

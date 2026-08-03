@@ -21,14 +21,40 @@ export const GUIDANCE_PROFILE_FIELD_LABELS = [
 
 export type GuidanceProfileFieldLabel = (typeof GUIDANCE_PROFILE_FIELD_LABELS)[number];
 
+/**
+ * 라벨 → 값 추출. **순서는 §7 missingInformation의 기존 순서 그대로**이고, 값이 없으면 null이다.
+ * 한 곳에서 읽으므로 두 목록이 서로 어긋날 수 없다.
+ */
+const FIELD_READERS: ReadonlyArray<{
+  field: GuidanceProfileFieldLabel;
+  read: (profile: PatientSnapshotPayload) => string | null;
+}> = [
+  { field: '출생연도', read: (p) => (p.birthYear === null ? null : String(p.birthYear)) },
+  { field: '성별', read: (p) => p.sex },
+  { field: '신장', read: (p) => (p.heightCm === null ? null : `${p.heightCm}cm`) },
+  { field: '체중', read: (p) => (p.weightKg === null ? null : `${p.weightKg}kg`) },
+  { field: '허리둘레', read: (p) => (p.waistCm === null ? null : `${p.waistCm}cm`) },
+  { field: '진단명', read: (p) => joined(p.diagnoses) },
+  { field: '투약 목록', read: (p) => joined(p.medications) },
+  { field: '알레르기 이력', read: (p) => joined(p.allergies) },
+  { field: '임상 메모', read: (p) => (p.clinicalNotes ? p.clinicalNotes : null) },
+];
+
 /** 값이 채워진 필드만 — 구조화 입력이자 patientFactors 검증의 유일한 원천이다 */
 export function presentGuidanceProfileFields(
-  _profile: PatientSnapshotPayload,
+  profile: PatientSnapshotPayload,
 ): GuidanceProfileField[] {
-  throw new Error('not implemented');
+  return FIELD_READERS.flatMap(({ field, read }) => {
+    const value = read(profile);
+    return value === null ? [] : [{ field, value }];
+  });
 }
 
 /** 값이 비어 있는 필드명 — §7 missingInformation */
-export function missingGuidanceProfileFields(_profile: PatientSnapshotPayload): string[] {
-  throw new Error('not implemented');
+export function missingGuidanceProfileFields(profile: PatientSnapshotPayload): string[] {
+  return FIELD_READERS.filter(({ read }) => read(profile) === null).map(({ field }) => field);
+}
+
+function joined(values: string[]): string | null {
+  return values.length === 0 ? null : values.join(', ');
 }
