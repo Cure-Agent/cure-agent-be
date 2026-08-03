@@ -546,6 +546,45 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     expect(after[0]).toBe(olderConvId);
   });
 
+  it('제목 변경·보관은 순서를 바꾸지 않는다 (정렬 키는 메시지 시각뿐)', async () => {
+    // quiet를 먼저 만들어 뒤로 밀어 둔다 — 새 대화의 lastMessageAt은 생성 시각이라 나중에
+    // 만든 talked가 앞선다
+    const quietConvId = await createConversation();
+    const talkedConvId = await createConversation();
+    await request(server())
+      .post(`/api/v1/conversations/${talkedConvId}/messages/stream`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .send({ content: QUESTION, clientRequestId: 'req-sort-key-isolation-1' })
+      .expect(200);
+    expect((await listConversationIds())[0]).toBe(talkedConvId);
+
+    // 뒤쪽 대화를 고쳐도 맨 앞은 그대로여야 한다 — updatedAt은 움직이지만 정렬 키가 아니다
+    await request(server())
+      .patch(`/api/v1/conversations/${quietConvId}`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .send({ title: '이름만 바꾼 대화' })
+      .expect(200);
+    expect((await listConversationIds())[0]).toBe(talkedConvId);
+
+    await request(server())
+      .post(`/api/v1/conversations/${quietConvId}/archive`)
+      .set(CSRF)
+      .set('Cookie', cookieA)
+      .expect(200);
+    expect((await listConversationIds())[0]).toBe(talkedConvId);
+
+    // 정렬 키와 감사 컬럼이 실제로 갈라졌는지 계약 표면에서 확인한다
+    const quiet = (
+      await request(server())
+        .get(`/api/v1/conversations/${quietConvId}`)
+        .set('Cookie', cookieA)
+        .expect(200)
+    ).body.data;
+    expect(Date.parse(quiet.updatedAt)).toBeGreaterThan(Date.parse(quiet.lastMessageAt));
+  });
+
   it('같은 밀리초 안의 대화도 커서 경계에서 누락되지 않는다 (마이크로초 정밀도)', async () => {
     const first = await createConversation();
     const second = await createConversation();
@@ -553,11 +592,11 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     // 밀리초는 같고 마이크로초만 다르게 — 커서가 Date로 깎이면 둘째가 통째로 건너뛰어진다.
     // 미래 시각이라 이 둘이 목록 맨 앞 두 자리를 차지한다.
     await pool.query(
-      "UPDATE conversations SET updated_at = timestamptz '2027-01-01 00:00:00.123456+00' WHERE id = $1",
+      "UPDATE conversations SET last_message_at = timestamptz '2027-01-01 00:00:00.123456+00' WHERE id = $1",
       [first],
     );
     await pool.query(
-      "UPDATE conversations SET updated_at = timestamptz '2027-01-01 00:00:00.123123+00' WHERE id = $1",
+      "UPDATE conversations SET last_message_at = timestamptz '2027-01-01 00:00:00.123123+00' WHERE id = $1",
       [second],
     );
 
@@ -588,15 +627,15 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       .set('Cookie', cookieA)
       .expect(200);
 
-    // 페이지 경계에서 중복·누락이 없고, 정렬은 updatedAt 내림차순으로 이어진다
+    // 페이지 경계에서 중복·누락이 없고, 정렬은 lastMessageAt 내림차순으로 이어진다
     const page1Ids = page1.body.data.map((c: { id: string }) => c.id);
     const page2Ids = page2.body.data.map((c: { id: string }) => c.id);
     expect(page1Ids.filter((id: string) => page2Ids.includes(id))).toHaveLength(0);
 
-    const updatedAts = [...page1.body.data, ...page2.body.data].map((c: { updatedAt: string }) =>
-      Date.parse(c.updatedAt),
+    const sortKeys = [...page1.body.data, ...page2.body.data].map((c: { lastMessageAt: string }) =>
+      Date.parse(c.lastMessageAt),
     );
-    expect(updatedAts).toEqual([...updatedAts].sort((a, b) => b - a));
+    expect(sortKeys).toEqual([...sortKeys].sort((a, b) => b - a));
 
     // 정렬 키 변경 전 발급된 id-only 커서는 조용히 잘못된 페이지를 주지 않고 400으로 끊는다
     const legacyCursor = Buffer.from(JSON.stringify({ id: page1Ids[0] }), 'utf8').toString(

@@ -34,12 +34,12 @@ export interface CitationDetailRow {
 }
 
 /**
- * 커서에 실을 정렬 키 원본. updatedAt을 Date로 받으면 pg 드라이버가 마이크로초를 버려서,
+ * 커서에 실을 정렬 키 원본. Date로 받으면 pg 드라이버가 마이크로초를 버려서,
  * 같은 밀리초 안에 있는 대화가 페이지 경계에서 통째로 건너뛰어진다 — 문자열로 그대로 실어 나른다.
  */
-const CURSOR_UPDATED_AT = sql<string>`to_char(${conversations.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+const CURSOR_LAST_MESSAGE_AT = sql<string>`to_char(${conversations.lastMessageAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
-export type ConversationListRow = ConversationRow & { cursorUpdatedAt: string };
+export type ConversationListRow = ConversationRow & { cursorLastMessageAt: string };
 
 @Injectable()
 export class ConversationRepository {
@@ -63,9 +63,9 @@ export class ConversationRepository {
   }
 
   /**
-   * 최근 대화순(updated_at desc) — 메시지를 주고받은 대화가 맨 앞으로 온다(touchConversation).
+   * 최근 대화순(last_message_at desc) — 메시지를 주고받은 대화만 앞으로 온다(touchLastMessageAt).
    * id는 동시각 타이브레이크이자 keyset의 유일성 보장이다. 커서는 두 값을 묶은 행 비교로
-   * 끊어 idx_conversations_clinician_recent 역방향 스캔에 그대로 태운다.
+   * 끊어 idx_conversations_clinician_last_message 역방향 스캔에 그대로 태운다.
    */
   async list(
     scope: ConversationScope,
@@ -74,7 +74,7 @@ export class ConversationRepository {
       patientId?: string;
       status?: ConversationRow['status'];
       query?: string;
-      after?: { updatedAt: string; id: string };
+      after?: { lastMessageAt: string; id: string };
       limit: number;
     },
   ): Promise<ConversationListRow[]> {
@@ -85,28 +85,28 @@ export class ConversationRepository {
       filter.status ? eq(conversations.status, filter.status) : undefined,
       filter.query ? ilike(conversations.title, `%${filter.query}%`) : undefined,
       filter.after
-        ? sql`(${conversations.updatedAt}, ${conversations.id}) < (${filter.after.updatedAt}::timestamptz, ${filter.after.id})`
+        ? sql`(${conversations.lastMessageAt}, ${conversations.id}) < (${filter.after.lastMessageAt}::timestamptz, ${filter.after.id})`
         : undefined,
     ].filter((c) => c !== undefined);
 
     return this.txManager.conn
-      .select({ ...getTableColumns(conversations), cursorUpdatedAt: CURSOR_UPDATED_AT })
+      .select({ ...getTableColumns(conversations), cursorLastMessageAt: CURSOR_LAST_MESSAGE_AT })
       .from(conversations)
       .where(and(...conditions))
-      .orderBy(desc(conversations.updatedAt), desc(conversations.id))
+      .orderBy(desc(conversations.lastMessageAt), desc(conversations.id))
       .limit(filter.limit);
   }
 
   /**
    * 메시지 활동으로 대화를 최신으로 끌어올린다 (목록 정렬 키).
    * 소유 검증은 호출부(stream 진입 시 findById)가 이미 마쳤다.
-   * now()로 쓰는 이유: 생성 시각이 defaultNow()(DB 시계·마이크로초)라, $onUpdate의
-   * 앱 시계 밀리초 값을 섞으면 방금 만든 대화가 touch 뒤에 오히려 뒤로 밀릴 수 있다.
+   * now()로 쓰는 이유: 컬럼 기본값이 defaultNow()(DB 시계·마이크로초)라, 앱 시계의
+   * 밀리초 값을 섞으면 방금 만든 대화가 touch 뒤에 오히려 뒤로 밀릴 수 있다.
    */
-  async touchConversation(id: string): Promise<void> {
+  async touchLastMessageAt(id: string): Promise<void> {
     await this.txManager.conn
       .update(conversations)
-      .set({ updatedAt: sql`now()` })
+      .set({ lastMessageAt: sql`now()` })
       .where(eq(conversations.id, id));
   }
 

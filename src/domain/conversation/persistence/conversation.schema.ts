@@ -1,4 +1,13 @@
-import { index, integer, jsonb, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { baseColumns } from '../../../global/database/base-columns';
 import { clinicians } from '../../clinician/persistence/clinician.schema';
 import { evidenceChunks } from '../../guideline/persistence/guideline.schema';
@@ -28,14 +37,19 @@ export const conversations = pgTable(
     patientId: text('patient_id'), // 9단계(PATIENT_GUIDANCE)에서 사용
     title: text('title').notNull(),
     status: conversationStatus('status').notNull().default('ACTIVE'),
+    /**
+     * 목록 정렬 키 — 마지막 메시지 시각(메시지가 없으면 생성 시각).
+     * updatedAt으로 정렬하면 이름 변경·보관 같은 행 UPDATE까지 대화를 끌어올리므로 분리한다.
+     */
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
     ...baseColumns,
   },
   (table) => [
     index('idx_conversations_clinician').on(table.clinicianId),
     // 목록 기본 정렬(최근 대화순)의 keyset 스캔용 — ConversationRepository.list 참조
-    index('idx_conversations_clinician_recent').on(
+    index('idx_conversations_clinician_last_message').on(
       table.clinicianId,
-      table.updatedAt,
+      table.lastMessageAt,
       table.id,
     ),
   ],
