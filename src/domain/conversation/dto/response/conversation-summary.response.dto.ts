@@ -23,7 +23,4 @@ export class ConversationSummaryResponseDto {
       '마지막 메시지 시각 (메시지가 없으면 대화 생성 시각) — 목록 정렬 키다. ISO 8601',
   })
   lastMessageAt!: string;
-
-  @ApiProperty({ description: '행 수정 시각(제목 변경·보관 포함) — 정렬과 무관하다. ISO 8601' })
-  updatedAt!: string;
 }

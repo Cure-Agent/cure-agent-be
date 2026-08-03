@@ -44,7 +44,7 @@ export class ConversationController {
     summary: '내 대화 목록 (커서 기반)',
     description:
       '최근 대화순(lastMessageAt 내림차순) — 메시지를 주고받아야 대화가 맨 앞으로 온다. ' +
-      '제목 변경·보관은 순서를 바꾸지 않는다(updatedAt은 정렬과 무관). ' +
+      '제목 변경·보관은 순서를 바꾸지 않는다. ' +
       '커서는 이 정렬 키를 담으므로 정렬을 바꾸면 이전에 발급된 커서는 무효(400 BAD_REQUEST)다.',
   })
   @ApiPageResponse(ConversationSummaryResponseDto)

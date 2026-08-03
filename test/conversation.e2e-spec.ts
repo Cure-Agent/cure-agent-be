@@ -575,14 +575,13 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
       .expect(200);
     expect((await listConversationIds())[0]).toBe(talkedConvId);
 
-    // 정렬 키와 감사 컬럼이 실제로 갈라졌는지 계약 표면에서 확인한다
-    const quiet = (
-      await request(server())
-        .get(`/api/v1/conversations/${quietConvId}`)
-        .set('Cookie', cookieA)
-        .expect(200)
-    ).body.data;
-    expect(Date.parse(quiet.updatedAt)).toBeGreaterThan(Date.parse(quiet.lastMessageAt));
+    // 정렬 키와 감사 컬럼이 실제로 갈라졌는지 컬럼에서 확인한다 — updatedAt은 응답 계약에
+    // 노출하지 않으므로(감사용 컬럼일 뿐) 순서 단언만으로는 행 UPDATE 자체를 못 잡는다
+    const { rows } = await pool.query(
+      'SELECT updated_at, last_message_at FROM conversations WHERE id = $1',
+      [quietConvId],
+    );
+    expect(rows[0].updated_at.getTime()).toBeGreaterThan(rows[0].last_message_at.getTime());
   });
 
   it('같은 밀리초 안의 대화도 커서 경계에서 누락되지 않는다 (마이크로초 정밀도)', async () => {
