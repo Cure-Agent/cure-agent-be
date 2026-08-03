@@ -1,4 +1,4 @@
-# 33. guidance-v1 — 참고안 적용 판단 구조화 (환자 프로필 × 인용 근거)
+# 33. guidance-v2 — 참고안 적용 판단 구조화 (환자 프로필 × 인용 근거)
 
 > **이 문서는 작성 시점의 작업 지시다 — 현재 시스템 상태가 아니다.** 시스템의 현재 모습은 architecture.md만이 서술한다.
 > **1페이지 유지.** architecture.md와 중복 서술 금지 — §링크로만 참조한다.
@@ -27,21 +27,26 @@ PATIENT_GUIDANCE 참고안(§5.6)을 일반 QA 답변과 실질적으로 차별�
 
 | 진입점 | 변경 |
 |---|---|
-| `infrastructure/llm/guidance/` (신규) | `guidance-structurer.port.ts` · `openai-guidance-structurer.ts`(json_object — 리랭커 선례, 프롬프트 버전 `guidance-v1`) · `fake-guidance-structurer.ts`(결정적 — 인용 마커별 1항목, patientFactors는 값 있는 임상 필드 전부) · `guidance-structurer.factory.ts`(리랭커 팩토리 선례: OPENAI_API_KEY 있으면 실물, 없으면 fake) |
+| `infrastructure/llm/guidance/` (신규) | `guidance-structurer.port.ts` · `openai-guidance-structurer.ts`(json_object — 리랭커 선례, 프롬프트 버전 `guidance-v2`) · `fake-guidance-structurer.ts`(결정적 — 인용 마커별 1항목, patientFactors는 값 있는 임상 필드 전부) · `guidance-structurer.factory.ts`(리랭커 팩토리 선례: OPENAI_API_KEY 있으면 실물, 없으면 fake. **킬스위치** `GUIDANCE_STRUCTURE_ENABLED=false`면 키가 있어도 disabled 구조화기 — 스트림이 호출을 생략하고 결정적 조립 유지. 기본은 on: 배포 자체가 측정 게이트 뒤에 있으므로 통과 상태가 기본값이고, 미달 시 기본값을 뒤집는 커밋이 곧 롤백이다) |
 | `conversation-stream.service.ts` | 답변 완료 후·영속화 tx **전**에 structurer 호출(상한 20s — TTFT 실측 ~9.5s(§11) + 카드 1장 출력). 입력은 답변 텍스트 + **인용된 청크 원문**(quote 발췌 아님, 마커 유지) + 복호화 스냅샷 — 새 검색·새 근거 없음. 인용 0건이면 호출 자체를 생략. 실패·타임아웃·검증 전멸 → null 폴백, 스트림 실패로 번지지 않는다(리랭커 폴백 선례, spec 29 기준 6) |
 | `clinical-guidance-composer.service.ts` | 구조화 결과를 결정적 검증 후 considerations로 채용: ⑴ 항목 markers ⊆ 답변 인용 마커 ⑵ patientFactors ⊆ 값이 채워진 스냅샷 임상 필드명(§4.5 payload) ⑶ applicability ∈ 3값 — 위반 항목은 폐기, 잔존 0이면 현행 결정적 조립으로 폴백. summary·safetyAlerts·missingInformation은 **결정적 로직 불변** |
 | schema · DTO · mapper | `GuidanceConsiderationJson`·ResponseDto에 `applicability?`·`patientFactors?: string[]` additive(§7 개정 — 기존 행·폴백 행에는 없음). `clinical_guidances.composerVersion` 컬럼 |
 | `scripts/eval-guidance.ts` + `domain/evaluation/` | 아래 측정 계획의 실행체 — 수용 기준 밖(동결 대상 아님) |
-| `metrics.service.ts` | `guidance_compose_total{outcome=structured\|fallback\|skipped}` + duration 히스토그램 |
+| `metrics.service.ts` | `guidance_compose_total{outcome=structured\|fallback\|skipped\|disabled}` + duration 히스토그램. `disabled`를 따로 두는 이유: 킬스위치 상태를 fallback으로 세면 「구조화가 계속 실패 중」으로 읽혀, 진짜 폴백 급증이 왔을 때 구분되지 않는다 |
 
-**guidance-v1 프롬프트 계약** (요지 — 검증기가 못 잡는 축은 프롬프트가 막는다):
+**guidance-v2 프롬프트 계약** (요지 — 검증기가 못 잡는 축은 프롬프트가 막는다.
+v1 → v2는 1차 측정의 두 결함 패턴을 겨냥한다: 연령 산술 오독·빈 다리 인용):
 
 ```
 이미 작성된 근거 기반 답변을 환자 프로필에 대응시킨다. 새 임상 내용을 만들지 않는다 —
 처방명·혈자리·용량·수치는 인용 근거 원문에 있는 것만 쓴다. 각 항목에 근거 마커와 그 판단이
-딛고 선 환자 프로필 필드를 함께 명시한다. 판단은 적용/주의/해당없음 3값뿐이다 — 근거 사이의
-우선순위·비교 우위를 만들지 않는다. 근거의 조건·금기가 프로필의 어느 값과 만나는지만
-서술하고, 선택은 의료인의 판단으로 남긴다.
+딛고 선 환자 프로필 필드를 함께 명시한다. patientFactors에는 그 판단이 실제로 딛고 선 필드만
+쓴다 — 무관함을 말하려고 필드를 인용하지 않는다. 프로필의 어떤 필드로도 적용·주의·해당없음을
+가릴 수 없는 근거에는 항목을 만들지 않는다. 판단은 적용/주의/해당없음 3값뿐이다 — 근거 사이의
+우선순위·비교 우위를 만들지 않는다. 나이·기간·횟수·점수 같은 수치 조건은 충족 여부를 프로필
+값으로 계산해 판정하지 않는다 — 근거의 수치 조건 원문을 그대로 옮기고, 충족 여부 확인은
+의료인에게 남긴다. 근거의 조건·금기가 프로필의 어느 값과 만나는지만 서술하고, 선택은 의료인의
+판단으로 남긴다.
 ```
 
 **출력 계약** — 검증기는 이 형태만 통과시키고, 어긋난 **항목만** 폐기한다(전멸 시 폴백):
@@ -67,10 +72,10 @@ PATIENT_GUIDANCE 참고안(§5.6)을 일반 QA 답변과 실질적으로 차별�
 
 없음 — 폴백 계약이라 사용자 노출 실패가 없다.
 
-## 측정·판정 계획 (배포 전 측정이 채택을 게이트한다 — spec 32 관행)
+## 측정·판정 계획 — 1차 (배포 전 측정이 채택을 게이트한다 — spec 32 관행)
 
 - `scripts/eval-guidance.ts`(신규, eval-groundedness 관행): 합성 프로필 픽스처 12종(진단·투약·
-  알레르기·결측 조합) × answerable 문항 표집 ≈ **30케이스**. 실 생성(qa-v5) → guidance-v1
+  알레르기·결측 조합) × answerable 문항 **순환 배정** ≈ **30케이스**. 실 생성(qa-v5) →
   구조화 → 리포트를 docs/rag-eval/에 커밋. 비용 ≈ $0.2
 - 기계 지표: 두 다리 검증 통과율 · 폴백률 · 호출 지연 p50/p90 (상한 20s 실측 재검토 겸)
 - 육안 전수 판정 — 케이스를 30으로 잡은 이유(LLM 심판 없이 전수 가능한 규모). **채택 게이트**:
@@ -79,30 +84,79 @@ PATIENT_GUIDANCE 참고안(§5.6)을 일반 QA 답변과 실질적으로 차별�
 - 미달 시: 실물 팩토리 등록만 되돌려 결정적 조립을 유지하고 리포트를 남긴다 — 폴백이 기본
   경로라 롤백 비용이 없다
 
+## 측정 결과 — 1차 (2026-08-03, docs/rag-eval/2026-08-03-guidance-v1.md)
+
+프로덕션 코퍼스(ACTIVE 청크 7,154 — groundedness 기준선과 일치)·`gpt-5.4-mini`·30케이스 1회.
+
+| 축 | 실측 | 게이트 | 판정 |
+|---|---|---|---|
+| 창작(근거·프로필 밖 임상 항목) | **0건** (채택 43항목 전수) | 0건 | 통과 |
+| 프로필 오독 | **1건** — 011: 1941년생(85세)을 「50~80세 조건에 닿는다」로 산술 오독 | 0건 | **실패** |
+| 폴백률 | **16.7%** (5/30) | 10% 미만 | **실패** |
+| 두 다리 검증 통과율 | 78.2% (43/55) | — | 참고 |
+| 구조화 지연 | p50 2.24s · p90 3.76s · max 5.05s | 상한 20s | 여유 4배 |
+
+**판정: 채택 미달.** 단, 실패 축 분석이 재측정을 정당화한다 (2026-08-03 사용자 확정 — 2차 진행):
+
+- **측정 설계 결함 ①**: 폴백이 정답으로 설계된 P11-전결측 픽스처가 폴백률 분모에 그대로
+  들어갔다(5건 중 2건). 설계상 반드시 폴백하는 케이스를 폴백률로 재는 것은 잘못된 계량이다.
+- **측정 설계 결함 ②**: 프로필 12종의 **순환 배정**이 문항 주제와 대부분 어긋나(조현병 질문 ×
+  요통 환자), 측정의 주 표본이 「부정합 → 해당없음」 판정에 몰렸다. 이 스펙의 가치 제안인
+  「근거의 조건·금기가 환자의 값과 실제로 만나는 지점」은 9건에서만 관찰됐다.
+- **프롬프트 결함**: ⑴ 연령 산술 오독(위 011) ⑵ 무관한 필드를 「무관하다」고 말하기 위해
+  인용하는 빈 다리 패턴(005·009·019·022·030·031) — 형식상 두 다리는 채워지나 환자 다리가
+  판단을 지지하지 않는다. 둘 다 guidance-v2 규칙이 겨냥한다.
+- 폴백 잔여 3건은 검증기가 값 없는 필드를 딛은 항목을 전량 폐기한 결과다 — 결함이 아니라
+  방어가 작동한 흔적이므로, 2차에서도 폴백률 게이트는 유지하되 분모를 바로잡는다.
+
+## 2차(최종) 사이클 규약 (2026-08-03 사용자 확정)
+
+- **프롬프트**: guidance-v1 → **guidance-v2** — 수치 조건 산술 판정 금지 + 빈 다리 인용 금지
+  (위 프롬프트 계약 원문). composerVersion 기록도 v2.
+- **측정 구성**: 순환 배정을 폐기하고 문항–프로필을 **주제 정합으로 커레이션**한다 —
+  **정합 24 / 부정합 4 / 전결측 2** (총 30). 1차가 부정합 거동을 사실상 전수로 쟀으므로(20+건)
+  2차는 표본을 정합에 몰아 가치 제안 자체를 잰다. 011은 연령 경계 프로브로 유지한다
+  (전립선비대증 진단 정합 + 1941년생 — 「50~80세」 조건을 산술 판정 없이 옮기는지 본다).
+- **분모 규약**: 폴백률 = 정합+부정합 26케이스 중 fallback 비율. 전결측 2케이스는 **폴백이
+  정답**이므로 분모에서 제외하되, structured로 나오면 검증기 결함 신호로 **즉시 실패** 처리한다.
+- **채택 게이트**: ⑴ 창작 0건 ⑵ 프로필 오독 0건 ⑶ 폴백률(위 분모) 10% 미만
+  ⑷ **정합 케이스에서 가치 성립** — 빈 다리·무관 인용이 지배적이면(정합 케이스 과반) 게이트
+  통과와 무관하게 가치 불성립으로 판정한다.
+- **중단 조건**: 이번이 마지막 사이클이다 — 미달 시 guidance-v3 반복 없이 종료하고(심판 없는
+  육안 게이트라 과적합 위험은 다르지만, spec 32의 1사이클 규율을 계승한다), 팩토리 기본값을
+  disabled로 뒤집는 커밋과 함께 배포한다. 기능 축소·제거는 별도 논의로 넘긴다.
+
 ## 수용 기준 (= 동결할 시나리오, Definition of Done)
 
 1. PATIENT_GUIDANCE 스트림 해피패스(fake structurer): `answer.completed.guidance`의
    considerations 각 항목에 applicability(3값)·patientFactors가 있고, patientFactors ⊆
-   스냅샷의 값 있는 임상 필드명, 항목 citations ⊆ 답변 인용. DB `composerVersion='guidance-v1'` (e2e)
+   스냅샷의 값 있는 임상 필드명, 항목 citations ⊆ 답변 인용. DB `composerVersion='guidance-v2'` (e2e)
 2. 검증기 유닛 — 위 출력 계약의 항목별 폐기 규칙을 각각 단언한다: ⑴ 답변 인용에 없는 마커
    ⑵ 값이 채워지지 않은 프로필 필드 ⑶ 3값 밖 applicability ⑷ 빈 markers ⑸ 빈 patientFactors
    ⑹ 공백 title·rationale ⑺ 유효 항목과 무효 항목이 섞이면 **유효한 것만 남는다**
    ⑻ 전 항목 폐기 시 폴백 신호 반환
 3. 구조화 실패 주입(예외 fake) → 결정적 폴백: `composerVersion='deterministic-v1'`,
    considerations는 현행 인용 재배열 형태, `answer.completed` 정상 도달 — spec 10 동결 기준
-   2·4가 계속 통과한다 (e2e)
+   2·4가 계속 통과한다 (e2e). ※ 폴백 행의 composerVersion은 프롬프트 버전과 무관하게
+   `deterministic-v1` 불변
 4. 호출 상한 20s 초과 → 폴백 (유닛 — fake timer)
 5. GUIDELINE_QA 스트림에서 structurer 호출 0회 (주입 fake 호출 카운트 — spec 10 기준 5의
    guidance 부재 동결과 함께)
 6. fake 구조화 **성공** 경로에서도 알레르기 결정적 safetyAlert가 남아 있다 — LLM 출력이
-   결정적 안전 규칙을 대체하지 못한다 (e2e)
-7. guidance 프롬프트 유닛: 버전 상수 `'guidance-v1'`, 「새 임상 내용을 만들지 않는다」·
-   두 다리 명시 요구·「우선순위·비교 우위를 만들지 않는다」 포함. qa-v5 SYSTEM_PROMPT
-   불변은 spec 32 동결 유닛이 이미 보장한다
+   결정적 안전 규칙을 대체하지 못한다. 같은 응답의 DB `composerVersion='guidance-v2'` (e2e)
+7. guidance 프롬프트 유닛: 버전 상수 `'guidance-v2'`, 「새 임상 내용을 만들지 않는다」·
+   두 다리 명시 요구·「우선순위·비교 우위를 만들지 않는다」 포함. **v2 추가 규칙**:
+   「무관함을 말하려고 필드를 인용하지 않는다」·「항목을 만들지 않는다」(빈 다리 금지),
+   「계산해 판정하지 않는다」·「수치 조건 원문을 그대로 옮기고」(산술 판정 금지) 포함.
+   qa-v5 SYSTEM_PROMPT 불변은 spec 32 동결 유닛이 이미 보장한다
+8. 팩토리 등록 정책 유닛: ⑴ OPENAI_API_KEY 없음 → fake ⑵ 키 있음(기본) → OpenAI 실물
+   ⑶ 키 있음 + `GUIDANCE_STRUCTURE_ENABLED=false` → disabled 표식(`disabled === true`)이 있는
+   구조화기 — 스트림은 이 표식을 보고 호출 자체를 생략한다
 
 ## Out of scope
 
 - **qa-v5(QA 시스템 프롬프트) 변경** — 근거 계약 불변이 이 스펙의 전제다
+- **guidance-v3 반복** — 2차가 마지막 사이클이다(위 중단 조건). 미달 시 disabled 기본값으로 종료
 - summary·safetyAlerts·missingInformation의 LLM 생성 — 이번 범위는 considerations만
 - LLM 심판 기반 가이던스 평가 자동화·심판 루브릭의 프로필 grounding 확장 — 첫 사이클은
   육안 전수, 케이스 증량 시 별도 스텝
