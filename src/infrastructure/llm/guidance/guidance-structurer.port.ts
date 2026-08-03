@@ -51,6 +51,11 @@ export interface GuidanceStructureResult {
 export interface GuidanceStructurer {
   /** composerVersion·관측에 기록되는 식별자 */
   readonly model: string;
+  /**
+   * 킬스위치 표식 (docs/specs/33 기준 8) — true면 스트림이 호출 자체를 생략하고
+   * 결정적 조립을 유지한다. fake·실물은 이 필드를 두지 않는다(선택 멤버).
+   */
+  readonly disabled?: boolean;
   /** 실패는 예외로 던진다 — 호출측이 결정적 조립으로 폴백한다 (docs/specs/33) */
   structure(request: GuidanceStructureRequest): Promise<GuidanceStructureResult>;
 }
