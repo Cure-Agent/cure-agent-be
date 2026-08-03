@@ -31,6 +31,13 @@ export interface GuidanceConsiderationJson {
   title: string;
   rationale: string;
   citations: GuidanceCitationJson[];
+  /**
+   * 구조화 경로(docs/specs/33)에서만 채워진다 — 폴백 행·기존 행에는 없다.
+   * 어휘는 `GUIDANCE_APPLICABILITIES`(§7 DTO)가 집행한다.
+   */
+  applicability?: 'APPLICABLE' | 'CAUTION' | 'NOT_APPLICABLE';
+  /** 이 판단이 딛고 선 환자 프로필 필드명 — missingInformation과 같은 어휘의 여집합 */
+  patientFactors?: string[];
 }
 
 export interface SafetyAlertJson {

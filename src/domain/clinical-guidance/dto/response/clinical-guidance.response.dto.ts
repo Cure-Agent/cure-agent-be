@@ -6,6 +6,14 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
 export const ALERT_SEVERITIES = ['INFO', 'WARNING', 'CRITICAL'] as const;
 
+/**
+ * 적용 판단 3값 (docs/specs/33). 근거의 조건·금기가 프로필의 어느 값과 만나는지만 가르는 축이며,
+ * 근거 사이의 우선순위·비교 우위는 여기에 없다 — 그건 qa-v5가 막는 창작이다 (docs/specs/32).
+ * 검증기가 이 목록만 통과시키므로, 여기가 어휘의 **집행 지점**이다.
+ */
+export const GUIDANCE_APPLICABILITIES = ['APPLICABLE', 'CAUTION', 'NOT_APPLICABLE'] as const;
+export type GuidanceApplicability = (typeof GUIDANCE_APPLICABILITIES)[number];
+
 export class GuidanceConsiderationResponseDto {
   @ApiProperty()
   title!: string;
