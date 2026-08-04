@@ -271,29 +271,6 @@ describe('Auth — 소셜 로그인 (Testcontainers)', () => {
     expect(res.body.code).toBe('AUTH_OAUTH_TICKET_INVALID');
   });
 
-  it('signup: 다른 소셜 계정이 선점한 이메일 → 409 AUTH_EMAIL_ALREADY_USED', async () => {
-    await socialSignUp(app, { email: 'dup@clinic.kr', providerId: 'google-6006' });
-
-    // 같은 이메일, 다른 소셜 계정(네이버)으로 가입 시도
-    const { ticket } = await socialCallback(app, {
-      email: 'dup@clinic.kr',
-      providerId: 'naver-6006',
-      provider: 'NAVER',
-    });
-    const res = await request(server())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send({
-        ticket,
-        displayName: '김의사',
-        clinicName: '다른한의원',
-        licenseNumber: 'LIC-9999',
-        termsAccepted: true,
-      })
-      .expect(409);
-    expect(res.body.code).toBe('AUTH_EMAIL_ALREADY_USED');
-  });
-
   // ── 세션 수명주기 (§4.3) ────────────────────────────────
 
   it('만료된 access 토큰 → 401 AUTH_TOKEN_EXPIRED', async () => {

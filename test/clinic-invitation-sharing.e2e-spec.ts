@@ -508,29 +508,7 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
     expect(reused.body.code).toBe('INVITATION_INVALID');
   });
 
-  it('기준 17: 이미 가입된 이메일은 409 AUTH_EMAIL_ALREADY_USED이고 초대를 소비하지 않는다', async () => {
-    const issued = await issueInvitation(owner);
-    const existing = nextIdentity('already-used', 'GOOGLE');
-    await socialSignUp(app, {
-      ...existing,
-      clinicName: `기소속 독립 한의원 ${ulid()}`,
-    });
-
-    // 같은 이메일이지만 다른 소셜 제공자 계정이라 신규 signup 티켓까지는 발급된다.
-    const duplicate: SyntheticIdentity = {
-      ...nextIdentity('duplicate-oauth', 'NAVER'),
-      email: existing.email,
-    };
-    const body = await invitationSignupBody(issued.token, duplicate);
-    const rejected = await request(server())
-      .post('/api/v1/auth/signup')
-      .set(CSRF)
-      .send(body)
-      .expect(409);
-
-    expect(rejected.body.code).toBe('AUTH_EMAIL_ALREADY_USED');
-    expect((await invitationState(issued.id)).accepted_at).toBeNull();
-  });
+  // docs/specs/37 기준 10~13이 이 시나리오를 대체한다.
 
   // ── 같은 클리닉 공유 ───────────────────────────────────
 
