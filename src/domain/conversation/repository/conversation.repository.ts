@@ -33,9 +33,15 @@ import {
   messages,
 } from '../persistence/conversation.schema';
 
-/** §4.4 — conversation 계열 조회·변경은 clinician 스코프 필수 */
+/**
+ * §4.4 — conversation 계열 조회·변경은 **clinic 스코프** 필수 (docs/specs/35).
+ *
+ * 대화는 작성자 개인 소유가 아니라 **클리닉 공유 자산**이다. 작성자(`clinicianId`)는 계속
+ * 기록되지만 접근 판정에는 쓰이지 않는다 — 같은 클리닉의 구성원은 서로의 대화를 읽고 이어
+ * 질문하고 지운다. 클리닉 경계는 그대로라 타 클리닉 리소스는 여전히 404다.
+ */
 export interface ConversationScope {
-  clinicianId: string;
+  clinicId: string;
 }
 
 export interface CitationDetailRow {
@@ -79,7 +85,7 @@ export class ConversationRepository {
       .where(
         and(
           eq(conversations.id, id),
-          eq(conversations.clinicianId, scope.clinicianId),
+          eq(conversations.clinicId, scope.clinicId),
           isNull(conversations.deletedAt),
         ),
       )
@@ -90,7 +96,8 @@ export class ConversationRepository {
   /**
    * 최근 대화순(last_message_at desc) — 메시지를 주고받은 대화만 앞으로 온다(touchLastMessageAt).
    * id는 동시각 타이브레이크이자 keyset의 유일성 보장이다. 커서는 두 값을 묶은 행 비교로
-   * 끊어 idx_conversations_clinician_last_message 역방향 스캔에 그대로 태운다.
+   * 끊어 idx_conversations_clinic_last_message 역방향 스캔에 그대로 태운다 (docs/specs/35에서
+   * 선두 컬럼이 clinician_id → clinic_id로 바뀌었다 — 목록이 클리닉 공유이기 때문이다).
    */
   async list(
     scope: ConversationScope,
@@ -104,7 +111,7 @@ export class ConversationRepository {
     },
   ): Promise<ConversationListRow[]> {
     const conditions = [
-      eq(conversations.clinicianId, scope.clinicianId),
+      eq(conversations.clinicId, scope.clinicId),
       isNull(conversations.deletedAt), // docs/specs/34 기준 2
       filter.type ? eq(conversations.type, filter.type) : undefined,
       filter.patientId ? eq(conversations.patientId, filter.patientId) : undefined,
@@ -149,7 +156,7 @@ export class ConversationRepository {
       .where(and(eq(conversations.id, id), eq(conversations.titleSource, 'DEFAULT')));
   }
 
-  /** 소유 스코프에서만 갱신 — 0행이면 미존재/타인 (docs/specs/11) */
+  /** 클리닉 스코프에서만 갱신 — 0행이면 미존재이거나 타 클리닉이다 (docs/specs/11·35) */
   async updateTitle(
     scope: ConversationScope,
     id: string,
@@ -159,7 +166,7 @@ export class ConversationRepository {
       .update(conversations)
       // 사용자가 직접 정한 제목이므로 이후 자동 제목이 덮지 못하도록 출처를 확정한다
       .set({ title, titleSource: 'USER' })
-      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .where(and(eq(conversations.id, id), eq(conversations.clinicId, scope.clinicId)))
       .returning();
     return rows[0] ?? null;
   }
@@ -173,7 +180,7 @@ export class ConversationRepository {
     const rows = await this.txManager.conn
       .update(conversations)
       .set({ status })
-      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .where(and(eq(conversations.id, id), eq(conversations.clinicId, scope.clinicId)))
       .returning();
     return rows[0] ?? null;
   }
@@ -181,15 +188,15 @@ export class ConversationRepository {
   /**
    * 스코프 안에 존재하는가 — **파기 예약된 행도 존재로 센다.**
    *
-   * 삭제 멱등(기준 6)과 스코프 은닉(기준 7)을 가르는 유일한 지점이다. `findById`는 삭제된 행과
-   * 남의 행을 똑같이 null로 돌려주므로 그것만으로는 「이미 지운 내 대화(200)」와 「남의 대화(404)」를
-   * 구분할 수 없다.
+   * 삭제 멱등(§34 기준 6)과 스코프 은닉(§34 기준 7)을 가르는 유일한 지점이다. `findById`는
+   * 삭제된 행과 타 클리닉 행을 똑같이 null로 돌려주므로 그것만으로는 「이미 지운 우리 클리닉
+   * 대화(200)」와 「타 클리닉 대화(404)」를 구분할 수 없다.
    */
   async existsInScope(scope: ConversationScope, id: string): Promise<boolean> {
     const rows = await this.txManager.conn
       .select({ one: conversations.id })
       .from(conversations)
-      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .where(and(eq(conversations.id, id), eq(conversations.clinicId, scope.clinicId)))
       .limit(1);
     return rows.length > 0;
   }
@@ -205,7 +212,7 @@ export class ConversationRepository {
       .where(
         and(
           eq(conversations.id, id),
-          eq(conversations.clinicianId, scope.clinicianId),
+          eq(conversations.clinicId, scope.clinicId),
           isNull(conversations.deletedAt), // 이 조건이 「덮지 않는다」를 집행한다
         ),
       );
@@ -276,7 +283,7 @@ export class ConversationRepository {
       .where(
         and(
           eq(messages.id, messageId),
-          eq(conversations.clinicianId, scope.clinicianId),
+          eq(conversations.clinicId, scope.clinicId),
           isNull(conversations.deletedAt), // docs/specs/34 — 삭제된 대화의 메시지는 피드백 경로에서도 없다
         ),
       )
