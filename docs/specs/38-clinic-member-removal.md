@@ -70,7 +70,7 @@
 | `oauth-ticket.service.ts` | `OAuthTicketPayload`에 `clinicianId?: string` 추가 |
 | `auth.service.ts` `completeSignUp` | 티켓에 `clinicianId`가 있으면 insert 대신 **UPDATE**(`clinicId`·`displayName`·`licenseNumberEncrypted`). `email`·`oauthProvider`·`oauthProviderId`·`role`·`id`는 건드리지 않는다. **클리닉 개설·초대 합류 두 분기 모두**에서 성립해야 한다 |
 | `auth-session.repository.ts` | `findFamilyIdsByClinician`·`revokeAllByClinician` **재사용** — §36이 만든 그대로다. 강퇴도 탈퇴와 같이 **전 family**를 끈다(실측 최대 21 family) |
-| `data-purge.repository.ts` `purgeClinics` | `clinic_member_removals` 삭제를 ⑥ 이전에 넣는다. **두 축으로 지운다** — `clinic_id ∈ 대상` **그리고** `removed_clinician_id`·`removed_by_clinician_id ∈ 그 클리닉 구성원. 전자만 지우면, 강퇴당해 다른 클리닉으로 옮긴 사람의 새 클리닉이 파기될 때 **옛 클리닉에 남은 이력 행이 그를 참조해 FK로 실패한다** |
+| `data-purge.repository.ts` `purgeClinics` | ⑥에서 구성원을 **물리 삭제하지 않고 소속만 끊는다**(`clinic_id = NULL`). `clinic_member_removals`는 두 축(`clinic_id ∈ 대상` **그리고** `removed_clinician_id`·`removed_by_clinician_id ∈ 그 클리닉 구성원)으로 지운다.<br>※ 최초 작성 시 「이력을 두 축으로 지우면 된다」로만 적었으나 구현 단계에서 **처방이 불완전함**이 드러나 개정했다 — 동결 테스트(기준 39)가 실패시킨 것은 `clinic_member_removals`가 아니라 **`clinic_invitations.accepted_by_clinician_id`**였다. §38이 구성원을 클리닉 사이에서 이동 가능하게 만든 순간, 파기 대상의 구성원이 **다른 살아 있는 클리닉의 기록**에 참조될 수 있다: 대화 작성자·피드백·검토·초대 발급자/수락자·잡 요청자 **6개 FK 전부**가 같은 위험이며 전부 NO ACTION이다. 그 참조를 끊으려면 남의 클리닉 감사 기록을 지워야 하는데 **그것은 §36이 명시적으로 보존하기로 한 것**이라, 지울 수 있는 길이 없다. 파기 예약된 클리닉의 구성원은 §36 경로상 이미 익명화된 tombstone이므로 남는 것은 개인정보 없는 빈 행이고 잃는 것이 없다. 부수적으로 `guideline_jobs.requested_by`(파기 순서에 아예 없던 FK)의 잠재 실패도 함께 막힌다 |
 | `metrics.service.ts` | `clinic_member_removal_total{outcome=removed\|blocked}`. 자동 취소된 초대는 기존 `clinic_invitation_total{outcome=revoked}`에 함께 센다 — 주체가 달라도 초대의 종말은 같고, 라벨을 쪼개면 §35 대시보드가 갈린다 |
 | `docs/architecture.md` | §4.2 콜백 분기에 「소속 없는 기존 회원 → 재온보딩 티켓」과 signup의 계정 재사용, §5.8에 강퇴 규약, §9에 `ClinicMemberRemovalEntity`와 `ClinicianEntity.clinicId`의 nullable 의미 |
 
@@ -83,8 +83,12 @@
   강퇴 시각). 인덱스 `idx_clinic_member_removals_clinic (clinic_id, created_at desc)` — §35 초대 인덱스와 동형
 - **unique를 걸지 않는다** — 같은 사람이 다시 초대받아 합류했다가 또 강퇴되는 것이 정상 경로다
 - 클리닉 파기 때 **살아 있는 클리닉의 이력 행이 함께 사라질 수 있다**(위 두 축 삭제). 이는 감수하는
-  손실이다 — 행위자가 물리 삭제되면 「누가」가 비어 감사 기록으로서 의미가 없다. §36이
-  `answer_feedbacks`·`guidance_reviews`를 보존한 근거(「누가 평가했는가가 기록의 본질」)의 대우다
+  손실이다 — 강퇴 이력은 그 클리닉과 그 사람의 관계만 담으므로, 사람이 다른 클리닉으로 옮겨 그쪽이
+  파기되는 시점에는 남겨둘 실익이 크지 않다. 반면 `answer_feedbacks`·`guidance_reviews`·`conversations`는
+  §36이 보존을 명시한 임상 감사 기록이라 **같은 처분을 적용하지 않는다** — 그 차이가 ⑥을 물리 삭제가
+  아닌 소속 해제로 바꾼 이유다
+- **`clinicians` 행은 클리닉 파기 후에도 남는다**(소속만 NULL). §36의 「그 클리닉의 `clinicians` 잔존 0」은
+  `clinic_id` 기준 단언이므로 그대로 성립한다 — 스코프에서 사라지는 것과 행이 사라지는 것은 다르다
 - 데이터 마이그레이션 **없음**
 
 ## 추가 에러코드

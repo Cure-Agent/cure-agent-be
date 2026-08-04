@@ -67,8 +67,33 @@ export class AuthService {
       profile.provider,
       profile.providerId,
     );
-    if (existing) {
+    if (existing?.clinic) {
       return { status: 'LOGIN_SUCCESS', issued: await this.issueAuth(existing.clinician.id) };
+    }
+
+    /**
+     * 소속 없는 기존 회원 = 강퇴당한 계정 (docs/specs/38) → **재온보딩 티켓**으로 흡수한다.
+     *
+     * 로그인시킬 수는 없다(붙일 클리닉이 없다). 그렇다고 신규 가입으로 흘리면 같은 소셜
+     * 계정으로 두 번째 insert가 일어나 `uq_clinicians_oauth` 위반 500이 난다(§37) — 그래서
+     * 기존 `clinicianId`를 실은 티켓이 무소속에서 나가는 **유일한 문**이다.
+     *
+     * **이메일 필수 검사를 타지 않는다.** §4.2가 「이메일은 신규 가입 시에만 필수이며 기존
+     * 회원은 이메일 미동의 상태로도 로그인된다」로 규정했고 무소속 회원도 기존 회원이다.
+     * 티켓에 싣는 이메일도 제공자가 준 값이 아니라 **DB에 이미 있는 값**이다.
+     */
+    if (existing) {
+      const ticket = await this.ticketService.issue(
+        {
+          provider: existing.clinician.oauthProvider,
+          providerId: existing.clinician.oauthProviderId,
+          email: existing.clinician.email,
+          displayName: existing.clinician.displayName,
+          clinicianId: existing.clinician.id,
+        },
+        this.oauth.ticketTtlSec,
+      );
+      return { status: 'SIGNUP_REQUIRED', ticket };
     }
 
     // 신규 가입에는 이메일이 필요하다 — 의료인 연락 수단이자 중복 가입 방지 축이다
@@ -103,19 +128,41 @@ export class AuthService {
 
     // 이메일 중복은 검사하지 않는다 (docs/specs/37) — 계정 동일성은 provider+providerId 하나이며,
     // 그 유일성은 `uq_clinicians_oauth`가 지킨다. 같은 이메일의 다른 소셜 계정은 별개 사람으로 다룬다.
-    const clinicianId = ulid();
+
+    // 재온보딩이면 티켓이 기존 계정 id를 싣고 온다 (docs/specs/38) — 새 행을 만들지 않는다
+    const reOnboardingId = payload.clinicianId;
+    const clinicianId = reOnboardingId ?? ulid();
     const now = new Date(Date.now());
 
-    const insertClinician = (clinicId: string) =>
-      this.clinicianRepository.insertClinician({
+    /**
+     * 클리닉에 사람을 붙이는 한 지점. 신규는 insert, 재온보딩은 UPDATE다 —
+     * 클리닉 개설·초대 합류 **두 분기 모두**가 이 함수를 지나므로 어느 쪽으로 들어와도
+     * 계정 동일성(`id`·`email`·소셜 식별자·`role`)이 보존된다.
+     */
+    const attachClinician = async (clinicId: string): Promise<void> => {
+      const licenseNumberEncrypted = this.aesGcm.encrypt(dto.licenseNumber);
+      if (reOnboardingId) {
+        const attached = await this.clinicianRepository.attachToClinic({
+          id: reOnboardingId,
+          clinicId,
+          displayName: dto.displayName,
+          licenseNumberEncrypted,
+        });
+        // 이미 소속이 생겼다면(티켓 2장 중 하나가 먼저 소비됨) 이 티켓은 더 이상 유효하지 않다.
+        // 통과시키면 **소속 이동**이 되어 §35·§38이 함께 막은 경로가 뒷문으로 열린다.
+        if (!attached) throw new ServiceException('AUTH_OAUTH_TICKET_INVALID');
+        return;
+      }
+      await this.clinicianRepository.insertClinician({
         id: clinicianId,
         clinicId,
         email: payload.email,
         oauthProvider: payload.provider,
         oauthProviderId: payload.providerId,
         displayName: dto.displayName,
-        licenseNumberEncrypted: this.aesGcm.encrypt(dto.licenseNumber),
+        licenseNumberEncrypted,
       });
+    };
 
     // 합류 (docs/specs/35) — clinic을 만들지 않고 초대가 가리키는 클리닉에 붙는다.
     // 역할은 기본값 MEMBER 그대로다: 초대는 병원 합류이지 플랫폼 권한 승격이 아니다.
@@ -130,7 +177,7 @@ export class AuthService {
       }
 
       return this.txManager.run(async () => {
-        await insertClinician(invitation.clinicId);
+        await attachClinician(invitation.clinicId);
         await this.invitationService.consume(invitation.invitationId, clinicianId, now);
         const issued = await this.issueAuth(clinicianId);
         this.metrics.recordClinicInvitation('accepted');
@@ -145,7 +192,7 @@ export class AuthService {
     return this.txManager.run(async () => {
       // 순환 FK라 owner는 clinician을 만든 뒤에야 채울 수 있다 (docs/specs/35)
       await this.clinicianRepository.insertClinic({ id: clinicId, name: clinicName });
-      await insertClinician(clinicId);
+      await attachClinician(clinicId);
       await this.clinicianRepository.updateClinicOwner(clinicId, clinicianId);
       return this.issueAuth(clinicianId);
     });
@@ -256,8 +303,10 @@ export class AuthService {
 
     const accessExpiresAt = new Date(Date.now() + this.config.accessTtlSec * 1000);
     const accessToken = await this.jwtService.signAsync({
+      // `clinician.clinicId`는 nullable이 됐지만(docs/specs/38) 조인된 clinic은 innerJoin이
+      // 보장하므로 이쪽을 쓴다 — claim이 non-null이어야 §4.4 스코프 전제가 선다
       sub: clinicianId,
-      clinicId: found.clinician.clinicId,
+      clinicId: found.clinic.id,
       sid: sessionId,
       fid: family,
     });

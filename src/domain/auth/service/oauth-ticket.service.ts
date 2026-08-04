@@ -12,6 +12,15 @@ export interface OAuthTicketPayload {
   email: string;
   /** 제공자가 준 이름 — 온보딩 폼 기본값으로만 쓴다 */
   displayName: string | null;
+  /**
+   * **재온보딩 티켓**일 때만 채워진다 (docs/specs/38) — 강퇴로 무소속이 된 기존 계정의 id다.
+   *
+   * 있으면 `completeSignUp`이 새 clinician을 만들지 않고 이 행에 클리닉을 붙인다. 신규 가입으로
+   * 흘리면 같은 `(provider, providerId)`로 두 번째 insert가 일어나 `uq_clinicians_oauth`
+   * 위반이 되므로(§37), 이 필드는 편의가 아니라 정합성 요구다. 브라우저에는 불투명 티켓만
+   * 나가므로 FE가 이 값을 위조할 수 없다.
+   */
+  clinicianId?: string;
 }
 
 /** lazyConnect 클라이언트의 최초 연결 대기 상한 */
