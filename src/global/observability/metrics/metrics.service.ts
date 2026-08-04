@@ -281,6 +281,14 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** 강퇴 결말 (docs/specs/38) */
+  private readonly clinicMemberRemovals = new Counter({
+    name: 'clinic_member_removal_total',
+    help: '구성원 강퇴 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -299,6 +307,18 @@ export class MetricsService {
    */
   recordClinicianWithdrawal(outcome: 'withdrawn' | 'blocked'): void {
     this.clinicianWithdrawals.inc({ outcome });
+  }
+
+  /**
+   * 강퇴 결말 기록 (docs/specs/38).
+   *
+   * `blocked`(개설자의 자기 강퇴 시도)를 따로 두는 이유는 §36 `blocked`와 같다 — 정상 방어이지
+   * 장애가 아니다. 강퇴로 자동 취소된 초대는 여기 세지 않고 기존
+   * `clinic_invitation_total{outcome=revoked}`에 합류시킨다: 취소 주체가 달라도 초대의 종말은
+   * 같고, 라벨을 쪼개면 §35 대시보드가 갈린다.
+   */
+  recordClinicMemberRemoval(outcome: 'removed' | 'blocked'): void {
+    this.clinicMemberRemovals.inc({ outcome });
   }
 
   /** 파기 결말 기록 (docs/specs/34) */

@@ -121,6 +121,33 @@ export class ClinicInvitationRepository {
   }
 
   /**
+   * 강퇴 동반 취소 (docs/specs/38) — 내보내는 사람이 발급했던 **미수락·미취소** 초대를 끈다.
+   *
+   * 토큰 원문은 발급자만 갖고 있으므로(§5.8 — 목록에 실리지 않는다) 남겨두면 내보낸 사람이 손에
+   * 쥔 링크로 제3자가 그 클리닉에 들어온다. 이미 수락된 초대는 건드리지 않는다 — §5.8의
+   * 「합류가 취소보다 우선」이 그대로 지켜져야 합류 이력이 사후에 뒤집히지 않는다.
+   */
+  async revokeAllByInviter(
+    clinicId: string,
+    inviterId: string,
+    revokedAt: Date,
+  ): Promise<number> {
+    const rows = await this.txManager.conn
+      .update(clinicInvitations)
+      .set({ revokedAt })
+      .where(
+        and(
+          eq(clinicInvitations.clinicId, clinicId),
+          eq(clinicInvitations.invitedByClinicianId, inviterId),
+          isNull(clinicInvitations.acceptedAt),
+          isNull(clinicInvitations.revokedAt),
+        ),
+      )
+      .returning({ id: clinicInvitations.id });
+    return rows.length;
+  }
+
+  /**
    * 1회용 소비 — `accepted_at IS NULL` 조건부 UPDATE라 동시 요청이 겹쳐도 한 번만 성립한다
    * (§34 softDelete의 「덮지 않는다」 집행과 같은 형태). 0행이면 이미 소비됐다.
    */

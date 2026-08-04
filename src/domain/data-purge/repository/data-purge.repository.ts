@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, eq, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import {
   clinicalGuidances,
@@ -14,6 +14,7 @@ import {
 } from '../../conversation/persistence/conversation.schema';
 import { authSessions } from '../../auth/persistence/auth-session.schema';
 import { clinicInvitations } from '../../clinician/persistence/clinic-invitation.schema';
+import { clinicMemberRemovals } from '../../clinician/persistence/clinic-member-removal.schema';
 import { clinics } from '../../clinician/persistence/clinic.schema';
 import { clinicians } from '../../clinician/persistence/clinician.schema';
 import { patientProfileSnapshots, patients } from '../../patient/persistence/patient.schema';
@@ -128,16 +129,54 @@ export class DataPurgeRepository {
       await conn.delete(authSessions).where(inArray(authSessions.clinicianId, clinicianIds));
     }
 
-    // ⑤ 순환 FK 절단 — 이 UPDATE가 없으면 ⑥이 실패한다
+    /**
+     * ④' 강퇴 이력 (docs/specs/38) — **두 축으로 지운다.**
+     *
+     * `clinic_id` 축만 지우면 안 된다: 강퇴당한 사람은 **다른 클리닉으로 옮겨 가므로**, 그
+     * 사람의 새 클리닉이 파기될 때 옛 클리닉에 남은 이력 행이 그를 가리켜 ⑥ clinicians 삭제가
+     * FK로 실패한다(FK는 전부 NO ACTION이다). 그래서 이 클리닉의 구성원을 가리키는 행도 함께
+     * 지운다 — 살아 있는 다른 클리닉의 이력이 함께 사라지는 것은 **감수하는 손실**이다:
+     * 행위자가 물리 삭제되면 「누가」가 비어 감사 기록으로서 의미가 없다.
+     */
+    const removalConditions = [
+      inArray(clinicMemberRemovals.clinicId, clinicIds),
+      clinicianIds.length > 0
+        ? inArray(clinicMemberRemovals.removedClinicianId, clinicianIds)
+        : undefined,
+      clinicianIds.length > 0
+        ? inArray(clinicMemberRemovals.removedByClinicianId, clinicianIds)
+        : undefined,
+    ].filter((condition) => condition !== undefined);
+    await conn.delete(clinicMemberRemovals).where(or(...removalConditions));
+
+    // ⑤ 순환 FK 절단. ⑥이 물리 삭제이던 시절의 필수 단계였고(docs/specs/36), 지금은 분리로
+    // 바뀌어 반드시 필요하지는 않다 — 다만 clinic 행이 사라진 뒤 owner 참조를 남기지 않는다.
     await conn
       .update(clinics)
       .set({ ownerClinicianId: null })
       .where(inArray(clinics.id, clinicIds));
 
-    // ⑥⑦ 구성원 → 클리닉
+    /**
+     * ⑥ 구성원 — **물리 삭제하지 않고 소속만 끊는다** (docs/specs/38).
+     *
+     * §38로 구성원이 클리닉 사이를 옮겨 다닐 수 있게 되면서, 파기 대상 클리닉의 구성원이
+     * **다른 살아 있는 클리닉의 기록**에 참조될 수 있다 — 대화 작성자(`conversations`),
+     * 피드백·검토(`answer_feedbacks`·`guidance_reviews`), 초대 발급자·수락자
+     * (`clinic_invitations`), 잡 요청자(`guideline_jobs`). FK가 전부 NO ACTION이라 지우면 터진다.
+     *
+     * 그 참조를 끊으려면 **남의 클리닉 감사 기록을 지워야 하는데, 그것은 §36이 명시적으로
+     * 보존하기로 한 것이다**(「탈퇴자가 만든 대화를 남은 동료가 여전히 조회한다」). 그래서 행을
+     * 남긴다. 파기 예약된 클리닉의 구성원은 §36 경로상 이미 익명화된 tombstone이므로 남는 것은
+     * **개인정보가 없는 빈 행**이고, 잃는 것은 없다.
+     */
     if (clinicianIds.length > 0) {
-      await conn.delete(clinicians).where(inArray(clinicians.id, clinicianIds));
+      await conn
+        .update(clinicians)
+        .set({ clinicId: null })
+        .where(inArray(clinicians.id, clinicianIds));
     }
+
+    // ⑦ 클리닉
     await conn.delete(clinics).where(inArray(clinics.id, clinicIds));
   }
 

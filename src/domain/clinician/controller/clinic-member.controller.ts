@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiEnvelopeResponse } from '../../../global/common/response/api-envelope.decorator';
 import { ClinicOwnerGuard } from '../../../global/security/clinic-owner.guard';
@@ -35,5 +35,20 @@ export class ClinicMemberController {
     @Body() dto: TransferClinicOwnerRequestDto,
   ): Promise<null> {
     return this.memberService.transferOwner(principal, dto);
+  }
+
+  /**
+   * 구성원 강퇴 (docs/specs/38) — 초대의 반대 방향이다. 이양과 같은 개설자 게이트를 쓴다.
+   * 소속만 끊으므로 대상의 계정·개인정보는 남는다.
+   */
+  @Delete('members/:clinicianId')
+  @HttpCode(200)
+  @UseGuards(ClinicOwnerGuard)
+  @ApiOperation({ summary: '구성원 강퇴 — 소속 해제 (개설자 전용)' })
+  remove(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('clinicianId') clinicianId: string,
+  ): Promise<null> {
+    return this.memberService.remove(principal, clinicianId);
   }
 }
