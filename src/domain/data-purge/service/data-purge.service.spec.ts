@@ -47,8 +47,17 @@ const createHarness = ({
     findPurgeableClinicIds: jest.fn(
       async (_cutoff: Date, _limit: number): Promise<string[]> => [],
     ),
+    // 세션 축은 docs/specs/39가 더했다. 이 스위트는 대화·환자·클리닉 축을 검증하므로
+    // 세션은 빈 결과를 돌려주는 배선만 갖춘다 — 세션 축 자체의 단언은
+    // data-purge-session-retention.spec.ts가 담당한다.
+    findPurgeableSessionIds: jest.fn(
+      async (_sessionCutoff: Date, _limit: number): Promise<string[]> => [],
+    ),
     countPurgeable: jest.fn(
-      async (_cutoff: Date): Promise<{ conversations: number; patients: number }> => ({
+      async (
+        _cutoff: Date,
+        _sessionCutoff?: Date,
+      ): Promise<{ conversations: number; patients: number }> => ({
         conversations: 0,
         patients: 0,
       }),
@@ -56,6 +65,7 @@ const createHarness = ({
     purgeConversations: jest.fn(async (_ids: string[]): Promise<void> => undefined),
     purgePatients: jest.fn(async (_ids: string[]): Promise<void> => undefined),
     purgeClinics: jest.fn(async (_ids: string[]): Promise<void> => undefined),
+    purgeSessions: jest.fn(async (_ids: string[]): Promise<void> => undefined),
   };
   const lock = {
     acquire: jest.fn(
@@ -128,6 +138,7 @@ describe('DataPurgeService — docs/specs/34', () => {
     expect(result).toEqual({
       conversations: 0,
       patients: 0,
+      sessions: 0, // docs/specs/39가 더한 축 — 정확 매칭을 유지하려 기대값에 명시한다
       deferred: 0,
       skipped: true,
     });
@@ -155,6 +166,7 @@ describe('DataPurgeService — docs/specs/34', () => {
     expect(result).toEqual({
       conversations: 2,
       patients: 0,
+      sessions: 0, // docs/specs/39가 더한 축 — 정확 매칭을 유지하려 기대값에 명시한다
       deferred: 1,
       skipped: false,
     });

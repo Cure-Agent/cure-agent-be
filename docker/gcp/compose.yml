@@ -83,6 +83,9 @@ services:
       DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-true}
       DATA_PURGE_CRON: ${DATA_PURGE_CRON:-0 18 * * *}
       DATA_PURGE_RETENTION_DAYS: ${DATA_PURGE_RETENTION_DAYS:-30}
+      # refresh 세션 유예 (docs/specs/39) — 임상 데이터 유예와 **별도 축**이라 함께 움직이면
+      # 안 된다. 만료된 토큰은 이미 교환이 거부되므로 이 값은 재사용 감지 꼬리의 길이다.
+      DATA_PURGE_SESSION_RETENTION_DAYS: ${DATA_PURGE_SESSION_RETENTION_DAYS:-30}
       DATA_PURGE_BATCH_SIZE: ${DATA_PURGE_BATCH_SIZE:-200}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

@@ -62,19 +62,26 @@ export class DataPurgeService {
       this.metrics?.recordDataPurge('conversation', 'skipped');
       this.metrics?.recordDataPurge('patient', 'skipped');
       this.metrics?.recordDataPurge('clinic', 'skipped');
+      // 세션 축도 함께 올린다 — 이 축만 결말이 비면 대시보드에서 「돌지 않는 축」으로 읽힌다
+      this.metrics?.recordDataPurge('session', 'skipped');
       return { conversations: 0, patients: 0, sessions: 0, deferred: 0, skipped: true };
     }
 
     const startedAt = Date.now();
     try {
       const cutoff = new Date(Date.now() - this.config.retentionDays * MS_PER_DAY);
+      // 세션 컷오프는 **따로** 계산한다 (docs/specs/39) — 임상 데이터 유예와 축이 분리돼야 한다.
+      const sessionCutoff = new Date(
+        Date.now() - this.config.sessionRetentionDays * MS_PER_DAY,
+      );
       const limit = this.config.batchSize;
 
-      const [total, conversationIds, patientIds, clinicIds] = await Promise.all([
-        this.repository.countPurgeable(cutoff),
+      const [total, conversationIds, patientIds, clinicIds, sessionIds] = await Promise.all([
+        this.repository.countPurgeable(cutoff, sessionCutoff),
         this.repository.findPurgeableConversationIds(cutoff, limit),
         this.repository.findPurgeablePatientIds(cutoff, limit),
         this.repository.findPurgeableClinicIds(cutoff, limit),
+        this.repository.findPurgeableSessionIds(sessionCutoff, limit),
       ]);
 
       // 대화를 먼저 지운다 — 환자의 deletedAt은 그 환자 대화의 것보다 항상 같거나 늦으므로
@@ -85,6 +92,10 @@ export class DataPurgeService {
         await this.repository.purgeConversations(conversationIds);
         await this.repository.purgePatients(patientIds);
         await this.repository.purgeClinics(clinicIds);
+        // 세션은 참조 FK가 0개인 잎이라 **순서와 무관하다**. 같은 tx에 두는 것은 한 틱의 실패가
+        // 부분 반영을 남기지 않게 하려는 기존 계약의 계승이다. 클리닉 파기(§36 ④)가 같은 행을
+        // 이미 지웠어도 id 기준 DELETE라 충돌하지 않는다 — 두 경로는 공존한다.
+        await this.repository.purgeSessions(sessionIds);
       });
 
       // 클리닉 미반영분도 센다 — 조용한 절단 금지(기준 21). `?? 0`은 클리닉 축이 없던
@@ -93,7 +104,8 @@ export class DataPurgeService {
         total.conversations -
         conversationIds.length +
         (total.patients - patientIds.length) +
-        ((total.clinics ?? 0) - clinicIds.length);
+        ((total.clinics ?? 0) - clinicIds.length) +
+        ((total.sessions ?? 0) - sessionIds.length);
       if (deferred > 0) {
         // 조용한 절단 금지 — 남긴 수를 남겨야 「다 지웠다」로 오독되지 않는다
         this.logger.warn(`배치 상한(${limit})으로 ${deferred}건을 다음 틱으로 남긴다`);
@@ -102,11 +114,12 @@ export class DataPurgeService {
       this.metrics?.recordDataPurge('conversation', 'purged', conversationIds.length);
       this.metrics?.recordDataPurge('patient', 'purged', patientIds.length);
       this.metrics?.recordDataPurge('clinic', 'purged', clinicIds.length);
+      this.metrics?.recordDataPurge('session', 'purged', sessionIds.length);
 
       return {
         conversations: conversationIds.length,
         patients: patientIds.length,
-        sessions: 0, // 스텁 — docs/specs/39 구현에서 실제 삭제 수로 채운다
+        sessions: sessionIds.length,
         deferred,
         skipped: false,
       };
@@ -114,6 +127,7 @@ export class DataPurgeService {
       this.metrics?.recordDataPurge('conversation', 'failed');
       this.metrics?.recordDataPurge('patient', 'failed');
       this.metrics?.recordDataPurge('clinic', 'failed');
+      this.metrics?.recordDataPurge('session', 'failed');
       throw error;
     } finally {
       this.metrics?.observeDataPurgeDuration((Date.now() - startedAt) / 1_000);
