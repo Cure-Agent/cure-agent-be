@@ -353,7 +353,7 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
 
     const response = await request(server())
       .get('/api/v1/clinic/invitations')
-      .query({ size: 100 })
+      .query({ size: 50 })
       .set('Cookie', owner.cookie)
       .expect(200);
     const items = response.body.data as Array<{ id: string; token?: unknown }>;
@@ -540,7 +540,7 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
 
     const list = await request(server())
       .get('/api/v1/conversations')
-      .query({ size: 100 })
+      .query({ size: 50 })
       .set('Cookie', member.cookie)
       .expect(200);
     expect((list.body.data as Array<{ id: string }>).map((item) => item.id)).toContain(
@@ -667,7 +667,7 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
     expect(await conversationDeletedAt(foreignConversation)).toBeNull();
   });
 
-  it('기준 30: 같은 메시지에 개설자와 합류자가 각각 201 피드백을 남기며 DB에는 2행이다', async () => {
+  it('기준 30: 같은 메시지에 개설자와 합류자가 각각 200 피드백을 남기며 DB에는 2행이다', async () => {
     const member = await joinOwnerClinic('per-member-feedback');
     const conversationId = await createConversation({ session: owner });
     const completed = await streamCompleted(owner, conversationId);
@@ -680,13 +680,13 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
       .set(CSRF)
       .set('Cookie', owner.cookie)
       .send({ rating: 'HELPFUL', comment: '개설자 피드백' })
-      .expect(201);
+      .expect(200);
     await request(server())
       .post(`/api/v1/messages/${messageId}/feedback`)
       .set(CSRF)
       .set('Cookie', member.cookie)
       .send({ rating: 'HELPFUL', comment: '합류자 피드백' })
-      .expect(201);
+      .expect(200);
 
     const feedbacks = await pool.query<{ clinician_id: string }>(
       `SELECT clinician_id
@@ -715,7 +715,7 @@ describe('docs/specs/35: 클리닉 초대·합류 + 대화 공유 전환', () =>
 
     const list = await request(server())
       .get('/api/v1/conversations')
-      .query({ size: 100 })
+      .query({ size: 50 })
       .set('Cookie', owner.cookie)
       .expect(200);
     const ids = (list.body.data as Array<{ id: string }>).map((item) => item.id);

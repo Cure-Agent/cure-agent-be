@@ -136,7 +136,10 @@
 27. 동료가 등록한 환자의 `GET /patients/{id}` → 200 (e2e — 이미 clinicId 스코프이므로 **회귀 방지**)
 28. 동료 대화에 딸린 가이던스의 `GET /clinical-guidance/{id}` → 200 (e2e — 판단 근거의 모순이 해소됐음을 단언)
 29. **타 클리닉** 대화의 `GET`·`DELETE` → 여전히 **404** (e2e — §34 기준 7 불변. 공유가 클리닉 경계를 넘지 않는다)
-30. 같은 메시지에 두 구성원이 각각 피드백을 남길 수 있다 — 둘 다 201이고 `answer_feedbacks` 2행 (e2e — `uq_answer_feedbacks_message_clinician`은 구성원별 1건이지 메시지별 1건이 아니다)
+30. 같은 메시지에 두 구성원이 각각 피드백을 남길 수 있다 — 둘 다 **200**이고 `answer_feedbacks` 2행 (e2e — `uq_answer_feedbacks_message_clinician`은 구성원별 1건이지 메시지별 1건이 아니다).
+    ※ 최초 작성 시 「201」로 적었으나 구현 단계에서 실제 계약과 어긋남이 드러나 개정했다 — 피드백은
+    `onConflictDoUpdate` **upsert 멱등**이라 `feedback.controller.ts:14`가 `@HttpCode(200)`을 명시한다.
+    재제출이 생성이 아니므로 200이 옳고, 201로 바꾸는 것은 기존 계약과 FE를 함께 깨는 일이다
 31. 삭제된 동료 대화는 합류자의 목록·상세에서도 사라진다 (e2e — §34 기준 2·3이 clinic 스코프에서도 성립)
 
 fixture 규약: **같은 클리닉 2인 세션을 만드는 헬퍼가 이 스펙의 산출물이다** — 현재 `socialSignUp`은
