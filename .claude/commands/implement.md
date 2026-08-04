@@ -12,6 +12,10 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 
 1. `$ARGUMENTS`로 스펙을 결정한다: 숫자면 `docs/specs/<번호>-*.md` 매칭, 경로면 그대로. 못 찾으면 `ls docs/specs/`를 보여주고 중단한다.
 2. 스펙 전문 + 스펙이 §링크한 `docs/architecture.md` 섹션을 읽는다. §3(구조·경량화 원칙), §10(응답·에러 규약), §13(테스트 전략)은 항상 포함.
+   > **형태는 문서가 아니라 코드에서 본다.** architecture.md는 규약만 담고 목록을 복제하지 않는다 —
+   > 요청·응답은 `jq '.components.schemas.<Dto>' openapi/cure-agent.v1.json`(목록 쿼리는
+   > `.paths["<경로>"].get.parameters`), 테이블·컬럼은 `src/domain/*/persistence/*.schema.ts`,
+   > 에러코드는 `src/global/common/exception/error-code.registry.ts`가 진실이다.
 3. `git status` clean 확인, `git checkout dev && git pull origin dev`.
 4. **이슈 생성**: `gh issue create --title "[FEAT] <스텝명>" --label "✨ FEAT"` — 본문은
    `.github/ISSUE_TEMPLATE/기능-구현.yml`의 `body:` 각 항목 `label`을 마크다운 헤더(`## <label>`)로
@@ -48,7 +52,7 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 
 동결 테스트가 전부 통과할 때까지 구현한다. 필수 규칙:
 
-- 에러는 `ServiceException(ErrorCode)`만 사용. code 문자열 리터럴 금지. 새 코드는 레지스트리 + architecture.md §10.2 **같은 커밋**에서 갱신
+- 에러는 `ServiceException(ErrorCode)`만 사용. code 문자열 리터럴 금지. 새 코드는 `error-code.registry.ts`에 추가하되 **기존 코드로 부족한 이유를 주석으로 남긴다** — 레지스트리가 코드와 근거의 단일 소스이며 architecture.md는 목록을 복제하지 않는다 (§10.2)
 - patient/conversation 계열 repository 메서드는 `ClinicScope` 필수 인자 (§4.4). 타 스코프 리소스는 404
 - 민감 필드는 AES-GCM 암호화 저장, 검색 필요 시 HMAC blind index (§4.5)
 - 마이그레이션은 새 파일 추가만 — 적용된 파일 수정 금지 (§12). 전 테이블 `base-columns`

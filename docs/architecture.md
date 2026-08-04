@@ -359,23 +359,29 @@ findById(scope: ClinicScope, patientId: string): Promise<Patient | null>
 
 API prefix는 `/api/v1`로 통일한다.
 
+**이 절은 화면↔엔드포인트 매핑만 다룬다** — 요청·응답 형태는 `openapi/cure-agent.v1.json`이 진실이고(§6·§7), 여기 표에 DTO 이름을 적지 않는다. 공통 봉투(§10.1)를 따르지 않는 예외만 아래에 명시한다:
+
+- `GET /auth/oauth/{provider}`는 **302 링크 이동**이다 — fetch로 호출하지 않는다.
+- `POST /auth/refresh`는 HttpOnly 쿠키를 입력으로 받으며, `POST /auth/signup`과 함께 `Set-Cookie`를 응답에 싣는다.
+- `POST /conversations/{id}/messages/stream`은 봉투 대신 **SSE 이벤트**를 반환한다 (§8).
+
 ### 5.1 로그인 화면 `/login`
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 활성 제공자 조회 | GET /auth/oauth/providers | 없음 | OAuthProvidersResponseDto |
-| 소셜 로그인 시작 | GET /auth/oauth/{provider} | 없음 | 302 (링크 이동, fetch 금지) |
-| 현재 사용자 복구 | GET /auth/me | 없음 | ClinicianResponseDto |
-| 세션 갱신 | POST /auth/refresh | HttpOnly Cookie | AuthSessionResponseDto (+Set-Cookie) |
+| 기능 | API |
+|---|---|
+| 활성 제공자 조회 | GET /auth/oauth/providers |
+| 소셜 로그인 시작 | GET /auth/oauth/{provider} |
+| 현재 사용자 복구 | GET /auth/me |
+| 세션 갱신 | POST /auth/refresh |
 
 ### 5.2 온보딩 화면 `/signup?ticket=`
 
 소셜 인증을 마친 신규 사용자만 도달한다 (docs/specs/17). 티켓 없이 진입하면 `/login`으로 보낸다.
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 온보딩 완료(+로그인) | POST /auth/signup | CompleteSignUpRequestDto | AuthSessionResponseDto (+Set-Cookie) |
-| 초대 프리뷰 (**비인증**) | GET /invitations/{token} | 없음 | ClinicInvitationPreviewResponseDto |
+| 기능 | API |
+|---|---|
+| 온보딩 완료(+로그인) | POST /auth/signup |
+| 초대 프리뷰 (**비인증**) | GET /invitations/{token} |
 
 **온보딩은 두 갈래다 (docs/specs/35)**: 새 한의원 **개설**(`clinicName` 필수)과 초대 링크로 기존 클리닉에 **합류**(`invitationToken` 필수, `clinicName` 금지 — 함께 오면 422). 합류는 clinic을 만들지 않고 초대가 가리키는 클리닉에 붙으며, 역할은 기본값 `MEMBER`다(초대는 병원 합류이지 플랫폼 권한 승격이 아니다). 초대받은 사람은 아직 계정이 없으므로 프리뷰만 인증 밖에 두고 **한의원명만** 노출한다.
 
@@ -385,45 +391,45 @@ API prefix는 `/api/v1`로 통일한다.
 
 PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트리밍 답변 | 인용 근거 패널
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 검색 대상 지침 조회 | GET /guidelines | ListGuidelinesQueryDto | GuidelineSummaryResponseDto[] |
-| 새 대화 생성 | POST /conversations | CreateConversationRequestDto | ConversationSummaryResponseDto |
-| 기존 대화 조회 | GET /conversations/{id} | 없음 | ConversationDetailResponseDto |
-| 질문 및 스트리밍 | POST /conversations/{id}/messages/stream | SendMessageRequestDto | SSE 이벤트 (§8) |
-| 인용 원문 조회 | GET /evidence/{evidenceId} | 없음 | EvidenceDetailResponseDto |
-| 답변 평가 | POST /messages/{messageId}/feedback | SubmitFeedbackRequestDto | null |
+| 기능 | API |
+|---|---|
+| 검색 대상 지침 조회 | GET /guidelines |
+| 새 대화 생성 | POST /conversations |
+| 기존 대화 조회 | GET /conversations/{id} |
+| 질문 및 스트리밍 | POST /conversations/{id}/messages/stream |
+| 인용 원문 조회 | GET /evidence/{evidenceId} |
+| 답변 평가 | POST /messages/{messageId}/feedback |
 
 ### 5.4 지침 탐색 화면 `/guidelines`
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 지침 검색·필터 | GET /guidelines | ListGuidelinesQueryDto | GuidelineSummaryResponseDto[] |
-| 지침 상세 | GET /guidelines/{guidelineId} | 없음 | GuidelineDetailResponseDto |
-| 섹션·권고문 조회 | GET /guidelines/{id}/evidence | ListEvidenceQueryDto | EvidenceSummaryResponseDto[] |
-| 근거 상세 | GET /evidence/{evidenceId} | 없음 | EvidenceDetailResponseDto |
+| 기능 | API |
+|---|---|
+| 지침 검색·필터 | GET /guidelines |
+| 지침 상세 | GET /guidelines/{guidelineId} |
+| 섹션·권고문 조회 | GET /guidelines/{id}/evidence |
+| 근거 상세 | GET /evidence/{evidenceId} |
 
 원문 PDF는 직접 재배포하지 않고 `sourceUrl`로 NCKM 원문을 연결한다.
 
 ### 5.5 환자 목록 화면 `/patients`
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 환자 검색·목록 | GET /patients | ListPatientsQueryDto | PatientSummaryResponseDto[] |
-| 환자 프로필 등록 | POST /patients | CreatePatientRequestDto | PatientDetailResponseDto |
-| 환자 보관 | POST /patients/{id}/archive | 없음 | null |
-| 환자 보관 해제 | POST /patients/{id}/unarchive | 없음 | null |
-| 환자 삭제 | DELETE /patients/{id} | 없음 | null |
+| 기능 | API |
+|---|---|
+| 환자 검색·목록 | GET /patients |
+| 환자 프로필 등록 | POST /patients |
+| 환자 보관 | POST /patients/{id}/archive |
+| 환자 보관 해제 | POST /patients/{id}/unarchive |
+| 환자 삭제 | DELETE /patients/{id} |
 
 ### 5.6 환자 상세·임상 참고 화면 `/patients/[patientId]`
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 환자 상세 조회 | GET /patients/{id} | 없음 | PatientDetailResponseDto |
-| 프로필 수정 | PATCH /patients/{id} | UpdatePatientRequestDto | PatientDetailResponseDto |
-| 환자 기반 대화 생성 | POST /conversations | CreateConversationRequestDto | ConversationSummaryResponseDto |
-| 근거 기반 가이드 생성 | POST /conversations/{id}/messages/stream | SendMessageRequestDto | SSE 이벤트 (§8) |
-| 의료인 검토 기록 | POST /clinical-guidance/{id}/reviews | ReviewClinicalGuidanceRequestDto | ClinicalGuidanceResponseDto |
+| 기능 | API |
+|---|---|
+| 환자 상세 조회 | GET /patients/{id} |
+| 프로필 수정 | PATCH /patients/{id} |
+| 환자 기반 대화 생성 | POST /conversations |
+| 근거 기반 가이드 생성 | POST /conversations/{id}/messages/stream |
+| 의료인 검토 기록 | POST /clinical-guidance/{id}/reviews |
 
 "처방 추천"을 확정 처방으로 표현하지 않는다. 결과 상태: `DRAFT → ACCEPTED | MODIFIED | REJECTED`
 
@@ -432,16 +438,16 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 전용 `/history` 화면은 2026-08-02 폐지 — 대화 검색·이름 변경·보관은 `/assistant` 좌측 대화 목록에
 통합하고, 과거 대화 열람은 §5.3 어시스턴트 화면의 저장 메시지·인용 복원이 담당한다 (specs/11 개정).
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 대화 목록 조회 | GET /conversations | ListConversationsQueryDto | ConversationSummaryResponseDto[] |
-| 대화 상세 | GET /conversations/{id} | 없음 | ConversationDetailResponseDto |
-| 메시지 페이지 조회 | GET /conversations/{id}/messages | ListMessagesQueryDto | MessageResponseDto[] |
-| 대화명 변경 | PATCH /conversations/{id} | UpdateConversationRequestDto | ConversationSummaryResponseDto |
-| 대화 보관 | POST /conversations/{id}/archive | 없음 | null |
-| 대화 보관 해제 | POST /conversations/{id}/unarchive | 없음 | null |
-| 대화 삭제 | DELETE /conversations/{id} | 없음 | null |
-| 이어서 질문 | POST /conversations/{id}/messages/stream | SendMessageRequestDto | SSE 이벤트 (§8) |
+| 기능 | API |
+|---|---|
+| 대화 목록 조회 | GET /conversations |
+| 대화 상세 | GET /conversations/{id} |
+| 메시지 페이지 조회 | GET /conversations/{id}/messages |
+| 대화명 변경 | PATCH /conversations/{id} |
+| 대화 보관 | POST /conversations/{id}/archive |
+| 대화 보관 해제 | POST /conversations/{id}/unarchive |
+| 대화 삭제 | DELETE /conversations/{id} |
+| 이어서 질문 | POST /conversations/{id}/messages/stream |
 
 **삭제 규약 (docs/specs/34)**: 삭제는 **소프트 삭제**다 — `deletedAt`을 찍는 데서 요청이 끝나고, 유예(`DATA_PURGE_RETENTION_DAYS`, 기본 30일)가 지난 것만 파기 크론이 물리 삭제한다. 복구 API는 없으므로 `deletedAt`은 「복구 유예」가 아니라 **「파기 예약」**이며, 유예는 사용자 기능이 아니라 운영 안전망이다. 삭제는 **멱등**이고 재요청이 예약 시각을 갱신하지 않는다(갱신하면 재시도마다 파기가 미뤄진다). 보관과 **직교**한다 — 보관된 항목도 삭제된다. 환자를 지우면 같은 트랜잭션에서 그 환자의 대화도 함께 예약되며, 이미 예약된 대화의 시각은 유지된다.
 
@@ -453,13 +459,13 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 ### 5.8 클리닉 구성원 (docs/specs/35 초대 · docs/specs/36 목록·이양)
 
-| 기능 | API | Request DTO | Response data DTO |
-|---|---|---|---|
-| 초대 발급 | POST /clinic/invitations | 없음 | ClinicInvitationIssuedResponseDto |
-| 초대 목록 | GET /clinic/invitations | ListClinicInvitationsQueryDto | ClinicInvitationResponseDto[] |
-| 초대 취소 | DELETE /clinic/invitations/{id} | 없음 | null |
-| 구성원 목록 | GET /clinic/members | 없음 | ClinicMemberResponseDto[] |
-| 개설자 이양 | POST /clinic/owner/transfer | TransferClinicOwnerRequestDto | null |
+| 기능 | API |
+|---|---|
+| 초대 발급 | POST /clinic/invitations |
+| 초대 목록 | GET /clinic/invitations |
+| 초대 취소 | DELETE /clinic/invitations/{id} |
+| 구성원 목록 | GET /clinic/members |
+| 개설자 이양 | POST /clinic/owner/transfer |
 
 **구성원 목록만 전원에게 열려 있다** — 환자·대화를 전원 공유하면서(§5.7) 동료가 누구인지 모르는 상태가 더 이상하고, 이양 대상을 고르려면 목록이 먼저 필요하다. 탈퇴한 tombstone은 목록에서 빠진다. 커서를 두지 않는 유일한 목록 API다(클리닉당 소수라 전건이 한 화면에 들어온다 — §10.4의 커서 강제는 탐색이 필요한 목록을 향한 규칙이다).
 
@@ -473,241 +479,37 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 ---
 
-## 6. 주요 Request DTO
+## 6. Request DTO 규약
 
-계약 형태이며 BE에서는 class + class-validator로 작성한다.
+**필드의 진실은 `openapi/cure-agent.v1.json`이다** — 이 문서는 DTO를 나열하지 않는다. BE에서 class + class-validator로 작성하면 `pnpm openapi:export`가 스펙에 반영한다. 조회:
 
-```ts
-// 온보딩 완료 (docs/specs/17). 이메일·소셜 신원은 서버가 티켓에서 꺼내므로 바디에 없다.
-class CompleteSignUpRequestDto {
-  ticket: string;
-  displayName: string;
-  clinicName: string;
-  licenseNumber: string;
-  termsAccepted: boolean;
-}
-
-class CreatePatientRequestDto {
-  caseLabel: string;
-  birthYear?: number;
-  sex?: "MALE" | "FEMALE" | "OTHER" | "UNKNOWN";
-  heightCm?: number;
-  weightKg?: number;
-  waistCm?: number;
-  diagnoses: string[];
-  medications: string[];
-  allergies: string[];
-  clinicalNotes?: string;
-}
-
-class UpdatePatientRequestDto extends PartialType(CreatePatientRequestDto) {
-  version: number; // 낙관적 잠금
-}
-
-class ListPatientsQueryDto {
-  query?: string;
-  status?: "ACTIVE" | "ARCHIVED";
-  cursor?: string;
-  size?: number;
-}
-
-class ListGuidelinesQueryDto {
-  query?: string;
-  status?: "ACTIVE" | "SUPERSEDED";
-  publisher?: string;
-  cursor?: string;
-  size?: number;
-}
-
-class GuidelineSearchFilterDto {
-  guidelineIds?: string[];
-  recommendationGrades?: string[];
-  evidenceLevels?: string[];
-}
-
-class CreateConversationRequestDto {
-  type: "GUIDELINE_QA" | "PATIENT_GUIDANCE";
-  patientId?: string;
-  title?: string;
-}
-
-class SendMessageRequestDto {
-  content: string;
-  filters?: GuidelineSearchFilterDto;
-  clientRequestId: string; // 중복 생성 방지
-}
-
-class ListConversationsQueryDto {
-  type?: "GUIDELINE_QA" | "PATIENT_GUIDANCE";
-  patientId?: string;
-  query?: string;
-  cursor?: string;
-  size?: number;
-}
-
-class ReviewClinicalGuidanceRequestDto {
-  decision: "ACCEPTED" | "MODIFIED" | "REJECTED";
-  note?: string;
-}
-
-class SubmitFeedbackRequestDto {
-  rating: "HELPFUL" | "NOT_HELPFUL";
-  reasonCodes?: string[];
-  comment?: string;
-}
+```bash
+jq '.components.schemas.CreatePatientRequestDto' openapi/cure-agent.v1.json
+jq '.paths["/api/v1/patients"].get.parameters' openapi/cure-agent.v1.json  # 목록 쿼리는 스키마가 아니라 parameters에 있다
 ```
 
-`clientRequestId`에는 unique constraint를 걸어 네트워크 재시도 시 같은 질문이 두 번 생성되지 않게 한다.
+아래는 스펙에서 읽어낼 수 없는 규약만 남긴 것이다.
+
+- **명명**: 목록 조회는 `ListXxxQueryDto`, 생성·수정은 `CreateXxxRequestDto`·`UpdateXxxRequestDto`.
+- **수정 DTO는 `PartialType(CreateXxxRequestDto)` + `version`(낙관적 잠금)**을 기본형으로 한다. 불일치 시 409 + `data.currentVersion`(§10.1).
+- **`clientRequestId`에는 unique constraint를 건다** — 네트워크 재시도로 같은 질문이 두 번 생성되지 않게 하기 위함이며, 중복은 `DUPLICATE_CLIENT_REQUEST`(409).
+- **온보딩(`CompleteSignUpRequestDto`)은 이메일·소셜 신원을 바디로 받지 않는다** — 서버가 티켓에서 꺼낸다. 클라이언트가 보낸 신원을 신뢰하지 않기 위한 것이다 (docs/specs/17).
+- **개설·합류는 상호 배타다** — `clinicName`과 `invitationToken`이 함께 오면 422 (§5.2, docs/specs/35).
+- 검색 필터(`GuidelineSearchFilterDto`)는 요청 바디에 중첩해 전달하고 쿼리스트링으로 펼치지 않는다 — 배열 필터가 셋이라 URL 인코딩 규약이 갈린다.
 
 ---
 
-## 7. 주요 Response DTO
+## 7. Response DTO 규약
 
-```ts
-class ClinicianResponseDto {
-  id: string;
-  email: string;
-  displayName: string;
-  clinic: ClinicSummaryResponseDto;
-  verificationStatus: "PENDING" | "VERIFIED" | "REJECTED";
-}
+**필드의 진실은 `openapi/cure-agent.v1.json`이다** — 조회 방법은 §6과 같다. 아래는 스펙에서 읽어낼 수 없는 규약만 남긴 것이다.
 
-class AuthSessionResponseDto {
-  clinician: ClinicianResponseDto;
-  expiresAt: string;
-}
-```
-
-환자:
-
-```ts
-class PatientSummaryResponseDto {
-  id: string;
-  caseLabel: string;
-  age?: number;
-  sex?: string;
-  bmi?: number;
-  status: "ACTIVE" | "ARCHIVED";
-  updatedAt: string;
-}
-
-class PatientDetailResponseDto extends PatientSummaryResponseDto {
-  birthYear?: number;
-  heightCm?: number;
-  weightKg?: number;
-  waistCm?: number;
-  diagnoses: string[];
-  medications: string[];
-  allergies: string[];
-  clinicalNotes?: string;
-  version: number;
-}
-```
-
-지침과 근거:
-
-```ts
-class RatingResponseDto {
-  system: string; // GRADE 등
-  code: string;
-  label: string;
-}
-
-class GuidelineSummaryResponseDto {
-  id: string;
-  title: string;
-  publisher: string;
-  currentVersion: string;
-  publishedAt: string;
-  status: "ACTIVE" | "SUPERSEDED";
-}
-
-class EvidenceDetailResponseDto {
-  id: string;
-  guidelineId: string;
-  guidelineVersionId: string;
-  guidelineTitle: string;
-  version: string;
-  sectionPath: string[];
-  recommendationNumber?: string;
-  recommendationText?: string;
-  recommendationGrade?: RatingResponseDto;
-  evidenceLevel?: RatingResponseDto;
-  excerpt: string;
-  pageStart?: number;
-  pageEnd?: number;
-  sourceUrl: string;
-}
-```
-
-등급을 단순 enum `A | B | C`로 고정하지 않는 이유: 문서마다 권고등급 체계가 다를 수 있다.
-
-대화와 인용:
-
-```ts
-class AnswerCitationResponseDto {
-  marker: number;
-  evidenceId: string;
-  guidelineTitle: string;
-  guidelineVersion: string;
-  sectionPath: string[];
-  quote: string;
-  sourceUrl: string;
-}
-
-class MessageResponseDto {
-  id: string;
-  role: "USER" | "ASSISTANT";
-  content: string;
-  status: "STREAMING" | "COMPLETED" | "ABSTAINED" | "FAILED" | "CANCELLED";
-  answerKind: "GUIDELINE_ANSWER" | "CLINICAL_GUIDANCE";
-  citations: AnswerCitationResponseDto[];
-  createdAt: string;
-}
-
-class ConversationSummaryResponseDto {
-  id: string;
-  type: "GUIDELINE_QA" | "PATIENT_GUIDANCE";
-  title: string;
-  patient?: PatientSummaryResponseDto;
-  lastMessagePreview?: string;
-  updatedAt: string;
-}
-
-class ConversationDetailResponseDto extends ConversationSummaryResponseDto {
-  createdAt: string;
-}
-```
-
-`CANCELLED`는 클라이언트 abort·타임아웃으로 중단된 메시지 상태다. `STREAMING`으로 영원히 남는 좀비 메시지를 없애기 위해 존재한다.
-
-임상 참고 결과:
-
-```ts
-class GuidanceConsiderationResponseDto {
-  title: string;
-  rationale: string;
-  citations: AnswerCitationResponseDto[];
-}
-
-class SafetyAlertResponseDto {
-  severity: "INFO" | "WARNING" | "CRITICAL";
-  description: string;
-  citations: AnswerCitationResponseDto[];
-}
-
-class ClinicalGuidanceResponseDto {
-  id: string;
-  patientId: string;
-  patientProfileSnapshotId: string;
-  summary: string;
-  considerations: GuidanceConsiderationResponseDto[];
-  safetyAlerts: SafetyAlertResponseDto[];
-  missingInformation: string[];
-  reviewStatus: "DRAFT" | "ACCEPTED" | "MODIFIED" | "REJECTED";
-  generatedAt: string;
-}
-```
+- **Entity를 그대로 반환하지 않는다** — mapper를 거쳐 Response DTO로만 내보낸다 (§3).
+- **`XxxDetailResponseDto extends XxxSummaryResponseDto`** — 목록은 Summary, 단건은 Detail이며 Detail이 Summary의 상위집합이다. 두 형태가 갈라지면 화면 간 필드 이름이 어긋난다.
+- **파생 필드는 저장하지 않고 mapper에서 계산한다** (age는 birthYear에서, bmi는 신장·체중에서 소수 1자리).
+- **등급·근거수준은 enum이 아니라 `RatingResponseDto { system, code, label }`이다** — 문서마다 권고등급 체계가 다르므로 `A | B | C`로 고정하지 않는다.
+- **메시지 상태에 `CANCELLED`를 둔다** — 클라이언트 abort·타임아웃으로 중단된 메시지가 `STREAMING`으로 영원히 남는 좀비를 없애기 위해 존재한다.
+- **인용(`AnswerCitationResponseDto`)은 marker·evidenceId·지침 제목·버전·sectionPath·quote·sourceUrl을 함께 싣는다** — 원문 대조에 필요한 최소 집합이며, 재현성 계약(§5.7)의 응답 측 표현이다. 이 중 하나라도 빠지면 과거 답변에서 원문으로 되짚을 수 없다.
+- **임상 참고 결과는 `summary` + `considerations[]` + `safetyAlerts[]` + `missingInformation[]` 구조를 유지한다** — 확정 처방이 아니라 참고안이라는 성격을 계약 수준에서 강제하는 장치다 (§5.6). `missingInformation`은 빈 배열이어도 필드를 생략하지 않는다: 모델이 판단을 유보한 사실 자체가 화면에 필요하다.
 
 ---
 
@@ -780,31 +582,24 @@ type GuidelineJobStreamEventDto =
 
 ## 9. BE Entity 설계
 
-| Entity | 주요 필드 및 관계 |
-|---|---|
-| ClinicEntity | id, name, createdAt, **ownerClinicianId**(개설자 — 초대·이양 권한. `clinicians.clinicId`와 순환 참조라 **nullable**이며 clinician 생성 후 UPDATE로 채운다, docs/specs/35), **deletedAt**(마지막 구성원이 떠나면 찍히는 파기 예약, docs/specs/36) |
-| ClinicInvitationEntity | clinicId, invitedByClinicianId, **tokenHash**(sha256만 — 원문 미저장), expiresAt, acceptedAt, acceptedByClinicianId, revokedAt. 상태는 세 시각에서 파생한다 (docs/specs/35) |
-| ClinicianEntity | id, clinicId, email, **oauthProvider+oauthProviderId(unique, 계정 동일성 기준)**, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus, **deletedAt**(tombstone 표시 — 이 값이 있으면 개인정보 네 필드가 익명화된 행이다, docs/specs/36) |
-| AuthSessionEntity | id, clinicianId, refreshTokenHash, **familyId, rotatedAt, reuseDetectedAt**, expiresAt, revokedAt |
-| PatientEntity | id, clinicId, caseLabel, 신체정보, **병력·약물·알레르기·노트(AES-GCM 암호화, 검색 필드는 HMAC index 병행)**, version, status |
-| PatientProfileSnapshotEntity | 가이드 생성 당시 환자 정보를 immutable JSON으로 저장 (**암호화 + 보존 기간 정책**) |
-| GuidelineEntity | id, title, publisher, status |
-| GuidelineVersionEntity | guidelineId, version, publishedAt, sourceUrl, contentHash |
-| GuidelineSectionEntity | guidelineVersionId, parentId, title, path, order |
-| EvidenceChunkEntity | sectionId, content, embedding, 권고등급, 근거수준, 페이지, contentHash |
-| PipelineRunEntity | 문서 1건의 수집→파싱→임베딩→적재 실행 기록. 도달한 단계(phase)·단계별 산출(stages)·실패 코드. jobId가 없으면 잡 밖의 단건 실행 (docs/specs/22) |
-| GuidelineJobEntity | 전건 파이프라인 잡 — 상태·진행 카운트. PipelineRun N건의 부모 (docs/specs/22). **triggeredBy**(MANUAL/SCHEDULE)로 주체를 구분하며 크론이 만든 잡은 requestedBy가 NULL이다 (docs/specs/26) |
-| ConversationEntity | **clinicId**(접근 스코프 — 클리닉 공유, docs/specs/35), clinicianId(작성자 기록), patientId?, type, title, status |
-| MessageEntity | conversationId, role, content, status(**CANCELLED 포함**) |
-| MessageCitationEntity | messageId, evidenceChunkId, marker, quote |
-| GenerationRunEntity | 모델, **실사용 프로바이더**, 프롬프트 버전, retrieval 버전, latency, token usage, traceId |
-| ClinicalGuidanceEntity | messageId, patientSnapshotId, 생성 결과, reviewStatus |
-| GuidanceReviewEntity | guidanceId, clinicianId, decision, note |
-| AnswerFeedbackEntity | messageId, 평가, 사유, 코멘트 |
-| EvaluationRunEntity | 평가셋·설정·전체 지표 (P1) |
-| EvaluationCaseResultEntity | 질문별 retrieval/citation 결과 (P1) |
+**테이블·컬럼·인덱스의 진실은 drizzle 스키마(`src/domain/*/persistence/*.schema.ts`)와 `drizzle/` 마이그레이션이다.** 이 문서는 스키마를 복제하지 않고, 코드만 봐서는 알 수 없는 설계 결정만 남긴다. 여기 없는 엔티티는 특별한 결정이 없다는 뜻이다.
 
-전 Entity에 createdAt/updatedAt 공통 컬럼 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
+| Entity | 코드에 드러나지 않는 설계 결정 |
+|---|---|
+| ClinicEntity | `ownerClinicianId`(개설자 — 초대·이양 권한)는 `clinicians.clinicId`와 **순환 참조라 nullable**이며 clinician 생성 후 UPDATE로 채운다 (docs/specs/35). `deletedAt`은 마지막 구성원이 떠나면 찍히는 파기 예약 (docs/specs/36) |
+| ClinicInvitationEntity | `tokenHash`는 sha256만 저장하고 원문을 남기지 않는다. 상태는 컬럼이 아니라 `expiresAt`·`acceptedAt`·`revokedAt` 세 시각에서 **파생**한다 (§5.8, docs/specs/35) |
+| ClinicianEntity | 계정 동일성 기준은 이메일이 아니라 **`oauthProvider`+`oauthProviderId`(unique)**다. `licenseNumber`는 AES-GCM 암호화. `deletedAt`이 찍힌 행은 개인정보 네 필드가 익명화된 tombstone이다 (docs/specs/36) |
+| AuthSessionEntity | `familyId`·`rotatedAt`·`reuseDetectedAt`은 refresh 토큰 **재사용 감지**용이다 — 탐지되면 패밀리 전체를 무효화한다 (§4.3) |
+| PatientEntity | 병력·약물·알레르기·노트는 AES-GCM 암호화하고, **검색이 필요한 필드는 HMAC blind index를 병행**한다 (§4.5). `version`은 낙관적 잠금 |
+| PatientProfileSnapshotEntity | 생성 당시 환자 정보를 **immutable JSON**으로 고정한다 — 원본이 바뀌어도 과거 답변을 재현하기 위한 것이다. 암호화·보존 기간 정책 대상 |
+| EvidenceChunkEntity | **벡터는 이 테이블에만 존재한다** (docs/specs/18). `contentHash`는 재적재 시 변경분 판정에 쓴다 |
+| PipelineRunEntity | 문서 1건의 수집→파싱→임베딩→적재 실행 기록. **`jobId`가 없으면 잡 밖의 단건 실행**이다 (docs/specs/22) |
+| GuidelineJobEntity | PipelineRun N건의 부모. `triggeredBy`(MANUAL/SCHEDULE)로 주체를 구분하며 **크론이 만든 잡은 `requestedBy`가 NULL**이다 (docs/specs/26) |
+| ConversationEntity | **접근 스코프는 `clinicId`**(클리닉 공유)이고, `clinicianId`는 작성자 기록일 뿐 접근 판정에 쓰지 않는다 (§5.7, docs/specs/35) |
+| MessageEntity | `status`에 **`CANCELLED`**를 포함한다 — 좀비 STREAMING 메시지를 남기지 않기 위함이다 (§7) |
+| GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **답변마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다 |
+
+전 테이블에 `base-columns` 공통 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
 
 ```
 ClinicalGuidance
@@ -880,54 +675,12 @@ TypeScript generic은 런타임 reflection에서 구체 타입을 잃으므로 `
 
 ### 10.2 에러코드 레지스트리 — 단일 소스
 
-```ts
-// global/common/exception/error-code.registry.ts
-export const ErrorCodes = {
-  // 공통
-  BAD_REQUEST:                { status: 400, message: "적절하지 않은 요청입니다." },
-  UNAUTHORIZED:               { status: 401, message: "인증이 필요합니다." },
-  FORBIDDEN:                  { status: 403, message: "권한이 없습니다." },
-  CSRF_REJECTED:              { status: 403, message: "요청 출처를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요." },
-  NOT_FOUND:                  { status: 404, message: "대상을 찾을 수 없습니다." },
-  VALIDATION_FAILED:          { status: 422, message: "입력값이 올바르지 않습니다." },
-  RATE_LIMITED:               { status: 429, message: "요청이 너무 잦습니다. 잠시 후 다시 시도해주세요." },
-  INTERNAL_ERROR:             { status: 500, message: "서버 내부 오류가 발생했습니다." },
-  // Auth
-  AUTH_INVALID_CREDENTIALS:   { status: 401, message: "이메일 또는 비밀번호가 올바르지 않습니다." },
-  AUTH_TOKEN_EXPIRED:         { status: 401, message: "만료된 토큰입니다." },
-  AUTH_REFRESH_REUSED:        { status: 401, message: "세션이 무효화되었습니다. 다시 로그인해주세요." },
-  AUTH_EMAIL_ALREADY_USED:    { status: 409, message: "이미 사용중인 이메일입니다." },
-  // 회원탈퇴 (docs/specs/36) — 개설자가 남을 두고 떠나면 그 클리닉은 영구히 초대를 발급할 수
-  // 없는 잠긴 상태가 된다. 마지막 구성원은 넘길 상대가 없으므로 이 코드에 걸리지 않는다.
-  CLINIC_OWNER_MUST_TRANSFER: { status: 409, message: "개설자는 먼저 다른 구성원에게 권한을 넘겨야 탈퇴할 수 있습니다." },
-  // 클리닉 초대 (docs/specs/35) — 만료·사용됨·취소됨·미존재를 하나로 뭉친다(§4.4와 같은 이유).
-  // 타 클리닉 초대의 취소는 일반 스코프 은닉이라 NOT_FOUND다.
-  INVITATION_INVALID:         { status: 404, message: "유효하지 않거나 만료된 초대 링크입니다. 개설자에게 새 링크를 요청해주세요." },
-  // Patient
-  PATIENT_VERSION_CONFLICT:   { status: 409, message: "다른 사용자가 환자 정보를 먼저 수정했습니다." },
-  PATIENT_ARCHIVED:           { status: 409, message: "보관된 환자입니다. 먼저 보관을 해제해주세요." },
-  // Conversation / LLM
-  DUPLICATE_CLIENT_REQUEST:   { status: 409, message: "이미 처리 중인 요청입니다." },
-  LLM_UNAVAILABLE:            { status: 503, message: "AI 응답 생성을 일시적으로 이용할 수 없습니다. 잠시 후 다시 시도해주세요." },  // 전 프로바이더 소진·상류 장애
-  LLM_TIMEOUT:                { status: 503, message: "AI 응답 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요." },              // 스트림 전체 상한(§8-5) 초과
-  SERVICE_NOT_READY:          { status: 503, message: "서비스가 아직 준비되지 않았습니다." },
-  // Guidance
-  GUIDANCE_ALREADY_REVIEWED:  { status: 409, message: "이미 검토가 완료된 항목입니다." },
-  // Guideline 코퍼스 관리 (docs/specs/21)
-  GUIDELINE_VERSION_CITED:    { status: 409, message: "이미 인용된 지침 버전은 삭제할 수 없습니다. 폐기를 사용해주세요." },
-  GUIDELINE_PARSE_FAILED:     { status: 422, message: "지침을 파싱하지 못했습니다." },
-  GUIDELINE_SOURCE_UNAVAILABLE: { status: 502, message: "지침 원본을 가져오지 못했습니다." },
-  // 지침 전건 잡 (docs/specs/22)
-  GUIDELINE_JOB_ALREADY_RUNNING: { status: 409, message: "이미 실행 중인 지침 잡이 있습니다." },
-  GUIDELINE_JOB_NOT_RUNNING:  { status: 409, message: "실행 중이 아닌 잡은 취소할 수 없습니다." },
-  GUIDELINE_EMBEDDING_FAILED: { status: 502, message: "지침 임베딩에 실패했습니다." },   // 상류 실패라 502 (§10.1)
-} as const satisfies Record<string, { status: number; message: string }>;
-
-export type ErrorCode = keyof typeof ErrorCodes;
-```
+**코드 목록과 각 코드의 존재 이유는 `src/global/common/exception/error-code.registry.ts`가 유일한 소스다.** 이 문서는 목록을 복제하지 않는다 — 복제본은 실제로 어긋났다(소셜 로그인 전환 뒤 `AUTH_OAUTH_*` 6종이 문서에 들어오지 않았고, 사라진 `AUTH_INVALID_CREDENTIALS`가 남아 있었다). 개별 코드가 왜 별도로 존재하는지는 레지스트리의 주석이 담는다.
 
 - 코드 네이밍은 **의미식**(`PATIENT_VERSION_CONFLICT`)으로 통일한다.
 - `ServiceException`은 `ErrorCode`만 받는다. **서비스 코드에 code 문자열 리터럴 등장 금지.**
+- code는 FE 분기용 계약이므로 **한번 배포된 이름은 바꾸지 않는다.**
+- **새 코드를 추가할 때 기존 코드로 부족한 이유를 레지스트리 주석에 남긴다.** 근거를 쓸 수 없으면 코드를 늘리지 않는다 — 뭉뚱그린 코드가 진단을 막았던 전례(`LLM_UNAVAILABLE`)와 반대 방향의 실패다.
 - `api-exception.filter.ts`는 레지스트리만 참조해 상태·봉투를 생성한다. ValidationPipe 오류는 `VALIDATION_FAILED`(422) + 필드 상세를 data에, 예상 밖 예외는 `INTERNAL_ERROR`(500)로 같은 봉투에 수렴시킨다.
 - 실패 응답의 보조 데이터는 data에 싣는다 (예: `PATIENT_VERSION_CONFLICT` → `{ currentVersion: 4 }`).
 - 성공 code/message도 `success-code.registry.ts`에서 같은 방식으로 관리한다(기본 `SUCCESS`, 화면 분기가 필요한 코드는 도메인 단계에서 추가).
@@ -1038,7 +791,7 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 ```markdown
 # NN. <스텝 이름>
-## 범위: 엔드포인트 목록 (URI·DTO는 architecture.md §5~§7 참조 — 복사 금지)
+## 범위: 엔드포인트 목록 (화면 매핑은 §5, 요청·응답 형태는 openapi 스펙 — 복사 금지)
 ## Entity/마이그레이션 변경분
 ## 추가 에러코드
 ## 수용 기준: 동결할 e2e 시나리오 목록 (= Definition of Done)
