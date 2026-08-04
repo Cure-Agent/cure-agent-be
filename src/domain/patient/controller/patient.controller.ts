@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiEnvelopeResponse,
@@ -80,5 +80,20 @@ export class PatientController {
     @Param('patientId') patientId: string,
   ): Promise<null> {
     return this.patientService.unarchive({ clinicId: principal.clinicId }, patientId);
+  }
+
+  @Delete(':patientId')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '환자 삭제 (docs/specs/34 — 멱등)',
+    description:
+      '소프트 삭제다. 이 환자의 대화도 함께 파기 예약되며, 유예가 지나면 크론이 물리 삭제한다. ' +
+      '복구 API는 없다. 보관 여부와 무관하게 삭제된다.',
+  })
+  remove(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('patientId') patientId: string,
+  ): Promise<null> {
+    return this.patientService.remove({ clinicId: principal.clinicId }, patientId);
   }
 }

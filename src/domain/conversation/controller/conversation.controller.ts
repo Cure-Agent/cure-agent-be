@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
@@ -94,6 +106,21 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
   ): Promise<null> {
     return this.conversationService.unarchive(principal, conversationId);
+  }
+
+  @Delete(':conversationId')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '대화 삭제 (docs/specs/34 — 멱등)',
+    description:
+      '소프트 삭제다. 유예가 지나면 크론이 물리 삭제하며 복구 API는 없다. ' +
+      '재삭제해도 파기 시각은 미뤄지지 않는다. 보관 여부와 무관하게 삭제된다.',
+  })
+  remove(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Param('conversationId') conversationId: string,
+  ): Promise<null> {
+    return this.conversationService.remove(principal, conversationId);
   }
 
   @Get(':conversationId/messages')

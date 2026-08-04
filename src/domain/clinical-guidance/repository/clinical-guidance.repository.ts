@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { conversations, messages } from '../../conversation/persistence/conversation.schema';
 import {
   ClinicalGuidanceRow,
   clinicalGuidances,
@@ -21,11 +22,33 @@ export class ClinicalGuidanceRepository {
     return rows[0];
   }
 
+  /**
+   * 가이던스에는 `deletedAt`이 없다 — 뿌리(대화)를 통해서만 가려진다 (docs/specs/34).
+   * 환자 삭제는 그 환자의 대화까지 연쇄 예약하므로, 이 조인 하나가 두 경로를 모두 덮는다.
+   * 검토 기록(`POST .../reviews`)도 같은 메서드를 지나므로 함께 닫힌다.
+   */
   async findById(scope: GuidanceScope, id: string): Promise<ClinicalGuidanceRow | null> {
     const rows = await this.txManager.conn
       .select()
       .from(clinicalGuidances)
-      .where(and(eq(clinicalGuidances.id, id), eq(clinicalGuidances.clinicId, scope.clinicId)))
+      .where(
+        and(
+          eq(clinicalGuidances.id, id),
+          eq(clinicalGuidances.clinicId, scope.clinicId),
+          exists(
+            this.txManager.conn
+              .select({ one: messages.id })
+              .from(messages)
+              .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+              .where(
+                and(
+                  eq(messages.id, clinicalGuidances.messageId),
+                  isNull(conversations.deletedAt),
+                ),
+              ),
+          ),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
