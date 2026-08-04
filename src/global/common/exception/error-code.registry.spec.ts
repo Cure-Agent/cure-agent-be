@@ -21,4 +21,8 @@ describe('ErrorCodes 레지스트리', () => {
       expect(def.message.length).toBeGreaterThan(0);
     }
   });
+
+  it('기준 19: AUTH_EMAIL_ALREADY_USED가 에러코드 레지스트리에 없다', () => {
+    expect(ErrorCodes).not.toHaveProperty('AUTH_EMAIL_ALREADY_USED');
+  });
 });
