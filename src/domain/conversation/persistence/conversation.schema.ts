@@ -64,10 +64,13 @@ export const conversations = pgTable(
     ...baseColumns,
   },
   (table) => [
+    // 작성자 기준 조회용 — 목록 스코프가 clinic으로 바뀐 뒤(docs/specs/35)에도 남긴다
     index('idx_conversations_clinician').on(table.clinicianId),
-    // 목록 기본 정렬(최근 대화순)의 keyset 스캔용 — ConversationRepository.list 참조
-    index('idx_conversations_clinician_last_message').on(
-      table.clinicianId,
+    // 목록 기본 정렬(최근 대화순)의 keyset 스캔용 — ConversationRepository.list 참조.
+    // 선두 컬럼이 clinic_id다: 대화는 작성자 개인 소유가 아니라 **클리닉 공유**이므로
+    // 목록이 clinic 스코프로 닫힌다 (docs/specs/35, §4.4)
+    index('idx_conversations_clinic_last_message').on(
+      table.clinicId,
       table.lastMessageAt,
       table.id,
     ),

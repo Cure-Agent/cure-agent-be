@@ -93,8 +93,12 @@ export class AuthService {
     const clinicId = ulid();
     const clinicianId = ulid();
 
+    // 초대 합류 분기(docs/specs/35)는 Phase 3에서 이 자리를 대체한다 — 지금은 개설 경로만이다
+    if (!dto.clinicName) throw new ServiceException('VALIDATION_FAILED');
+    const clinicName = dto.clinicName;
+
     return this.txManager.run(async () => {
-      await this.clinicianRepository.insertClinic({ id: clinicId, name: dto.clinicName });
+      await this.clinicianRepository.insertClinic({ id: clinicId, name: clinicName });
       await this.clinicianRepository.insertClinician({
         id: clinicianId,
         clinicId,
