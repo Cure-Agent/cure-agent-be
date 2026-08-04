@@ -16,6 +16,8 @@ export interface PurgeOutcome {
   conversations: number;
   /** 물리 삭제한 환자 수 */
   patients: number;
+  /** 물리 삭제한 refresh 세션 수 (docs/specs/39) */
+  sessions: number;
   /** 배치 상한으로 이번 틱에서 남긴 뿌리 행 수 — 다음 틱이 가져간다 (기준 21) */
   deferred: number;
   /** 락을 얻지 못해 아무것도 하지 않았는가 (기준 20 — fail-closed) */
@@ -60,7 +62,7 @@ export class DataPurgeService {
       this.metrics?.recordDataPurge('conversation', 'skipped');
       this.metrics?.recordDataPurge('patient', 'skipped');
       this.metrics?.recordDataPurge('clinic', 'skipped');
-      return { conversations: 0, patients: 0, deferred: 0, skipped: true };
+      return { conversations: 0, patients: 0, sessions: 0, deferred: 0, skipped: true };
     }
 
     const startedAt = Date.now();
@@ -104,6 +106,7 @@ export class DataPurgeService {
       return {
         conversations: conversationIds.length,
         patients: patientIds.length,
+        sessions: 0, // 스텁 — docs/specs/39 구현에서 실제 삭제 수로 채운다
         deferred,
         skipped: false,
       };

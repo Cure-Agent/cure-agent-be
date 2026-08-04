@@ -63,10 +63,25 @@ export class DataPurgeRepository {
     return rows.map((row) => row.id);
   }
 
+  /** 유예가 지난 세션 id (docs/specs/39) — **스텁이다.** 컷오프는 앱 계층이 따로 계산해 넘긴다 */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async findPurgeableSessionIds(sessionCutoff: Date, limit: number): Promise<string[]> {
+    throw new Error('not implemented — docs/specs/39');
+  }
+
+  /** 세션 물리 삭제 (docs/specs/39) — **스텁이다.** 참조 FK가 0개인 잎 테이블이라 단문 DELETE다 */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async purgeSessions(sessionIds: string[]): Promise<void> {
+    throw new Error('not implemented — docs/specs/39');
+  }
+
   /** 컷오프 이전에 삭제된 대화·환자·클리닉의 총 수 — 배치 상한으로 남긴 수 산출용 (기준 21) */
   async countPurgeable(
     cutoff: Date,
-  ): Promise<{ conversations: number; patients: number; clinics: number }> {
+    /** 세션은 유예 축이 달라 컷오프를 따로 받는다 (docs/specs/39) — 스텁이라 아직 쓰지 않는다 */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    sessionCutoff?: Date,
+  ): Promise<{ conversations: number; patients: number; clinics: number; sessions: number }> {
     const [conversationRows, patientRows, clinicRows] = await Promise.all([
       this.txManager.conn
         .select({ total: count() })
@@ -85,6 +100,7 @@ export class DataPurgeRepository {
       conversations: conversationRows[0]?.total ?? 0,
       patients: patientRows[0]?.total ?? 0,
       clinics: clinicRows[0]?.total ?? 0,
+      sessions: 0, // 스텁 — docs/specs/39 구현에서 sessionCutoff 기준 집계로 채운다
     };
   }
 

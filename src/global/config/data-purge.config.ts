@@ -19,6 +19,12 @@ export const dataPurgeConfig = registerAs('dataPurge', () => ({
    * 법정 보존 대상인지의 판단이 뒤집혀도 값만 바꾸면 되도록 스펙이 의도적으로 파라미터화했다.
    */
   retentionDays: Number(process.env.DATA_PURGE_RETENTION_DAYS ?? 30),
+  /**
+   * refresh 세션 유예(일) — **스텁이다**(docs/specs/39 구현에서 채운다).
+   * 위 `retentionDays`와 **별도 축**이다: 임상 데이터 유예는 법정 보존 판단이 뒤집히면 위로만
+   * 움직이는데(예: 3650일), 공유하면 refresh 토큰 해시가 그만큼 남는다.
+   */
+  sessionRetentionDays: 0,
   /** 락 TTL — 대상 산출 구간에 맞춘 값이며 삭제 소요와 무관하다 (§26 규약) */
   lockTtlMs: Number(process.env.DATA_PURGE_LOCK_TTL_MS ?? 60_000),
   /** 한 틱에 파기할 뿌리 행 수 상한. 초과분은 다음 틱으로 남기고 남긴 수를 로그로 남긴다 */
