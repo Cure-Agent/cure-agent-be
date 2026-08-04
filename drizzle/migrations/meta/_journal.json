@@ -134,6 +134,13 @@
       "when": 1785801960000,
       "tag": "0018_clinic_invitation",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785802020000,
+      "tag": "0019_clinician_withdrawal",
+      "breakpoints": true
     }
   ]
 }

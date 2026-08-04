@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
@@ -75,6 +75,20 @@ export class AuthController {
   @ApiEnvelopeResponse(ClinicianResponseDto)
   me(@CurrentClinician() principal: ClinicianPrincipal): Promise<ClinicianResponseDto> {
     return this.authService.me(principal);
+  }
+
+  @Delete('me')
+  @ApiOperation({
+    summary: '회원탈퇴 — 개인정보 즉시 익명화 + 전 세션 폐기 (docs/specs/36)',
+  })
+  async withdraw(
+    @CurrentClinician() principal: ClinicianPrincipal,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponseDto<null>> {
+    await this.authService.withdraw(principal);
+    this.applyCookie(res, this.cookieFactory.expireAccess());
+    this.applyCookie(res, this.cookieFactory.expireRefresh());
+    return ApiResponseDto.success(null);
   }
 
   private setAuthCookies(res: Response, issued: IssuedAuth): void {

@@ -303,6 +303,9 @@ export class AuthCookieFactory {
 | `POST /auth/logout` | `token-resolver`로 토큰 추출 → 서버측 세션 revoke → 만료 쿠키 발급 |
 | `POST /auth/refresh` | refresh 쿠키 검증 → access 재발급 + refresh rotation |
 | `GET /auth/me` | 세션 복구 |
+| `DELETE /auth/me` | 회원탈퇴 — 개인정보 즉시 익명화 + **전 family** 세션 폐기 + 쿠키 만료 (docs/specs/36) |
+
+**탈퇴 규약 (docs/specs/36)**: 행은 남기고 개인정보만 지우는 **tombstone**이다 — `clinicians` 참조 FK가 8개이고 그중 5개가 notNull이라 물리 삭제가 성립하지 않고, `answer_feedbacks`·`guidance_reviews`는 「누가 평가·검토했는가」가 기록의 본질이며, 대화는 §5.7대로 클리닉 공유 자산이라 지우면 남은 동료의 기록이 사라진다. `email`·`oauthProviderId`는 unique라 비울 수 없어 id를 섞은 결정적 값으로 덮으며, 그 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타 **재가입이 열린다**. 순서가 계약이다 — **개설자 판정이 익명화보다 앞선다**(409로 끝날 요청이 개인정보를 먼저 지우면 되돌릴 수 없다). 세션은 `logout`과 달리 **전 family**를 끄고 모두 denylist에 올린다(§4.3). 개설자는 남은 구성원이 있으면 `CLINIC_OWNER_MUST_TRANSFER`(409)로 막히고, **마지막 구성원**이면 그 클리닉이 파기 예약된다(§34 유예 크론).
 
 refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페치 오발동 위험).
 
@@ -448,13 +451,19 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 **공통**: 전 목록 API는 불투명 base64url 커서 + `PageMetaDto`. **totalCount 없음이 확정 사양** — 화면에 "총 N건"을 표시하지 않는다.
 
-### 5.8 클리닉 구성원 초대 (docs/specs/35)
+### 5.8 클리닉 구성원 (docs/specs/35 초대 · docs/specs/36 목록·이양)
 
 | 기능 | API | Request DTO | Response data DTO |
 |---|---|---|---|
 | 초대 발급 | POST /clinic/invitations | 없음 | ClinicInvitationIssuedResponseDto |
 | 초대 목록 | GET /clinic/invitations | ListClinicInvitationsQueryDto | ClinicInvitationResponseDto[] |
 | 초대 취소 | DELETE /clinic/invitations/{id} | 없음 | null |
+| 구성원 목록 | GET /clinic/members | 없음 | ClinicMemberResponseDto[] |
+| 개설자 이양 | POST /clinic/owner/transfer | TransferClinicOwnerRequestDto | null |
+
+**구성원 목록만 전원에게 열려 있다** — 환자·대화를 전원 공유하면서(§5.7) 동료가 누구인지 모르는 상태가 더 이상하고, 이양 대상을 고르려면 목록이 먼저 필요하다. 탈퇴한 tombstone은 목록에서 빠진다. 커서를 두지 않는 유일한 목록 API다(클리닉당 소수라 전건이 한 화면에 들어온다 — §10.4의 커서 강제는 탐색이 필요한 목록을 향한 규칙이다).
+
+**이양 대상**은 같은 클리닉의 살아 있는 구성원이어야 하며, 타 클리닉이거나 tombstone이면 404다(§4.4 존재 은닉). 자기 자신 지정은 결과가 같으므로 멱등하게 200이다.
 
 **전 경로가 개설자 전용**이다 — `ClinicOwnerGuard`가 `clinics.ownerClinicianId`를 요청당 조회해 막는다. `clinicians.role`(ADMIN/MEMBER)은 **플랫폼 관리 권한**이라 재활용하지 않는다(§21): 한 컬럼이 두 가지를 뜻하지 않도록 축을 분리했다.
 
@@ -773,9 +782,9 @@ type GuidelineJobStreamEventDto =
 
 | Entity | 주요 필드 및 관계 |
 |---|---|
-| ClinicEntity | id, name, createdAt, **ownerClinicianId**(개설자 — 초대 권한. `clinicians.clinicId`와 순환 참조라 **nullable**이며 clinician 생성 후 UPDATE로 채운다, docs/specs/35) |
+| ClinicEntity | id, name, createdAt, **ownerClinicianId**(개설자 — 초대·이양 권한. `clinicians.clinicId`와 순환 참조라 **nullable**이며 clinician 생성 후 UPDATE로 채운다, docs/specs/35), **deletedAt**(마지막 구성원이 떠나면 찍히는 파기 예약, docs/specs/36) |
 | ClinicInvitationEntity | clinicId, invitedByClinicianId, **tokenHash**(sha256만 — 원문 미저장), expiresAt, acceptedAt, acceptedByClinicianId, revokedAt. 상태는 세 시각에서 파생한다 (docs/specs/35) |
-| ClinicianEntity | id, clinicId, email, **oauthProvider+oauthProviderId(unique, 계정 동일성 기준)**, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus |
+| ClinicianEntity | id, clinicId, email, **oauthProvider+oauthProviderId(unique, 계정 동일성 기준)**, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus, **deletedAt**(tombstone 표시 — 이 값이 있으면 개인정보 네 필드가 익명화된 행이다, docs/specs/36) |
 | AuthSessionEntity | id, clinicianId, refreshTokenHash, **familyId, rotatedAt, reuseDetectedAt**, expiresAt, revokedAt |
 | PatientEntity | id, clinicId, caseLabel, 신체정보, **병력·약물·알레르기·노트(AES-GCM 암호화, 검색 필드는 HMAC index 병행)**, version, status |
 | PatientProfileSnapshotEntity | 가이드 생성 당시 환자 정보를 immutable JSON으로 저장 (**암호화 + 보존 기간 정책**) |
@@ -888,6 +897,9 @@ export const ErrorCodes = {
   AUTH_TOKEN_EXPIRED:         { status: 401, message: "만료된 토큰입니다." },
   AUTH_REFRESH_REUSED:        { status: 401, message: "세션이 무효화되었습니다. 다시 로그인해주세요." },
   AUTH_EMAIL_ALREADY_USED:    { status: 409, message: "이미 사용중인 이메일입니다." },
+  // 회원탈퇴 (docs/specs/36) — 개설자가 남을 두고 떠나면 그 클리닉은 영구히 초대를 발급할 수
+  // 없는 잠긴 상태가 된다. 마지막 구성원은 넘길 상대가 없으므로 이 코드에 걸리지 않는다.
+  CLINIC_OWNER_MUST_TRANSFER: { status: 409, message: "개설자는 먼저 다른 구성원에게 권한을 넘겨야 탈퇴할 수 있습니다." },
   // 클리닉 초대 (docs/specs/35) — 만료·사용됨·취소됨·미존재를 하나로 뭉친다(§4.4와 같은 이유).
   // 타 클리닉 초대의 취소는 일반 스코프 은닉이라 NOT_FOUND다.
   INVITATION_INVALID:         { status: 404, message: "유효하지 않거나 만료된 초대 링크입니다. 개설자에게 새 링크를 요청해주세요." },
