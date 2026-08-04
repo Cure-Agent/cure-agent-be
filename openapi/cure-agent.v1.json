@@ -1231,6 +1231,29 @@
         "tags": [
           "Conversation"
         ]
+      },
+      "delete": {
+        "description": "소프트 삭제다. 유예가 지나면 크론이 물리 삭제하며 복구 API는 없다. 재삭제해도 파기 시각은 미뤄지지 않는다. 보관 여부와 무관하게 삭제된다.",
+        "operationId": "ConversationController_remove",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "대화 삭제 (docs/specs/34 — 멱등)",
+        "tags": [
+          "Conversation"
+        ]
       }
     },
     "/api/v1/conversations/{conversationId}/archive": {
@@ -1639,6 +1662,29 @@
           }
         },
         "summary": "환자 수정 (낙관적 잠금 — version 필수)",
+        "tags": [
+          "Patient"
+        ]
+      },
+      "delete": {
+        "description": "소프트 삭제다. 이 환자의 대화도 함께 파기 예약되며, 유예가 지나면 크론이 물리 삭제한다. 복구 API는 없다. 보관 여부와 무관하게 삭제된다.",
+        "operationId": "PatientController_remove",
+        "parameters": [
+          {
+            "name": "patientId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "환자 삭제 (docs/specs/34 — 멱등)",
         "tags": [
           "Patient"
         ]

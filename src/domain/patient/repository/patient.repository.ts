@@ -84,4 +84,12 @@ export class PatientRepository {
   async insertSnapshot(row: typeof patientProfileSnapshots.$inferInsert): Promise<void> {
     await this.txManager.conn.insert(patientProfileSnapshots).values(row);
   }
+
+  /**
+   * 파기 예약 (docs/specs/34) — **이미 값이 있으면 덮지 않는다** (기준 6과 같은 이유).
+   * 보관(status)과 직교하므로 ARCHIVED 환자도 그대로 예약된다 (기준 23).
+   */
+  async softDelete(_scope: PatientScope, _id: string, _deletedAt: Date): Promise<void> {
+    return Promise.resolve();
+  }
 }

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -54,6 +55,12 @@ export const conversations = pgTable(
      * updatedAt으로 정렬하면 이름 변경·보관 같은 행 UPDATE까지 대화를 끌어올리므로 분리한다.
      */
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * 파기 예약 시각 (docs/specs/34) — 「복구 유예」가 아니다. restore API가 없으므로 이 값이
+     * 찍힌 순간부터 대화는 모든 조회에서 사라지고, 유예가 지나면 퍼지 크론이 물리 삭제한다.
+     * 재삭제가 이 값을 덮으면 재시도마다 파기가 미뤄지므로 조건부 UPDATE로만 채운다.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     ...baseColumns,
   },
   (table) => [
@@ -64,6 +71,10 @@ export const conversations = pgTable(
       table.lastMessageAt,
       table.id,
     ),
+    // 퍼지 스캔은 삭제된 소수만 훑는다 — 살아 있는 행은 인덱스에 들어오지 않는다
+    index('idx_conversations_purge')
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
   ],
 );
 

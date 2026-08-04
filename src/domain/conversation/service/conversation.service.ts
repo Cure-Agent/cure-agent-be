@@ -223,6 +223,13 @@ export class ConversationService {
     return null;
   }
 
+  /**
+   * 파기 예약 (docs/specs/34) — 멱등. 이미 삭제된 대상에 다시 와도 200이고 시각을 덮지 않는다.
+   */
+  async remove(_principal: ClinicianPrincipal, _conversationId: string): Promise<null> {
+    return Promise.resolve(null);
+  }
+
   async submitFeedback(
     principal: ClinicianPrincipal,
     messageId: string,

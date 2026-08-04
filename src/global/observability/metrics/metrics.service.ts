@@ -240,9 +240,42 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 유예 경과분 파기 결말 (docs/specs/34). 크론은 조용히 도므로 이 축이 유일한 관측 지점이다 —
+   * `outcome=skipped`(락 미획득)를 따로 두는 이유는 §33 `disabled`와 같다: 실패로 세면
+   * 「파기가 계속 실패 중」으로 읽혀 진짜 실패 급증과 구분되지 않는다.
+   */
+  private readonly dataPurges = new Counter({
+    name: 'data_purge_total',
+    help: '파기 대상별 결말 수',
+    labelNames: ['target', 'outcome'] as const,
+    registers: [this.registry],
+  });
+
+  private readonly dataPurgeDuration = new Histogram({
+    name: 'data_purge_duration_seconds',
+    help: '파기 1회 소요 시간(초)',
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
+  }
+
+  /** 파기 결말 기록 (docs/specs/34) */
+  recordDataPurge(
+    _target: 'conversation' | 'patient',
+    _outcome: 'purged' | 'failed' | 'skipped',
+    _count = 1,
+  ): void {
+    // 스텁 — 구현에서 채운다
+  }
+
+  /** 파기 1회 소요 기록 (docs/specs/34) */
+  observeDataPurgeDuration(_seconds: number): void {
+    // 스텁 — 구현에서 채운다
   }
 
   /**

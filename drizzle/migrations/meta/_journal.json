@@ -120,6 +120,13 @@
       "when": 1785801840000,
       "tag": "0016_guidance_composer_version",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785801900000,
+      "tag": "0017_conversation_patient_soft_delete",
+      "breakpoints": true
     }
   ]
 }

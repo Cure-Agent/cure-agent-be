@@ -155,6 +155,23 @@ export class ConversationRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * 파기 예약 (docs/specs/34) — **이미 값이 있으면 덮지 않는다.** 재삭제가 시각을 갱신하면
+   * 재시도마다 파기가 미뤄진다 (기준 6). 갱신된 행이 없으면 null이 아니라 「이미 삭제됨」일
+   * 수 있으므로, 호출자는 존재 여부를 따로 확인한다.
+   */
+  async softDelete(_scope: ConversationScope, _id: string, _deletedAt: Date): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * 환자 삭제의 연쇄 (docs/specs/34) — 그 환자의 대화에 파기 예약을 찍는다.
+   * **이미 삭제된 대화의 시각은 유지한다** (기준 10).
+   */
+  async softDeleteByPatient(_patientId: string, _deletedAt: Date): Promise<void> {
+    return Promise.resolve();
+  }
+
   // ── messages ─────────────────────────────────────────
 
   async insertMessage(

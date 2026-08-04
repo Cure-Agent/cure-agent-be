@@ -142,6 +142,14 @@ export class PatientService {
     return null;
   }
 
+  /**
+   * 파기 예약 (docs/specs/34) — 멱등. 같은 tx에서 그 환자의 대화에도 예약을 찍되,
+   * 이미 삭제된 대화의 시각은 유지한다 (기준 9·10).
+   */
+  async remove(_scope: PatientScope, _patientId: string): Promise<null> {
+    return Promise.resolve(null);
+  }
+
   /** 스냅샷·가이던스(10단계)가 재사용하는 복호화 접근자 */
   decryptFields(row: PatientRow): DecryptedPatientFields {
     return {
