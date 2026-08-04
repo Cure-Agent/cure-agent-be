@@ -46,4 +46,15 @@ export class ClinicMemberService {
     await this.clinicians.updateClinicOwner(principal.clinicId, target.id);
     return null;
   }
+
+  /**
+   * 구성원 강퇴 (docs/specs/38) — 구현은 Phase 3.
+   *
+   * 강퇴는 **소속만 끊는다**: 계정도 개인정보도 그 사람의 것이므로 개설자가 파기하지 않는다.
+   * 순서가 계약이다 — 대상 검증 → 자기 자신 차단 → familyIds 조회 → tx(이력 → clinic_id NULL →
+   * 발급한 유효 초대 취소 → 전 세션 폐기) → denylist.
+   */
+  remove(_principal: ClinicianPrincipal, _clinicianId: string): Promise<null> {
+    throw new Error('구성원 강퇴는 아직 구현되지 않았습니다 (docs/specs/38).');
+  }
 }
