@@ -127,6 +127,13 @@
       "when": 1785801900000,
       "tag": "0017_conversation_patient_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785801960000,
+      "tag": "0018_clinic_invitation",
+      "breakpoints": true
     }
   ]
 }

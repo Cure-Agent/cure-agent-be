@@ -28,6 +28,27 @@ export class ClinicianRepository {
     await this.txManager.conn.insert(clinicians).values(row);
   }
 
+  /**
+   * 개설자 지정 (docs/specs/35). clinic → clinician 순환 참조라 clinic insert 시점에는
+   * 아직 clinician이 없다 — 만들고 나서 이 UPDATE로 채운다.
+   */
+  async updateClinicOwner(clinicId: string, ownerClinicianId: string): Promise<void> {
+    await this.txManager.conn
+      .update(clinics)
+      .set({ ownerClinicianId })
+      .where(eq(clinics.id, clinicId));
+  }
+
+  /** 초대 권한 판정용 (docs/specs/35) — 역할과 달리 병원 단위 권한이라 clinics에서 읽는다 */
+  async findClinicOwnerId(clinicId: string): Promise<string | null> {
+    const rows = await this.txManager.conn
+      .select({ ownerClinicianId: clinics.ownerClinicianId })
+      .from(clinics)
+      .where(eq(clinics.id, clinicId))
+      .limit(1);
+    return rows[0]?.ownerClinicianId ?? null;
+  }
+
   async existsByEmail(email: string): Promise<boolean> {
     const rows = await this.txManager.conn
       .select({ id: clinicians.id })

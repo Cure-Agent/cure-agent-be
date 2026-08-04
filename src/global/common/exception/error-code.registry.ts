@@ -47,6 +47,15 @@ export const ErrorCodes = {
     message: '가입 정보가 만료되었습니다. 처음부터 다시 로그인해주세요.',
   },
 
+  // 클리닉 초대 (docs/specs/35)
+  // 만료·사용됨·취소됨·존재하지 않음을 **하나로 뭉친다** — 상태를 구분해 알려주면 유출된 토큰에
+  // 대해 「이건 실재하는 초대였다」를 확인해주는 셈이다(§4.4 「존재 여부 자체를 숨김」과 같은 이유).
+  // 문구가 다음 행동(재요청)을 담으므로 UX 손실은 없다.
+  INVITATION_INVALID: {
+    status: 404,
+    message: '유효하지 않거나 만료된 초대 링크입니다. 개설자에게 새 링크를 요청해주세요.',
+  },
+
   // Patient
   PATIENT_VERSION_CONFLICT: { status: 409, message: '다른 사용자가 환자 정보를 먼저 수정했습니다.' },
   PATIENT_ARCHIVED: { status: 409, message: '보관된 환자입니다. 먼저 보관을 해제해주세요.' },

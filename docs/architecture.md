@@ -330,6 +330,7 @@ refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페�
 ### 4.4 멀티테넌시 스코프 강제
 
 - 규칙: **patient / conversation / clinical-guidance / feedback의 모든 조회·변경은 요청자의 clinic 스코프로 필터링한다.** 서비스 코드의 선의에 맡기지 않는다.
+  - 대화도 예외가 아니다 — **작성자 개인 소유가 아니라 클리닉 공유 자산**이다(docs/specs/35). 작성자(`clinicianId`)는 계속 기록되지만 접근 판정에는 쓰이지 않는다. 클리닉 경계는 그대로이므로 타 클리닉 리소스는 여전히 404다.
 - 강제 방법: repository 메서드 시그니처가 스코프를 필수 인자로 받는다.
 
 ```ts
@@ -371,6 +372,9 @@ API prefix는 `/api/v1`로 통일한다.
 | 기능 | API | Request DTO | Response data DTO |
 |---|---|---|---|
 | 온보딩 완료(+로그인) | POST /auth/signup | CompleteSignUpRequestDto | AuthSessionResponseDto (+Set-Cookie) |
+| 초대 프리뷰 (**비인증**) | GET /invitations/{token} | 없음 | ClinicInvitationPreviewResponseDto |
+
+**온보딩은 두 갈래다 (docs/specs/35)**: 새 한의원 **개설**(`clinicName` 필수)과 초대 링크로 기존 클리닉에 **합류**(`invitationToken` 필수, `clinicName` 금지 — 함께 오면 422). 합류는 clinic을 만들지 않고 초대가 가리키는 클리닉에 붙으며, 역할은 기본값 `MEMBER`다(초대는 병원 합류이지 플랫폼 권한 승격이 아니다). 초대받은 사람은 아직 계정이 없으므로 프리뷰만 인증 밖에 두고 **한의원명만** 노출한다.
 
 로그아웃은 보호된 전체 화면에서 사용: `POST /auth/logout` → `ApiResponseDto<null>` + 만료 쿠키.
 
@@ -438,9 +442,25 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 **삭제 규약 (docs/specs/34)**: 삭제는 **소프트 삭제**다 — `deletedAt`을 찍는 데서 요청이 끝나고, 유예(`DATA_PURGE_RETENTION_DAYS`, 기본 30일)가 지난 것만 파기 크론이 물리 삭제한다. 복구 API는 없으므로 `deletedAt`은 「복구 유예」가 아니라 **「파기 예약」**이며, 유예는 사용자 기능이 아니라 운영 안전망이다. 삭제는 **멱등**이고 재요청이 예약 시각을 갱신하지 않는다(갱신하면 재시도마다 파기가 미뤄진다). 보관과 **직교**한다 — 보관된 항목도 삭제된다. 환자를 지우면 같은 트랜잭션에서 그 환자의 대화도 함께 예약되며, 이미 예약된 대화의 시각은 유지된다.
 
+**공유 규약 (docs/specs/35)**: 대화는 **작성자 개인 소유가 아니라 클리닉 공유 자산**이다. 같은 클리닉의 구성원은 서로의 대화를 읽고, 이어 질문하고, 이름을 바꾸고, 삭제한다 — 조회·변경 스코프가 §4.4대로 `clinicId`이기 때문이다. 작성자(`conversations.clinicianId`)는 계속 기록되지만 접근 판정에는 쓰이지 않는다. 클리닉 경계는 그대로여서 타 클리닉 대화는 여전히 404다. 피드백만은 구성원별로 남는다(`uq_answer_feedbacks_message_clinician` — 한 메시지에 구성원 각자 1건).
+
 **과거 답변 재현성**: 텍스트만 보관하지 않는다. 당시 사용된 다음 정보를 함께 고정한다 — 인용 지침 버전, Evidence chunk ID, 환자 프로필 snapshot ID, 프롬프트 버전, 검색 정책 버전, 모델·생성 설정. 지침이나 환자 정보가 변경돼도 "당시 왜 이 답이 나왔는지" 재현할 수 있어야 한다.
 
 **공통**: 전 목록 API는 불투명 base64url 커서 + `PageMetaDto`. **totalCount 없음이 확정 사양** — 화면에 "총 N건"을 표시하지 않는다.
+
+### 5.8 클리닉 구성원 초대 (docs/specs/35)
+
+| 기능 | API | Request DTO | Response data DTO |
+|---|---|---|---|
+| 초대 발급 | POST /clinic/invitations | 없음 | ClinicInvitationIssuedResponseDto |
+| 초대 목록 | GET /clinic/invitations | ListClinicInvitationsQueryDto | ClinicInvitationResponseDto[] |
+| 초대 취소 | DELETE /clinic/invitations/{id} | 없음 | null |
+
+**전 경로가 개설자 전용**이다 — `ClinicOwnerGuard`가 `clinics.ownerClinicianId`를 요청당 조회해 막는다. `clinicians.role`(ADMIN/MEMBER)은 **플랫폼 관리 권한**이라 재활용하지 않는다(§21): 한 컬럼이 두 가지를 뜻하지 않도록 축을 분리했다.
+
+**토큰은 발급 응답에만 실린다.** 형태는 `{invitationId}.{secret}`이고 DB에는 secret의 sha256만 저장하므로(§4.3 refresh 관행) 목록 API는 원문을 실을 수 없고 분실 시 재발급뿐이다. 링크 전달은 개설자의 몫이다 — 이메일 발송 인프라가 없다.
+
+**1회용 + 만료**(`CLINIC_INVITATION_TTL_DAYS`, 기본 7). 상태(`PENDING`·`ACCEPTED`·`REVOKED`·`EXPIRED`)는 컬럼이 아니라 `acceptedAt`·`revokedAt`·`expiresAt`에서 **파생**하며, 합류가 취소·만료보다 우선한다. 만료·사용됨·취소됨·미존재는 전부 `INVITATION_INVALID`(404) 하나로 뭉친다 — 상태를 구분해 알려주면 유출된 토큰에 「실재하는 초대였다」를 확인해주는 셈이다(§4.4와 같은 이유). 다만 **관리 경로**(타 클리닉 초대의 취소)는 일반 스코프 은닉이므로 `NOT_FOUND`다.
 
 ---
 
@@ -753,7 +773,8 @@ type GuidelineJobStreamEventDto =
 
 | Entity | 주요 필드 및 관계 |
 |---|---|
-| ClinicEntity | id, name, createdAt |
+| ClinicEntity | id, name, createdAt, **ownerClinicianId**(개설자 — 초대 권한. `clinicians.clinicId`와 순환 참조라 **nullable**이며 clinician 생성 후 UPDATE로 채운다, docs/specs/35) |
+| ClinicInvitationEntity | clinicId, invitedByClinicianId, **tokenHash**(sha256만 — 원문 미저장), expiresAt, acceptedAt, acceptedByClinicianId, revokedAt. 상태는 세 시각에서 파생한다 (docs/specs/35) |
 | ClinicianEntity | id, clinicId, email, **oauthProvider+oauthProviderId(unique, 계정 동일성 기준)**, displayName, **licenseNumber(AES-GCM 암호화)**, verificationStatus |
 | AuthSessionEntity | id, clinicianId, refreshTokenHash, **familyId, rotatedAt, reuseDetectedAt**, expiresAt, revokedAt |
 | PatientEntity | id, clinicId, caseLabel, 신체정보, **병력·약물·알레르기·노트(AES-GCM 암호화, 검색 필드는 HMAC index 병행)**, version, status |
@@ -764,7 +785,7 @@ type GuidelineJobStreamEventDto =
 | EvidenceChunkEntity | sectionId, content, embedding, 권고등급, 근거수준, 페이지, contentHash |
 | PipelineRunEntity | 문서 1건의 수집→파싱→임베딩→적재 실행 기록. 도달한 단계(phase)·단계별 산출(stages)·실패 코드. jobId가 없으면 잡 밖의 단건 실행 (docs/specs/22) |
 | GuidelineJobEntity | 전건 파이프라인 잡 — 상태·진행 카운트. PipelineRun N건의 부모 (docs/specs/22). **triggeredBy**(MANUAL/SCHEDULE)로 주체를 구분하며 크론이 만든 잡은 requestedBy가 NULL이다 (docs/specs/26) |
-| ConversationEntity | clinicianId, patientId?, type, title, status |
+| ConversationEntity | **clinicId**(접근 스코프 — 클리닉 공유, docs/specs/35), clinicianId(작성자 기록), patientId?, type, title, status |
 | MessageEntity | conversationId, role, content, status(**CANCELLED 포함**) |
 | MessageCitationEntity | messageId, evidenceChunkId, marker, quote |
 | GenerationRunEntity | 모델, **실사용 프로바이더**, 프롬프트 버전, retrieval 버전, latency, token usage, traceId |
@@ -867,6 +888,9 @@ export const ErrorCodes = {
   AUTH_TOKEN_EXPIRED:         { status: 401, message: "만료된 토큰입니다." },
   AUTH_REFRESH_REUSED:        { status: 401, message: "세션이 무효화되었습니다. 다시 로그인해주세요." },
   AUTH_EMAIL_ALREADY_USED:    { status: 409, message: "이미 사용중인 이메일입니다." },
+  // 클리닉 초대 (docs/specs/35) — 만료·사용됨·취소됨·미존재를 하나로 뭉친다(§4.4와 같은 이유).
+  // 타 클리닉 초대의 취소는 일반 스코프 은닉이라 NOT_FOUND다.
+  INVITATION_INVALID:         { status: 404, message: "유효하지 않거나 만료된 초대 링크입니다. 개설자에게 새 링크를 요청해주세요." },
   // Patient
   PATIENT_VERSION_CONFLICT:   { status: 409, message: "다른 사용자가 환자 정보를 먼저 수정했습니다." },
   PATIENT_ARCHIVED:           { status: 409, message: "보관된 환자입니다. 먼저 보관을 해제해주세요." },

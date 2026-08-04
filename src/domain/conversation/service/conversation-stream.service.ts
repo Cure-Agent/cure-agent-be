@@ -132,7 +132,7 @@ export class ConversationStreamService {
   ): Promise<void> {
     // ── SSE 시작 전 검증 — 실패는 일반 봉투 오류로 나간다 ──
     const conversation = await this.repository.findById(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
     );
     if (!conversation) throw new ServiceException('NOT_FOUND');
@@ -568,7 +568,7 @@ export class ConversationStreamService {
 
   private async loadMessageDto(messageId: string, principal: ClinicianPrincipal) {
     const found = await this.repository.findMessageInScope(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       messageId,
     );
     if (!found) throw new ServiceException('INTERNAL_ERROR');

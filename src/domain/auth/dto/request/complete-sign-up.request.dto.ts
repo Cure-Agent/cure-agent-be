@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Equals, IsBoolean, IsString, Length } from 'class-validator';
+import { Equals, IsBoolean, IsOptional, IsString, Length, ValidateIf } from 'class-validator';
 
 /**
  * 온보딩 완료 요청 (docs/specs/17).
@@ -16,10 +16,25 @@ export class CompleteSignUpRequestDto {
   @Length(1, 50)
   displayName!: string;
 
-  @ApiProperty({ example: '서울한의원' })
+  @ApiProperty({
+    required: false,
+    example: '서울한의원',
+    description: '새 한의원 개설 시 필수. 초대로 합류할 때는 보내지 않는다 (docs/specs/35)',
+  })
+  @ValidateIf((o: CompleteSignUpRequestDto) => o.invitationToken === undefined)
   @IsString()
   @Length(1, 100)
-  clinicName!: string;
+  clinicName?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      '초대 링크 토큰 — 있으면 clinic을 만들지 않고 초대의 클리닉에 합류한다 (docs/specs/35)',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  invitationToken?: string;
 
   @ApiProperty({ description: '면허번호 — 저장 시 암호화된다' })
   @IsString()
