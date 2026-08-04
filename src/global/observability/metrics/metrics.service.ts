@@ -323,7 +323,7 @@ export class MetricsService {
 
   /** 파기 결말 기록 (docs/specs/34) */
   recordDataPurge(
-    target: 'conversation' | 'patient' | 'clinic',
+    target: 'conversation' | 'patient' | 'clinic' | 'session',
     outcome: 'purged' | 'failed' | 'skipped',
     count = 1,
   ): void {

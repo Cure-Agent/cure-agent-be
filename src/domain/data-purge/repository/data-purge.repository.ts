@@ -63,11 +63,41 @@ export class DataPurgeRepository {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * 만료 후 유예가 지난 세션 id (docs/specs/39) — 컷오프는 앱 계층이 **따로** 계산해 넘긴다.
+   *
+   * 판정이 `expires_at` 한 컬럼으로 닫히는 이유: 실측상 `rotated_at`·`revoked_at`이 만료보다
+   * 뒤인 행이 0건이라 만료가 항상 마지막 사건이고, NOT NULL이며 행 생성 후 불변이다. 폐기·회전·
+   * 재사용 감지 상태를 구분하지 않는 것은 예외를 두면 감지 꼬리가 상태마다 달라지기 때문이다.
+   */
+  async findPurgeableSessionIds(sessionCutoff: Date, limit: number): Promise<string[]> {
+    const rows = await this.txManager.conn
+      .select({ id: authSessions.id })
+      .from(authSessions)
+      .where(lt(authSessions.expiresAt, sessionCutoff))
+      .orderBy(authSessions.expiresAt)
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * 세션 물리 삭제 (docs/specs/39).
+   *
+   * **단문 DELETE다** — `auth_sessions`를 참조하는 FK가 0개인 잎 테이블이라, 대화·환자 계열이
+   * 요구한 3~5단 역순 삭제가 여기엔 없다.
+   */
+  async purgeSessions(sessionIds: string[]): Promise<void> {
+    if (sessionIds.length === 0) return;
+    await this.txManager.conn.delete(authSessions).where(inArray(authSessions.id, sessionIds));
+  }
+
   /** 컷오프 이전에 삭제된 대화·환자·클리닉의 총 수 — 배치 상한으로 남긴 수 산출용 (기준 21) */
   async countPurgeable(
     cutoff: Date,
-  ): Promise<{ conversations: number; patients: number; clinics: number }> {
-    const [conversationRows, patientRows, clinicRows] = await Promise.all([
+    /** 세션은 유예 축이 달라 컷오프를 따로 받는다 (docs/specs/39) */
+    sessionCutoff: Date,
+  ): Promise<{ conversations: number; patients: number; clinics: number; sessions: number }> {
+    const [conversationRows, patientRows, clinicRows, sessionRows] = await Promise.all([
       this.txManager.conn
         .select({ total: count() })
         .from(conversations)
@@ -80,11 +110,16 @@ export class DataPurgeRepository {
         .select({ total: count() })
         .from(clinics)
         .where(and(isNotNull(clinics.deletedAt), lt(clinics.deletedAt, cutoff))),
+      this.txManager.conn
+        .select({ total: count() })
+        .from(authSessions)
+        .where(lt(authSessions.expiresAt, sessionCutoff)),
     ]);
     return {
       conversations: conversationRows[0]?.total ?? 0,
       patients: patientRows[0]?.total ?? 0,
       clinics: clinicRows[0]?.total ?? 0,
+      sessions: sessionRows[0]?.total ?? 0,
     };
   }
 
