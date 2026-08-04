@@ -324,6 +324,8 @@ refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페�
 - refresh 성공 시 새 refresh 발급, 구 토큰은 rotated 처리. **rotated된 구 토큰이 다시 사용되면 탈취로 간주하고 해당 family 전체 세션 폐기** + 실시간 알림.
 - 인증 가드는 `JwtAuthGuard` + `@CurrentClinician()` 데코레이터.
 
+**세션 보존 정책 (docs/specs/39)**: `auth_sessions` 행은 수명이 유한하다 — **`expires_at`이 유예(`DATA_PURGE_SESSION_RETENTION_DAYS`, 기본 30일)보다 오래 지난 행을 §12 파기 크론이 물리 삭제한다.** 행을 만드는 것은 로그인이 아니라 **회전**이라(로그인 1회가 rotation 체인 전체를 남긴다) 활성 사용량에 비례해 무한히 늘고, 탈퇴로 개인정보를 파기한 계정의 로그인 이력까지 남기 때문이다. 판정은 **`expires_at` 한 컬럼으로 닫힌다** — 폐기·회전·재사용 감지 상태를 구분하지 않는다. 만료가 항상 마지막 사건이고(그보다 뒤인 `rotatedAt`·`revokedAt`은 관측되지 않는다), NOT NULL이며 행 생성 후 불변이라 TTL 설정을 바꿔도 살아 있는 세션이 지워지지 않는다. **만료된 토큰은 이미 교환이 거부되므로 이 유예가 곧 「재사용 감지 꼬리」의 길이다** — 유예 안에서는 구 토큰 재사용이 위 family 폐기 + 알림으로 잡히고, 지난 뒤에는 행이 없어 평범한 401이 된다(감지 신호 상실은 의도적으로 감수한 교환이다). 유예는 임상 데이터 유예(`DATA_PURGE_RETENTION_DAYS`)와 **별도 축**이다: 후자는 법정 보존 판단이 뒤집히면 위로만 움직이는데, 공유하면 refresh 토큰 해시가 그만큼 남는다. 재사용 감지 행에도 예외를 두지 않는다 — 관측된 감지는 탈취가 아니라 동시 refresh 경합이었고, 침해 사실 자체는 알림·메트릭에 남는다.
+
 **access 토큰 즉시 무효화 (Redis denylist):**
 
 - access JWT는 `sub`, `clinicId`, `sid`(세션), `fid`(family) claim을 갖는다.
@@ -595,7 +597,7 @@ type GuidelineJobStreamEventDto =
 | ClinicInvitationEntity | `tokenHash`는 sha256만 저장하고 원문을 남기지 않는다. 상태는 컬럼이 아니라 `expiresAt`·`acceptedAt`·`revokedAt` 세 시각에서 **파생**한다 (§5.8, docs/specs/35) |
 | ClinicianEntity | 계정 동일성 기준은 이메일이 아니라 **`oauthProvider`+`oauthProviderId`(unique)**다. `licenseNumber`는 AES-GCM 암호화. `deletedAt`이 찍힌 행은 개인정보 네 필드가 익명화된 tombstone이다 (docs/specs/36). **`clinicId`는 nullable**이며 NULL은 강퇴로 소속이 끊긴 상태다 — 세션을 가질 수 없고 재온보딩으로만 벗어난다 (§4.2, docs/specs/38) |
 | ClinicMemberRemovalEntity | 강퇴 이력. 소속을 끊으면 `clinicians`에 그 클리닉의 흔적이 남지 않으므로 「누가 누구를 언제」를 여기에 남긴다. **unique를 걸지 않는다** — 재합류 후 재강퇴가 정상 경로다 (docs/specs/38) |
-| AuthSessionEntity | `familyId`·`rotatedAt`·`reuseDetectedAt`은 refresh 토큰 **재사용 감지**용이다 — 탐지되면 패밀리 전체를 무효화한다 (§4.3) |
+| AuthSessionEntity | `familyId`·`rotatedAt`·`reuseDetectedAt`은 refresh 토큰 **재사용 감지**용이다 — 탐지되면 패밀리 전체를 무효화한다 (§4.3). **행 수명은 유한하다** — 만료 후 유예가 지나면 파기 크론이 물리 삭제하며, 판정은 상태와 무관하게 `expiresAt` 하나로 닫힌다. 참조 FK가 **0개인 잎 테이블**이라 그 삭제에는 역순 절차가 없다 (docs/specs/39) |
 | PatientEntity | 병력·약물·알레르기·노트는 AES-GCM 암호화하고, **검색이 필요한 필드는 HMAC blind index를 병행**한다 (§4.5). `version`은 낙관적 잠금 |
 | PatientProfileSnapshotEntity | 생성 당시 환자 정보를 **immutable JSON**으로 고정한다 — 원본이 바뀌어도 과거 답변을 재현하기 위한 것이다. 암호화·보존 기간 정책 대상 |
 | EvidenceChunkEntity | **벡터는 이 테이블에만 존재한다** (docs/specs/18). `contentHash`는 재적재 시 변경분 판정에 쓴다 |

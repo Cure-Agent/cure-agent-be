@@ -19,6 +19,18 @@ export const dataPurgeConfig = registerAs('dataPurge', () => ({
    * 법정 보존 대상인지의 판단이 뒤집혀도 값만 바꾸면 되도록 스펙이 의도적으로 파라미터화했다.
    */
   retentionDays: Number(process.env.DATA_PURGE_RETENTION_DAYS ?? 30),
+  /**
+   * refresh 세션 만료 후 물리 삭제까지의 유예(일) — docs/specs/39.
+   *
+   * 위 `retentionDays`와 **별도 축이며 서로를 참조하지 않는다.** 임상 데이터 유예를 파라미터로
+   * 둔 이유는 「저장물이 법정 보존 대상인지의 판단이 뒤집힐 수 있어서」인데, 뒤집히면 그 값은
+   * **위로만** 움직인다(예: 3650일). 공유하면 refresh 토큰 해시가 10년 남는다.
+   *
+   * 만료된 토큰은 이미 교환이 거부되므로(`auth.service.ts`의 expiresAt 검사), 이 유예가 곧
+   * **재사용 감지 꼬리의 길이**다 — 이 기간에는 구 토큰 재사용이 family 폐기 + 알림으로 잡히고,
+   * 지난 뒤에는 행이 없어 평범한 401이 된다.
+   */
+  sessionRetentionDays: Number(process.env.DATA_PURGE_SESSION_RETENTION_DAYS ?? 30),
   /** 락 TTL — 대상 산출 구간에 맞춘 값이며 삭제 소요와 무관하다 (§26 규약) */
   lockTtlMs: Number(process.env.DATA_PURGE_LOCK_TTL_MS ?? 60_000),
   /** 한 틱에 파기할 뿌리 행 수 상한. 초과분은 다음 틱으로 남기고 남긴 수를 로그로 남긴다 */
