@@ -192,9 +192,42 @@ export class AuthService {
    * 순서가 계약이다: **판정 → 익명화 → clinic 예약 → 전 세션 폐기**. 409로 끝날 요청이
    * 개인정보를 먼저 지우면 되돌릴 수 없다 (기준 25·26).
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 스텁: 구현은 Phase 3
+  /**
+   * 회원탈퇴 (docs/specs/36).
+   *
+   * **순서가 계약이다.** 개설자 판정이 익명화보다 먼저 온다 — 409로 끝날 요청이 이메일·면허번호를
+   * 먼저 지우면 되돌릴 수 없다(기준 25·26). 개인정보 파기는 즉시이고, 클리닉 데이터 파기만
+   * §34의 유예 크론으로 미룬다.
+   */
   async withdraw(principal: ClinicianPrincipal): Promise<void> {
-    throw new ServiceException('INTERNAL_ERROR');
+    const activeMembers = await this.clinicianRepository.countActiveMembers(principal.clinicId);
+    const ownerId = await this.clinicianRepository.findClinicOwnerId(principal.clinicId);
+    const isLastMember = activeMembers <= 1;
+
+    // 개설자가 남을 두고 떠나면 그 클리닉은 영구히 초대를 발급할 수 없는 잠긴 상태가 된다(§35).
+    // 마지막 구성원은 넘길 상대가 없으므로 막지 않는다.
+    if (ownerId === principal.clinicianId && !isLastMember) {
+      this.metrics.recordClinicianWithdrawal('blocked');
+      throw new ServiceException('CLINIC_OWNER_MUST_TRANSFER');
+    }
+
+    const now = new Date(Date.now());
+    const familyIds = await this.sessionRepository.findFamilyIdsByClinician(principal.clinicianId);
+
+    await this.txManager.run(async () => {
+      await this.clinicianRepository.anonymize(principal.clinicianId, now);
+      if (isLastMember) {
+        await this.clinicianRepository.softDeleteClinic(principal.clinicId, now);
+      }
+      await this.sessionRepository.revokeAllByClinician(principal.clinicianId, now);
+    });
+
+    // denylist는 family 단위라 **폐기한 전 family**를 올려야 TTL이 남은 access 토큰이 막힌다.
+    // 트랜잭션 밖인 이유는 Redis가 롤백 대상이 아니고, 실패해도 DB 폐기는 이미 확정이기 때문이다.
+    await Promise.all(
+      familyIds.map((familyId) => this.tokenDenylist.denyFamily(familyId, this.config.accessTtlSec)),
+    );
+    this.metrics.recordClinicianWithdrawal('withdrawn');
   }
 
   async me(principal: ClinicianPrincipal): Promise<AuthSessionResponseDto['clinician']> {

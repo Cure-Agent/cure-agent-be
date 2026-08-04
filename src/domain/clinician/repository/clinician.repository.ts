@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { OAuthProviderId } from '../../../infrastructure/oauth/oauth-provider.port';
 import { ClinicRow, clinics } from '../persistence/clinic.schema';
 import { ClinicianRow, clinicians } from '../persistence/clinician.schema';
+
+/** tombstone 표시 이름 — 목록에서는 제외되므로 감사 조회에서만 보인다 (docs/specs/36) */
+export const WITHDRAWN_DISPLAY_NAME = '탈퇴한 사용자';
 
 @Injectable()
 export class ClinicianRepository {
@@ -47,6 +50,68 @@ export class ClinicianRepository {
       .where(eq(clinics.id, clinicId))
       .limit(1);
     return rows[0]?.ownerClinicianId ?? null;
+  }
+
+  /** 구성원 목록 (docs/specs/36) — tombstone은 제외한다. 클리닉당 소수라 커서를 두지 않는다 */
+  async listMembers(clinicId: string): Promise<ClinicianRow[]> {
+    return this.txManager.conn
+      .select()
+      .from(clinicians)
+      .where(and(eq(clinicians.clinicId, clinicId), isNull(clinicians.deletedAt)))
+      .orderBy(asc(clinicians.createdAt), asc(clinicians.id));
+  }
+
+  /** 살아 있는 구성원 수 — 「마지막 구성원인가」 판정 (docs/specs/36) */
+  async countActiveMembers(clinicId: string): Promise<number> {
+    const rows = await this.txManager.conn
+      .select({ total: count() })
+      .from(clinicians)
+      .where(and(eq(clinicians.clinicId, clinicId), isNull(clinicians.deletedAt)));
+    return rows[0]?.total ?? 0;
+  }
+
+  /** 이양 대상 검증용 — 같은 클리닉의 **살아 있는** 구성원만 찾는다 (§4.4 스코프) */
+  async findMemberInClinic(clinicId: string, id: string): Promise<ClinicianRow | null> {
+    const rows = await this.txManager.conn
+      .select()
+      .from(clinicians)
+      .where(
+        and(
+          eq(clinicians.id, id),
+          eq(clinicians.clinicId, clinicId),
+          isNull(clinicians.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * tombstone 익명화 (docs/specs/36) — 행은 남기고 개인정보만 덮는다.
+   *
+   * `email`·`oauthProviderId`는 unique라 비울 수 없어 **id를 섞은 결정적 값**으로 덮는다.
+   * 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타게 되어(§4.2 계정 동일성이
+   * provider+providerId다) 재가입이 자연히 열린다.
+   */
+  async anonymize(id: string, at: Date): Promise<void> {
+    await this.txManager.conn
+      .update(clinicians)
+      .set({
+        email: `deleted-${id}@deleted.invalid`,
+        oauthProviderId: `deleted-${id}`,
+        displayName: WITHDRAWN_DISPLAY_NAME,
+        licenseNumberEncrypted: '',
+        deletedAt: at,
+      })
+      .where(and(eq(clinicians.id, id), isNull(clinicians.deletedAt)));
+  }
+
+  /** 마지막 구성원이 떠난 클리닉의 파기 예약 (docs/specs/36) — §34와 같이 덮지 않는다 */
+  async softDeleteClinic(clinicId: string, at: Date): Promise<void> {
+    await this.txManager.conn
+      .update(clinics)
+      .set({ deletedAt: at })
+      .where(and(eq(clinics.id, clinicId), isNull(clinics.deletedAt)));
   }
 
   async existsByEmail(email: string): Promise<boolean> {

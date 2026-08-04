@@ -223,6 +223,67 @@
         ]
       }
     },
+    "/api/v1/clinic/members": {
+      "get": {
+        "operationId": "ClinicMemberController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ClinicMemberResponseDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "클리닉 구성원 목록 (전원 조회 — 탈퇴자 제외)",
+        "tags": [
+          "ClinicMember"
+        ]
+      }
+    },
+    "/api/v1/clinic/owner/transfer": {
+      "post": {
+        "operationId": "ClinicMemberController_transferOwner",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferClinicOwnerRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "개설자 권한 이양 (개설자 전용)",
+        "tags": [
+          "ClinicMember"
+        ]
+      }
+    },
     "/api/v1/auth/signup": {
       "post": {
         "description": "소셜 콜백이 발급한 티켓과 한의원명·면허번호를 받아 가입을 마친다 (docs/specs/17). 이메일·소셜 신원은 티켓에서 꺼내므로 바디로 받지 않는다.",
@@ -343,6 +404,19 @@
           }
         },
         "summary": "현재 사용자 복구",
+        "tags": [
+          "Auth"
+        ]
+      },
+      "delete": {
+        "operationId": "AuthController_withdraw",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "회원탈퇴 — 개인정보 즉시 익명화 + 전 세션 폐기 (docs/specs/36)",
         "tags": [
           "Auth"
         ]
@@ -2217,6 +2291,43 @@
         },
         "required": [
           "clinicName"
+        ]
+      },
+      "ClinicMemberResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "isOwner": {
+            "type": "boolean",
+            "description": "개설자 여부 — 초대 발급·이양 권한을 가진 한 사람이다"
+          },
+          "joinedAt": {
+            "type": "string",
+            "description": "합류 시각"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "isOwner",
+          "joinedAt"
+        ]
+      },
+      "TransferClinicOwnerRequestDto": {
+        "type": "object",
+        "properties": {
+          "toClinicianId": {
+            "type": "string",
+            "description": "새 개설자가 될 구성원 id — 같은 클리닉의 살아 있는 구성원이어야 한다"
+          }
+        },
+        "required": [
+          "toClinicianId"
         ]
       },
       "ClinicSummaryResponseDto": {

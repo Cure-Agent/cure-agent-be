@@ -59,6 +59,7 @@ export class DataPurgeService {
       // skipped를 failed로 세면 「파기가 계속 실패 중」으로 읽혀 진짜 실패와 구분되지 않는다
       this.metrics?.recordDataPurge('conversation', 'skipped');
       this.metrics?.recordDataPurge('patient', 'skipped');
+      this.metrics?.recordDataPurge('clinic', 'skipped');
       return { conversations: 0, patients: 0, deferred: 0, skipped: true };
     }
 
@@ -67,21 +68,30 @@ export class DataPurgeService {
       const cutoff = new Date(Date.now() - this.config.retentionDays * MS_PER_DAY);
       const limit = this.config.batchSize;
 
-      const [total, conversationIds, patientIds] = await Promise.all([
+      const [total, conversationIds, patientIds, clinicIds] = await Promise.all([
         this.repository.countPurgeable(cutoff),
         this.repository.findPurgeableConversationIds(cutoff, limit),
         this.repository.findPurgeablePatientIds(cutoff, limit),
+        this.repository.findPurgeableClinicIds(cutoff, limit),
       ]);
 
       // 대화를 먼저 지운다 — 환자의 deletedAt은 그 환자 대화의 것보다 항상 같거나 늦으므로
       // 두 목록이 같은 틱에 잡히면 가이던스가 먼저 사라져 있어야 스냅샷·환자가 지워진다.
+      // 클리닉 파기는 마지막이다 — 그 안에서 대화·환자를 clinic_id 기준으로 다시 훑으므로
+      // 앞 두 단계가 남긴 것이 있어도 함께 정리된다 (docs/specs/36).
       await this.txManager.run(async () => {
         await this.repository.purgeConversations(conversationIds);
         await this.repository.purgePatients(patientIds);
+        await this.repository.purgeClinics(clinicIds);
       });
 
+      // 클리닉 미반영분도 센다 — 조용한 절단 금지(기준 21). `?? 0`은 클리닉 축이 없던
+      // 시절의 호출자(부분 mock 포함)에서도 NaN이 되지 않게 하는 방어다.
       const deferred =
-        total.conversations - conversationIds.length + (total.patients - patientIds.length);
+        total.conversations -
+        conversationIds.length +
+        (total.patients - patientIds.length) +
+        ((total.clinics ?? 0) - clinicIds.length);
       if (deferred > 0) {
         // 조용한 절단 금지 — 남긴 수를 남겨야 「다 지웠다」로 오독되지 않는다
         this.logger.warn(`배치 상한(${limit})으로 ${deferred}건을 다음 틱으로 남긴다`);
@@ -89,6 +99,7 @@ export class DataPurgeService {
 
       this.metrics?.recordDataPurge('conversation', 'purged', conversationIds.length);
       this.metrics?.recordDataPurge('patient', 'purged', patientIds.length);
+      this.metrics?.recordDataPurge('clinic', 'purged', clinicIds.length);
 
       return {
         conversations: conversationIds.length,
@@ -99,6 +110,7 @@ export class DataPurgeService {
     } catch (error) {
       this.metrics?.recordDataPurge('conversation', 'failed');
       this.metrics?.recordDataPurge('patient', 'failed');
+      this.metrics?.recordDataPurge('clinic', 'failed');
       throw error;
     } finally {
       this.metrics?.observeDataPurgeDuration((Date.now() - startedAt) / 1_000);
