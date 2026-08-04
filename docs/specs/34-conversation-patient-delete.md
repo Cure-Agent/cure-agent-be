@@ -57,7 +57,7 @@
 | `clinical-guidance.repository.ts` | `findById`에 「살아 있는 대화에 속함」 EXISTS 조인. `findIdsByMessageIds`는 대화 관문을 이미 통과한 메시지만 받으므로 불변 |
 | `infrastructure/scheduler/data-purge.cron.ts` (신규) | `guideline-revision.cron.ts` 형태 그대로 — `SchedulerRegistry` **동적 등록**(꺼져 있으면 등록되지 않음), 핸들러는 예외를 밖으로 던지지 않는다 |
 | `global/config/data-purge.config.ts` (신규) | `DATA_PURGE_ENABLED`(기본 **false** — §26 선례: 켜짐이 기본이면 로컬·CI가 시간에 의존한다) · `DATA_PURGE_CRON`(기본 `0 18 * * *` = 03:00 KST. 개정 스캔 19시 UTC와 겹치지 않게) · `DATA_PURGE_RETENTION_DAYS`(기본 **30**) · `DATA_PURGE_LOCK_TTL_MS` · `DATA_PURGE_BATCH_SIZE`(기본 200) |
-| `domain/.../data-purge.service.ts` (신규) | 판정·삭제 전부. 크론은 호출만 한다 — §26이 e2e를 시간 의존에서 떼어낸 분리를 계승한다 |
+| `domain/.../data-purge.service.ts` (신규) | 판정·삭제 전부. 크론은 호출만 한다 — §26이 e2e를 시간 의존에서 떼어낸 분리를 계승한다. **유예 컷오프는 앱 계층에서 계산해 리포지토리에 넘긴다** — SQL의 `now()`로 계산하면 기준 14의 시각 주입이 성립하지 않는다(코드베이스에 Clock 추상화가 없고, `jest.useFakeTimers()`가 제어하는 것은 `Date.now()`뿐이다) |
 | `metrics.service.ts` | `data_purge_total{target=conversation\|patient, outcome=purged\|failed}` + duration 히스토그램 |
 | `docs/architecture.md` | §5.5·§5.7 표에 DELETE 행 추가. **§9의 「다음 참조 체인은 반드시 보존한다」 서술 개정** — 사용자 삭제 요청은 이 체인을 파기하는 예외임을 명시 |
 
@@ -112,6 +112,8 @@
 20. 락 획득 실패면 그 틱은 **대상 산출조차 하지 않는다** (유닛 — fail-closed)
 21. 배치 상한을 넘는 대상은 다음 틱으로 남고, 남긴 수를 로그로 남긴다 (유닛)
 22. 퍼지 중 예외가 크론 핸들러 밖으로 나가지 않는다 (유닛)
+23. **ARCHIVED 상태의 대화·환자도 삭제된다** — 409가 아니라 200이고 `deleted_at`이 채워진다 (e2e —
+    보관과 삭제는 직교한다. `PATIENT_ARCHIVED` 분기가 삭제 경로에 붙지 않았음을 단언한다)
 
 fixture 규약: 고아 스냅샷은 프로덕션 행을 복사하지 않고 **구조를 모방해 합성한다** — 스냅샷을
 insert하고 가이던스를 만들지 않으면 실패한 스트림과 같은 형태가 된다.
