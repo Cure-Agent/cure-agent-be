@@ -1,4 +1,13 @@
-import { doublePrecision, index, integer, pgEnum, pgTable, text } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+  doublePrecision,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 import { baseColumns } from '../../../global/database/base-columns';
 
 export const patientSex = pgEnum('patient_sex', ['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']);
@@ -25,9 +34,20 @@ export const patients = pgTable(
     clinicalNotesEncrypted: text('clinical_notes_encrypted'),
     status: patientStatus('status').notNull().default('ACTIVE'),
     version: integer('version').notNull().default(1), // 낙관적 잠금 (§6)
+    /**
+     * 파기 예약 시각 (docs/specs/34). 보관(status)과 **직교한다** — 보관된 환자도 삭제된다.
+     * 환자를 지우면 같은 tx에서 그 환자의 대화에도 값이 찍히므로, 대화의 deletedAt은 항상
+     * 환자의 것보다 같거나 이르다. 퍼지가 대화를 먼저(또는 동시에) 지우는 근거다.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     ...baseColumns,
   },
-  (table) => [index('idx_patients_clinic').on(table.clinicId)],
+  (table) => [
+    index('idx_patients_clinic').on(table.clinicId),
+    index('idx_patients_purge')
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
+  ],
 );
 
 /** 가이드 생성 당시 환자 프로필 immutable 스냅샷 (§9) — payload 전체 암호화 (§4.5) */

@@ -406,6 +406,7 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 | 환자 프로필 등록 | POST /patients | CreatePatientRequestDto | PatientDetailResponseDto |
 | 환자 보관 | POST /patients/{id}/archive | 없음 | null |
 | 환자 보관 해제 | POST /patients/{id}/unarchive | 없음 | null |
+| 환자 삭제 | DELETE /patients/{id} | 없음 | null |
 
 ### 5.6 환자 상세·임상 참고 화면 `/patients/[patientId]`
 
@@ -432,7 +433,10 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 | 대화명 변경 | PATCH /conversations/{id} | UpdateConversationRequestDto | ConversationSummaryResponseDto |
 | 대화 보관 | POST /conversations/{id}/archive | 없음 | null |
 | 대화 보관 해제 | POST /conversations/{id}/unarchive | 없음 | null |
+| 대화 삭제 | DELETE /conversations/{id} | 없음 | null |
 | 이어서 질문 | POST /conversations/{id}/messages/stream | SendMessageRequestDto | SSE 이벤트 (§8) |
+
+**삭제 규약 (docs/specs/34)**: 삭제는 **소프트 삭제**다 — `deletedAt`을 찍는 데서 요청이 끝나고, 유예(`DATA_PURGE_RETENTION_DAYS`, 기본 30일)가 지난 것만 파기 크론이 물리 삭제한다. 복구 API는 없으므로 `deletedAt`은 「복구 유예」가 아니라 **「파기 예약」**이며, 유예는 사용자 기능이 아니라 운영 안전망이다. 삭제는 **멱등**이고 재요청이 예약 시각을 갱신하지 않는다(갱신하면 재시도마다 파기가 미뤄진다). 보관과 **직교**한다 — 보관된 항목도 삭제된다. 환자를 지우면 같은 트랜잭션에서 그 환자의 대화도 함께 예약되며, 이미 예약된 대화의 시각은 유지된다.
 
 **과거 답변 재현성**: 텍스트만 보관하지 않는다. 당시 사용된 다음 정보를 함께 고정한다 — 인용 지침 버전, Evidence chunk ID, 환자 프로필 snapshot ID, 프롬프트 버전, 검색 정책 버전, 모델·생성 설정. 지침이나 환자 정보가 변경돼도 "당시 왜 이 답이 나왔는지" 재현할 수 있어야 한다.
 
@@ -770,7 +774,7 @@ type GuidelineJobStreamEventDto =
 | EvaluationRunEntity | 평가셋·설정·전체 지표 (P1) |
 | EvaluationCaseResultEntity | 질문별 retrieval/citation 결과 (P1) |
 
-전 Entity에 createdAt/updatedAt 공통 컬럼 적용. 다음 참조 체인은 반드시 보존한다:
+전 Entity에 createdAt/updatedAt 공통 컬럼 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
 
 ```
 ClinicalGuidance

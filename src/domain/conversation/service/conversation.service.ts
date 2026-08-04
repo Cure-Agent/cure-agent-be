@@ -223,6 +223,21 @@ export class ConversationService {
     return null;
   }
 
+  /**
+   * 파기 예약 (docs/specs/34) — 멱등. 이미 삭제된 대상에 다시 와도 200이고 시각을 덮지 않는다.
+   */
+  async remove(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
+    const scope = { clinicianId: principal.clinicianId };
+    // findById가 아니라 existsInScope로 판정한다 — findById는 「이미 지운 내 대화」와
+    // 「남의 대화」를 똑같이 null로 돌려주는데, 전자는 멱등이라 200이고 후자는 404다.
+    if (!(await this.repository.existsInScope(scope, conversationId))) {
+      throw new ServiceException('NOT_FOUND');
+    }
+    // softDelete의 WHERE가 deleted_at IS NULL이라, 재삭제는 0행 갱신으로 조용히 지나간다.
+    await this.repository.softDelete(scope, conversationId, new Date());
+    return null;
+  }
+
   async submitFeedback(
     principal: ClinicianPrincipal,
     messageId: string,

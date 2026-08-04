@@ -77,6 +77,13 @@ services:
       # 크론식은 프로세스 TZ 기준이고 이 컨테이너에는 TZ가 없어 UTC다(0 19 * * * = 04:00 KST).
       GUIDELINE_REVISION_SCAN_ENABLED: ${GUIDELINE_REVISION_SCAN_ENABLED:-true}
       GUIDELINE_REVISION_SCAN_CRON: ${GUIDELINE_REVISION_SCAN_CRON:-0 19 * * *}
+      # 소프트 삭제분 파기 스케줄러 (docs/specs/34). 앱 기본값은 꺼짐이라 여기서 켠다 —
+      # 0 18 * * * = 03:00 KST로, 개정 스캔(04:00 KST)과 겹치지 않는다.
+      # 유예를 줄이려면 DATA_PURGE_RETENTION_DAYS만 바꾼다(법무 판단이 바뀌어도 코드는 그대로).
+      DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-true}
+      DATA_PURGE_CRON: ${DATA_PURGE_CRON:-0 18 * * *}
+      DATA_PURGE_RETENTION_DAYS: ${DATA_PURGE_RETENTION_DAYS:-30}
+      DATA_PURGE_BATCH_SIZE: ${DATA_PURGE_BATCH_SIZE:-200}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # 참고안 구조화 킬스위치 (docs/specs/33 기준 8). 'false'만 발동한다.
