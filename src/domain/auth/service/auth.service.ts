@@ -101,11 +101,8 @@ export class AuthService {
       throw new ServiceException('VALIDATION_FAILED', undefined, 'invitationToken과 clinicName은 함께 올 수 없습니다.');
     }
 
-    // 이메일 중복 검사가 초대 해석·소비보다 **앞선다** — 실패한 가입이 초대를 태우면 안 된다 (기준 17)
-    if (await this.clinicianRepository.existsByEmail(payload.email)) {
-      throw new ServiceException('AUTH_EMAIL_ALREADY_USED');
-    }
-
+    // 이메일 중복은 검사하지 않는다 (docs/specs/37) — 계정 동일성은 provider+providerId 하나이며,
+    // 그 유일성은 `uq_clinicians_oauth`가 지킨다. 같은 이메일의 다른 소셜 계정은 별개 사람으로 다룬다.
     const clinicianId = ulid();
     const now = new Date(Date.now());
 

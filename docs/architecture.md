@@ -305,7 +305,7 @@ export class AuthCookieFactory {
 | `GET /auth/me` | 세션 복구 |
 | `DELETE /auth/me` | 회원탈퇴 — 개인정보 즉시 익명화 + **전 family** 세션 폐기 + 쿠키 만료 (docs/specs/36) |
 
-**탈퇴 규약 (docs/specs/36)**: 행은 남기고 개인정보만 지우는 **tombstone**이다 — `clinicians` 참조 FK가 8개이고 그중 5개가 notNull이라 물리 삭제가 성립하지 않고, `answer_feedbacks`·`guidance_reviews`는 「누가 평가·검토했는가」가 기록의 본질이며, 대화는 §5.7대로 클리닉 공유 자산이라 지우면 남은 동료의 기록이 사라진다. `email`·`oauthProviderId`는 unique라 비울 수 없어 id를 섞은 결정적 값으로 덮으며, 그 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타 **재가입이 열린다**. 순서가 계약이다 — **개설자 판정이 익명화보다 앞선다**(409로 끝날 요청이 개인정보를 먼저 지우면 되돌릴 수 없다). 세션은 `logout`과 달리 **전 family**를 끄고 모두 denylist에 올린다(§4.3). 개설자는 남은 구성원이 있으면 `CLINIC_OWNER_MUST_TRANSFER`(409)로 막히고, **마지막 구성원**이면 그 클리닉이 파기 예약된다(§34 유예 크론).
+**탈퇴 규약 (docs/specs/36)**: 행은 남기고 개인정보만 지우는 **tombstone**이다 — `clinicians` 참조 FK가 8개이고 그중 5개가 notNull이라 물리 삭제가 성립하지 않고, `answer_feedbacks`·`guidance_reviews`는 「누가 평가·검토했는가」가 기록의 본질이며, 대화는 §5.7대로 클리닉 공유 자산이라 지우면 남은 동료의 기록이 사라진다. `email`·`oauthProviderId`는 id를 섞은 결정적 값으로 덮는다 — `oauthProviderId`는 `uq_clinicians_oauth`가 걸려 비울 수 없고, `email`은 **파기 의무 자체가 이유**다(unique는 docs/specs/37에서 제거됐다). 그 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타 **재가입이 열린다**. 순서가 계약이다 — **개설자 판정이 익명화보다 앞선다**(409로 끝날 요청이 개인정보를 먼저 지우면 되돌릴 수 없다). 세션은 `logout`과 달리 **전 family**를 끄고 모두 denylist에 올린다(§4.3). 개설자는 남은 구성원이 있으면 `CLINIC_OWNER_MUST_TRANSFER`(409)로 막히고, **마지막 구성원**이면 그 클리닉이 파기 예약된다(§34 유예 크론).
 
 refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페치 오발동 위험).
 
