@@ -186,6 +186,17 @@ export class AuthService {
     await this.tokenDenylist.denyFamily(principal.familyId, this.config.accessTtlSec);
   }
 
+  /**
+   * 회원탈퇴 (docs/specs/36) — 구현은 Phase 3.
+   *
+   * 순서가 계약이다: **판정 → 익명화 → clinic 예약 → 전 세션 폐기**. 409로 끝날 요청이
+   * 개인정보를 먼저 지우면 되돌릴 수 없다 (기준 25·26).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 스텁: 구현은 Phase 3
+  async withdraw(principal: ClinicianPrincipal): Promise<void> {
+    throw new ServiceException('INTERNAL_ERROR');
+  }
+
   async me(principal: ClinicianPrincipal): Promise<AuthSessionResponseDto['clinician']> {
     const found = await this.clinicianRepository.findById(principal.clinicianId);
     if (!found) throw new ServiceException('UNAUTHORIZED');
