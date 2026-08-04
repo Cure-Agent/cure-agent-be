@@ -259,9 +259,28 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 클리닉 초대 결말 (docs/specs/35).
+   *
+   * `rejected`를 따로 두는 이유는 §34 `skipped`·§33 `disabled`와 같다: 만료·재사용·취소된
+   * 링크로 들어온 합류 시도는 **정상 방어**이지 장애가 아니다. `accepted`와 뭉뚱그리면
+   * 「초대가 잘 안 먹힌다」로 읽히고, 진짜 이상(발급은 되는데 아무도 합류하지 못함)이 묻힌다.
+   */
+  private readonly clinicInvitations = new Counter({
+    name: 'clinic_invitation_total',
+    help: '클리닉 초대 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
+  }
+
+  /** 초대 결말 기록 (docs/specs/35) */
+  recordClinicInvitation(outcome: 'issued' | 'accepted' | 'rejected' | 'revoked'): void {
+    this.clinicInvitations.inc({ outcome });
   }
 
   /** 파기 결말 기록 (docs/specs/34) */

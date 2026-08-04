@@ -1,5 +1,7 @@
-import { Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { MetricsService } from '../../../global/observability/metrics/metrics.service';
+import { ClinicOwnerGuard } from '../../../global/security/clinic-owner.guard';
 import {
   ApiEnvelopeResponse,
   ApiPageResponse,
@@ -16,8 +18,12 @@ import { ClinicInvitationService } from '../service/clinic-invitation.service';
 /** 초대 관리 (docs/specs/35) — 전 경로가 **개설자 전용**(`clinics.ownerClinicianId`)이다. */
 @ApiTags('ClinicInvitation')
 @Controller('clinic/invitations')
+@UseGuards(ClinicOwnerGuard)
 export class ClinicInvitationController {
-  constructor(private readonly invitationService: ClinicInvitationService) {}
+  constructor(
+    private readonly invitationService: ClinicInvitationService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '초대 발급 (개설자 전용) — 토큰은 이 응답에서만 노출된다' })
@@ -26,6 +32,7 @@ export class ClinicInvitationController {
     @CurrentClinician() principal: ClinicianPrincipal,
   ): Promise<ApiResponseDto<ClinicInvitationIssuedResponseDto>> {
     const issued = await this.invitationService.issue(principal);
+    this.metrics.recordClinicInvitation('issued');
     return ApiResponseDto.success(issued, 'CREATED');
   }
 
@@ -41,10 +48,12 @@ export class ClinicInvitationController {
 
   @Delete(':invitationId')
   @ApiOperation({ summary: '초대 취소 (개설자 전용)' })
-  revoke(
+  async revoke(
     @CurrentClinician() principal: ClinicianPrincipal,
     @Param('invitationId') invitationId: string,
   ): Promise<null> {
-    return this.invitationService.revoke(principal, invitationId);
+    const result = await this.invitationService.revoke(principal, invitationId);
+    this.metrics.recordClinicInvitation('revoked');
+    return result;
   }
 }

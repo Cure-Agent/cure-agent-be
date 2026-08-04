@@ -14,7 +14,12 @@ import { TokenDenylistService } from '../../../global/security/token-denylist.se
 import { AesGcmUtil } from '../../../global/security/crypto/aes-gcm.util';
 import { OAuthProfile } from '../../../infrastructure/oauth/oauth-provider.port';
 import { toClinicianResponse } from '../../clinician/mapper/clinician.mapper';
+import { MetricsService } from '../../../global/observability/metrics/metrics.service';
 import { ClinicianRepository } from '../../clinician/repository/clinician.repository';
+import {
+  ClinicInvitationService,
+  ResolvedInvitation,
+} from '../../clinician/service/clinic-invitation.service';
 import { AuthSessionRepository } from '../repository/auth-session.repository';
 import { AuthSessionRow } from '../persistence/auth-session.schema';
 import { CompleteSignUpRequestDto } from '../dto/request/complete-sign-up.request.dto';
@@ -49,6 +54,8 @@ export class AuthService {
     private readonly clinicianRepository: ClinicianRepository,
     private readonly sessionRepository: AuthSessionRepository,
     private readonly ticketService: OAuthTicketService,
+    private readonly invitationService: ClinicInvitationService,
+    private readonly metrics: MetricsService,
   ) {}
 
   /**
@@ -86,20 +93,24 @@ export class AuthService {
   async completeSignUp(dto: CompleteSignUpRequestDto): Promise<IssuedAuth> {
     const payload = await this.ticketService.consume(dto.ticket);
 
+    // 두 필드의 상호 배타는 **한 프로퍼티가 아니라 요청 전체의 규칙**이라 DTO 데코레이터로
+    // 표현하지 않는다 — class-validator의 ValidateIf를 같은 프로퍼티에 둘 쌓으면 두 조건이
+    // AND로 묶여 검증이 아예 돌지 않는다. 조용히 무시하지 않는 이유는 스펙 기준 14와 같다:
+    // 사용자가 입력한 한의원명이 어디로 갔는지 알 수 없고, 서버가 모순된 요청을 임의 해석하는 셈이다.
+    if (dto.invitationToken && dto.clinicName !== undefined) {
+      throw new ServiceException('VALIDATION_FAILED', undefined, 'invitationToken과 clinicName은 함께 올 수 없습니다.');
+    }
+
+    // 이메일 중복 검사가 초대 해석·소비보다 **앞선다** — 실패한 가입이 초대를 태우면 안 된다 (기준 17)
     if (await this.clinicianRepository.existsByEmail(payload.email)) {
       throw new ServiceException('AUTH_EMAIL_ALREADY_USED');
     }
 
-    const clinicId = ulid();
     const clinicianId = ulid();
+    const now = new Date(Date.now());
 
-    // 초대 합류 분기(docs/specs/35)는 Phase 3에서 이 자리를 대체한다 — 지금은 개설 경로만이다
-    if (!dto.clinicName) throw new ServiceException('VALIDATION_FAILED');
-    const clinicName = dto.clinicName;
-
-    return this.txManager.run(async () => {
-      await this.clinicianRepository.insertClinic({ id: clinicId, name: clinicName });
-      await this.clinicianRepository.insertClinician({
+    const insertClinician = (clinicId: string) =>
+      this.clinicianRepository.insertClinician({
         id: clinicianId,
         clinicId,
         email: payload.email,
@@ -108,6 +119,37 @@ export class AuthService {
         displayName: dto.displayName,
         licenseNumberEncrypted: this.aesGcm.encrypt(dto.licenseNumber),
       });
+
+    // 합류 (docs/specs/35) — clinic을 만들지 않고 초대가 가리키는 클리닉에 붙는다.
+    // 역할은 기본값 MEMBER 그대로다: 초대는 병원 합류이지 플랫폼 권한 승격이 아니다.
+    if (dto.invitationToken) {
+      // 만료·재사용·취소된 링크는 정상 방어이므로 실패로 세지 않고 rejected로 따로 센다
+      let invitation: ResolvedInvitation;
+      try {
+        invitation = await this.invitationService.resolveForJoin(dto.invitationToken, now);
+      } catch (error) {
+        this.metrics.recordClinicInvitation('rejected');
+        throw error;
+      }
+
+      return this.txManager.run(async () => {
+        await insertClinician(invitation.clinicId);
+        await this.invitationService.consume(invitation.invitationId, clinicianId, now);
+        const issued = await this.issueAuth(clinicianId);
+        this.metrics.recordClinicInvitation('accepted');
+        return issued;
+      });
+    }
+
+    if (!dto.clinicName) throw new ServiceException('VALIDATION_FAILED');
+    const clinicName = dto.clinicName;
+    const clinicId = ulid();
+
+    return this.txManager.run(async () => {
+      // 순환 FK라 owner는 clinician을 만든 뒤에야 채울 수 있다 (docs/specs/35)
+      await this.clinicianRepository.insertClinic({ id: clinicId, name: clinicName });
+      await insertClinician(clinicId);
+      await this.clinicianRepository.updateClinicOwner(clinicId, clinicianId);
       return this.issueAuth(clinicianId);
     });
   }

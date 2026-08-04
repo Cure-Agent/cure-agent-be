@@ -81,7 +81,7 @@ export class ConversationService {
       titleSource: dto.title ? 'USER' : 'DEFAULT',
     });
 
-    const row = await this.repository.findById({ clinicianId: principal.clinicianId }, id);
+    const row = await this.repository.findById({ clinicId: principal.clinicId }, id);
     if (!row) throw new ServiceException('INTERNAL_ERROR');
     return toConversationSummary(row);
   }
@@ -94,7 +94,7 @@ export class ConversationService {
     const after = query.cursor ? decodeConversationCursor(query.cursor) : undefined;
 
     const rows = await this.repository.list(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       {
         type: query.type,
         patientId: query.patientId,
@@ -126,7 +126,7 @@ export class ConversationService {
     conversationId: string,
   ): Promise<ConversationDetailResponseDto> {
     const row = await this.repository.findById(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
     );
     if (!row) throw new ServiceException('NOT_FOUND');
@@ -140,7 +140,7 @@ export class ConversationService {
     query: ListMessagesQueryDto,
   ): Promise<PageResult<MessageResponseDto>> {
     const conversation = await this.repository.findById(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
     );
     if (!conversation) throw new ServiceException('NOT_FOUND');
@@ -194,7 +194,7 @@ export class ConversationService {
     title: string,
   ): Promise<ConversationSummaryResponseDto> {
     const updated = await this.repository.updateTitle(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
       title,
     );
@@ -205,7 +205,7 @@ export class ConversationService {
 
   async archive(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
     const updated = await this.repository.updateStatus(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
       'ARCHIVED',
     );
@@ -215,7 +215,7 @@ export class ConversationService {
 
   async unarchive(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
     const updated = await this.repository.updateStatus(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       conversationId,
       'ACTIVE',
     );
@@ -227,7 +227,7 @@ export class ConversationService {
    * 파기 예약 (docs/specs/34) — 멱등. 이미 삭제된 대상에 다시 와도 200이고 시각을 덮지 않는다.
    */
   async remove(principal: ClinicianPrincipal, conversationId: string): Promise<null> {
-    const scope = { clinicianId: principal.clinicianId };
+    const scope = { clinicId: principal.clinicId };
     // findById가 아니라 existsInScope로 판정한다 — findById는 「이미 지운 내 대화」와
     // 「남의 대화」를 똑같이 null로 돌려주는데, 전자는 멱등이라 200이고 후자는 404다.
     if (!(await this.repository.existsInScope(scope, conversationId))) {
@@ -244,7 +244,7 @@ export class ConversationService {
     dto: SubmitFeedbackRequestDto,
   ): Promise<null> {
     const found = await this.repository.findMessageInScope(
-      { clinicianId: principal.clinicianId },
+      { clinicId: principal.clinicId },
       messageId,
     );
     if (!found) throw new ServiceException('NOT_FOUND');
