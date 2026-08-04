@@ -132,3 +132,48 @@ export async function socialSignUp(
     clinicId: res.body.data.clinician.clinic.id as string,
   };
 }
+
+/**
+ * 개설자가 실제 초대 API로 링크를 발급하고, 신규 소셜 계정이 그 링크로 기존 클리닉에 합류한다.
+ *
+ * 같은 클리닉의 두 구성원이 필요한 테스트에서도 DB를 직접 조작하지 않는다. 초대 발급과 signup
+ * 소비 경로를 그대로 지나야 합류 자체와 이후의 clinic scope를 함께 검증할 수 있기 때문이다.
+ */
+export async function joinByInvitation(
+  app: INestApplication,
+  ownerSession: TestSession,
+  identity: SocialIdentity & Omit<OnboardingInput, 'clinicName'>,
+): Promise<TestSession> {
+  const server = app.getHttpServer();
+  const invitation = await request(server)
+    .post('/api/v1/clinic/invitations')
+    .set(CSRF)
+    .set('Cookie', ownerSession.cookie)
+    .expect(201);
+
+  const token: unknown = invitation.body.data?.token;
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error('초대 발급 응답에 token이 없습니다.');
+  }
+
+  const { ticket } = await socialCallback(app, identity);
+  if (!ticket) throw new Error(`신규 가입 티켓을 받지 못했습니다. (${identity.email})`);
+
+  const signup = await request(server)
+    .post('/api/v1/auth/signup')
+    .set(CSRF)
+    .send({
+      ticket,
+      displayName: identity.displayName ?? '초대받은 김의사',
+      invitationToken: token,
+      licenseNumber: identity.licenseNumber ?? 'LIC-JOIN-0042',
+      termsAccepted: true,
+    })
+    .expect(201);
+
+  return {
+    cookie: accessCookieOf(signup),
+    clinicianId: signup.body.data.clinician.id as string,
+    clinicId: signup.body.data.clinician.clinic.id as string,
+  };
+}
