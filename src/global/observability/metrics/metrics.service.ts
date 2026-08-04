@@ -266,16 +266,16 @@ export class MetricsService {
 
   /** 파기 결말 기록 (docs/specs/34) */
   recordDataPurge(
-    _target: 'conversation' | 'patient',
-    _outcome: 'purged' | 'failed' | 'skipped',
-    _count = 1,
+    target: 'conversation' | 'patient',
+    outcome: 'purged' | 'failed' | 'skipped',
+    count = 1,
   ): void {
-    // 스텁 — 구현에서 채운다
+    this.dataPurges.inc({ target, outcome }, count);
   }
 
   /** 파기 1회 소요 기록 (docs/specs/34) */
-  observeDataPurgeDuration(_seconds: number): void {
-    // 스텁 — 구현에서 채운다
+  observeDataPurgeDuration(seconds: number): void {
+    this.dataPurgeDuration.observe(seconds);
   }
 
   /**

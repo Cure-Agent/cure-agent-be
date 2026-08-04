@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { decodeCursor, encodeCursor } from '../../../global/common/cursor/cursor.util';
 import { ServiceException } from '../../../global/common/exception/service.exception';
+import { TransactionManager } from '../../../global/database/transaction-manager';
 import { PageResult } from '../../../global/common/response/page-result';
 import { AesGcmUtil } from '../../../global/security/crypto/aes-gcm.util';
 import { CreatePatientRequestDto } from '../dto/request/create-patient.request.dto';
@@ -29,6 +30,7 @@ export class PatientService {
   constructor(
     private readonly repository: PatientRepository,
     private readonly aesGcm: AesGcmUtil,
+    private readonly txManager: TransactionManager,
   ) {}
 
   async create(
@@ -146,8 +148,19 @@ export class PatientService {
    * 파기 예약 (docs/specs/34) — 멱등. 같은 tx에서 그 환자의 대화에도 예약을 찍되,
    * 이미 삭제된 대화의 시각은 유지한다 (기준 9·10).
    */
-  async remove(_scope: PatientScope, _patientId: string): Promise<null> {
-    return Promise.resolve(null);
+  async remove(scope: PatientScope, patientId: string): Promise<null> {
+    if (!(await this.repository.existsInScope(scope, patientId))) {
+      throw new ServiceException('NOT_FOUND');
+    }
+    // 환자와 그 대화를 한 tx로 묶는다 — 둘 사이에서 실패하면 대화만 남아 뿌리 없는
+    // 파기 예약이 되고, 퍼지가 대화를 먼저 지운다는 불변식이 깨진다.
+    await this.txManager.run(async () => {
+      const deletedAt = new Date();
+      await this.repository.softDelete(scope, patientId, deletedAt);
+      // 이미 삭제된 대화의 시각은 그 WHERE절이 지켜준다 (기준 10)
+      await this.repository.softDeleteConversationsByPatient(patientId, deletedAt);
+    });
+    return null;
   }
 
   /** 스냅샷·가이던스(10단계)가 재사용하는 복호화 접근자 */

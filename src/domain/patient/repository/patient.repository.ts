@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, ilike, lt } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, lt } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { conversations } from '../../conversation/persistence/conversation.schema';
 import { PatientRow, patientProfileSnapshots, patients } from '../persistence/patient.schema';
 import { PatientScope } from '../service/patient-snapshot.service';
 
@@ -24,7 +25,13 @@ export class PatientRepository {
     const rows = await this.txManager.conn
       .select()
       .from(patients)
-      .where(and(eq(patients.id, id), eq(patients.clinicId, scope.clinicId)))
+      .where(
+        and(
+          eq(patients.id, id),
+          eq(patients.clinicId, scope.clinicId),
+          isNull(patients.deletedAt), // docs/specs/34 기준 12
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -32,6 +39,7 @@ export class PatientRepository {
   async list(scope: PatientScope, filter: ListPatientsFilter): Promise<PatientRow[]> {
     const conditions = [
       eq(patients.clinicId, scope.clinicId),
+      isNull(patients.deletedAt), // docs/specs/34 기준 11
       filter.query ? ilike(patients.caseLabel, `%${filter.query}%`) : undefined,
       filter.status ? eq(patients.status, filter.status) : undefined,
       filter.afterId ? lt(patients.id, filter.afterId) : undefined,
@@ -85,11 +93,46 @@ export class PatientRepository {
     await this.txManager.conn.insert(patientProfileSnapshots).values(row);
   }
 
+  /** 스코프 안에 존재하는가 — **파기 예약된 행도 존재로 센다** (대화 쪽과 같은 이유) */
+  async existsInScope(scope: PatientScope, id: string): Promise<boolean> {
+    const rows = await this.txManager.conn
+      .select({ one: patients.id })
+      .from(patients)
+      .where(and(eq(patients.id, id), eq(patients.clinicId, scope.clinicId)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * 환자 삭제의 연쇄 — 그 환자의 대화에도 파기 예약을 찍는다 (docs/specs/34 기준 9).
+   *
+   * **`conversations` 테이블 쓰기를 여기에 두는 이유**: ConversationModule이 이미 PatientModule을
+   * import하므로 역방향 주입은 DI 순환이다. 스키마 객체 import는 순환을 만들지 않고, 이 쓰기는
+   * 「환자를 지운다」는 단일 유스케이스의 한 트랜잭션에 속한다.
+   *
+   * WHERE의 `deleted_at IS NULL`이 **먼저 삭제된 대화의 시각을 지켜준다** (기준 10).
+   */
+  async softDeleteConversationsByPatient(patientId: string, deletedAt: Date): Promise<void> {
+    await this.txManager.conn
+      .update(conversations)
+      .set({ deletedAt })
+      .where(and(eq(conversations.patientId, patientId), isNull(conversations.deletedAt)));
+  }
+
   /**
    * 파기 예약 (docs/specs/34) — **이미 값이 있으면 덮지 않는다** (기준 6과 같은 이유).
    * 보관(status)과 직교하므로 ARCHIVED 환자도 그대로 예약된다 (기준 23).
    */
-  async softDelete(_scope: PatientScope, _id: string, _deletedAt: Date): Promise<void> {
-    return Promise.resolve();
+  async softDelete(scope: PatientScope, id: string, deletedAt: Date): Promise<void> {
+    await this.txManager.conn
+      .update(patients)
+      .set({ deletedAt })
+      .where(
+        and(
+          eq(patients.id, id),
+          eq(patients.clinicId, scope.clinicId),
+          isNull(patients.deletedAt), // 「덮지 않는다」 집행
+        ),
+      );
   }
 }

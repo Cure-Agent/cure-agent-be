@@ -1,5 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, getTableColumns, gt, ilike, inArray, lt, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  sql,
+} from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import {
   GuidelineRow,
@@ -56,11 +68,21 @@ export class ConversationRepository {
     await this.txManager.conn.insert(conversations).values(row);
   }
 
+  /**
+   * 상세·이름변경·보관·스트림·삭제가 모두 지나는 **단일 관문**이다. 파기 예약된 대화를 여기서
+   * 걸러내면 그 아래 경로(messages·stream)가 자동으로 404가 된다 (docs/specs/34 기준 3~5).
+   */
   async findById(scope: ConversationScope, id: string): Promise<ConversationRow | null> {
     const rows = await this.txManager.conn
       .select()
       .from(conversations)
-      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .where(
+        and(
+          eq(conversations.id, id),
+          eq(conversations.clinicianId, scope.clinicianId),
+          isNull(conversations.deletedAt),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -83,6 +105,7 @@ export class ConversationRepository {
   ): Promise<ConversationListRow[]> {
     const conditions = [
       eq(conversations.clinicianId, scope.clinicianId),
+      isNull(conversations.deletedAt), // docs/specs/34 기준 2
       filter.type ? eq(conversations.type, filter.type) : undefined,
       filter.patientId ? eq(conversations.patientId, filter.patientId) : undefined,
       filter.status ? eq(conversations.status, filter.status) : undefined,
@@ -156,20 +179,36 @@ export class ConversationRepository {
   }
 
   /**
-   * 파기 예약 (docs/specs/34) — **이미 값이 있으면 덮지 않는다.** 재삭제가 시각을 갱신하면
-   * 재시도마다 파기가 미뤄진다 (기준 6). 갱신된 행이 없으면 null이 아니라 「이미 삭제됨」일
-   * 수 있으므로, 호출자는 존재 여부를 따로 확인한다.
+   * 스코프 안에 존재하는가 — **파기 예약된 행도 존재로 센다.**
+   *
+   * 삭제 멱등(기준 6)과 스코프 은닉(기준 7)을 가르는 유일한 지점이다. `findById`는 삭제된 행과
+   * 남의 행을 똑같이 null로 돌려주므로 그것만으로는 「이미 지운 내 대화(200)」와 「남의 대화(404)」를
+   * 구분할 수 없다.
    */
-  async softDelete(_scope: ConversationScope, _id: string, _deletedAt: Date): Promise<void> {
-    return Promise.resolve();
+  async existsInScope(scope: ConversationScope, id: string): Promise<boolean> {
+    const rows = await this.txManager.conn
+      .select({ one: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.clinicianId, scope.clinicianId)))
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**
-   * 환자 삭제의 연쇄 (docs/specs/34) — 그 환자의 대화에 파기 예약을 찍는다.
-   * **이미 삭제된 대화의 시각은 유지한다** (기준 10).
+   * 파기 예약 (docs/specs/34) — **이미 값이 있으면 덮지 않는다.** 재삭제가 시각을 갱신하면
+   * 재시도마다 파기가 미뤄진다 (기준 6).
    */
-  async softDeleteByPatient(_patientId: string, _deletedAt: Date): Promise<void> {
-    return Promise.resolve();
+  async softDelete(scope: ConversationScope, id: string, deletedAt: Date): Promise<void> {
+    await this.txManager.conn
+      .update(conversations)
+      .set({ deletedAt })
+      .where(
+        and(
+          eq(conversations.id, id),
+          eq(conversations.clinicianId, scope.clinicianId),
+          isNull(conversations.deletedAt), // 이 조건이 「덮지 않는다」를 집행한다
+        ),
+      );
   }
 
   // ── messages ─────────────────────────────────────────
@@ -234,7 +273,13 @@ export class ConversationRepository {
       .select({ message: messages, conversation: conversations })
       .from(messages)
       .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-      .where(and(eq(messages.id, messageId), eq(conversations.clinicianId, scope.clinicianId)))
+      .where(
+        and(
+          eq(messages.id, messageId),
+          eq(conversations.clinicianId, scope.clinicianId),
+          isNull(conversations.deletedAt), // docs/specs/34 — 삭제된 대화의 메시지는 피드백 경로에서도 없다
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
