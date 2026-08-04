@@ -21,10 +21,8 @@ export const ErrorCodes = {
   // Auth
   AUTH_TOKEN_EXPIRED: { status: 401, message: '만료된 토큰입니다.' },
   AUTH_REFRESH_REUSED: { status: 401, message: '세션이 무효화되었습니다. 다시 로그인해주세요.' },
-  AUTH_EMAIL_ALREADY_USED: {
-    status: 409,
-    message: '이미 다른 소셜 계정으로 가입된 이메일입니다.',
-  },
+  // AUTH_EMAIL_ALREADY_USED는 docs/specs/37에서 제거했다 — 계정 동일성이 provider+providerId
+  // 하나가 되어 발생 지점이 사라졌다. 이메일 중복은 더 이상 가입 실패 사유가 아니다.
 
   // Auth — 소셜 로그인 (docs/specs/17)
   // 콜백 경로의 실패는 JSON이 아니라 로그인 페이지 `?error=<code>`로 전달된다.

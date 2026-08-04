@@ -19,6 +19,13 @@ export const clinicians = pgTable(
     clinicId: text('clinic_id')
       .notNull()
       .references(() => clinics.id),
+    /**
+     * 연락 수단이지 식별자가 아니다 — **unique를 걸지 않는다** (docs/specs/37).
+     *
+     * 제공자가 주는 미검증 값이라 소유권이 보장되지 않고, 여기에 unique를 걸면 계정 동일성
+     * 기준이 `oauth_provider`+`oauth_provider_id`와 둘로 갈린다. 실제로 그 상태에서 같은
+     * 이메일의 다른 소셜 계정이 프로덕션에서 2건 거절됐다.
+     */
     email: text('email').notNull(),
     // 계정 동일성의 단일 기준 (docs/specs/17). 비밀번호는 저장하지 않는다.
     oauthProvider: oauthProvider('oauth_provider').notNull(),
@@ -43,7 +50,7 @@ export const clinicians = pgTable(
     ...baseColumns,
   },
   (table) => [
-    uniqueIndex('uq_clinicians_email').on(table.email),
+    // 계정 동일성의 **유일한** 제약이다 (docs/specs/37) — 이메일 unique는 0020에서 제거됐다
     uniqueIndex('uq_clinicians_oauth').on(table.oauthProvider, table.oauthProviderId),
     // 구성원 목록·파기 스캔은 탈퇴한 소수만 훑는다 (docs/specs/36)
     index('idx_clinicians_deleted')

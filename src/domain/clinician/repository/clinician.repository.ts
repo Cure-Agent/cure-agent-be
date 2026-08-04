@@ -89,7 +89,9 @@ export class ClinicianRepository {
   /**
    * tombstone 익명화 (docs/specs/36) — 행은 남기고 개인정보만 덮는다.
    *
-   * `email`·`oauthProviderId`는 unique라 비울 수 없어 **id를 섞은 결정적 값**으로 덮는다.
+   * **비우지 않고 id를 섞은 결정적 값으로 덮는 이유는 파기 의무 때문이다.** `oauthProviderId`는
+   * `uq_clinicians_oauth`가 걸려 있어 값을 비울 수도 없다 — 다만 `email`의 unique는 §37에서
+   * 사라졌으므로 이제 제약 회피가 아니라 **개인정보를 남기지 않기 위해** 덮는다(동작은 불변).
    * 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타게 되어(§4.2 계정 동일성이
    * provider+providerId다) 재가입이 자연히 열린다.
    */
@@ -112,15 +114,6 @@ export class ClinicianRepository {
       .update(clinics)
       .set({ deletedAt: at })
       .where(and(eq(clinics.id, clinicId), isNull(clinics.deletedAt)));
-  }
-
-  async existsByEmail(email: string): Promise<boolean> {
-    const rows = await this.txManager.conn
-      .select({ id: clinicians.id })
-      .from(clinicians)
-      .where(eq(clinicians.email, email))
-      .limit(1);
-    return rows.length > 0;
   }
 
   /** 소셜 계정 동일성 판정 (docs/specs/17) — 이메일이 아니라 provider+providerId가 기준이다. */
