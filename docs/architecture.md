@@ -298,14 +298,16 @@ export class AuthCookieFactory {
 |---|---|
 | `GET /auth/oauth/providers` | client id가 설정된 활성 제공자 목록 (FE 버튼 렌더용) |
 | `GET /auth/oauth/{provider}` | state 쿠키 발급 후 제공자 동의 화면으로 302 |
-| `GET /auth/oauth/{provider}/callback` | code→token→userinfo 후 분기: 기존 회원은 쿠키 발급 + `/assistant`, 신규는 티켓 발급 + `/signup?ticket=` |
-| `POST /auth/signup` | 티켓 + 한의원명·면허번호로 온보딩 완료 + 즉시 로그인, Set-Cookie |
+| `GET /auth/oauth/{provider}/callback` | code→token→userinfo 후 **세 갈래**: 소속 있는 기존 회원은 쿠키 발급 + `/assistant`, **소속 없는 기존 회원**(강퇴당한 계정)과 신규는 티켓 발급 + `/signup?ticket=` |
+| `POST /auth/signup` | 티켓 + 한의원명·면허번호로 온보딩 완료 + 즉시 로그인, Set-Cookie. 티켓이 기존 계정을 가리키면 **재온보딩**이다 (docs/specs/38) |
 | `POST /auth/logout` | `token-resolver`로 토큰 추출 → 서버측 세션 revoke → 만료 쿠키 발급 |
 | `POST /auth/refresh` | refresh 쿠키 검증 → access 재발급 + refresh rotation |
 | `GET /auth/me` | 세션 복구 |
 | `DELETE /auth/me` | 회원탈퇴 — 개인정보 즉시 익명화 + **전 family** 세션 폐기 + 쿠키 만료 (docs/specs/36) |
 
 **탈퇴 규약 (docs/specs/36)**: 행은 남기고 개인정보만 지우는 **tombstone**이다 — `clinicians` 참조 FK가 8개이고 그중 5개가 notNull이라 물리 삭제가 성립하지 않고, `answer_feedbacks`·`guidance_reviews`는 「누가 평가·검토했는가」가 기록의 본질이며, 대화는 §5.7대로 클리닉 공유 자산이라 지우면 남은 동료의 기록이 사라진다. `email`·`oauthProviderId`는 id를 섞은 결정적 값으로 덮는다 — `oauthProviderId`는 `uq_clinicians_oauth`가 걸려 비울 수 없고, `email`은 **파기 의무 자체가 이유**다(unique는 docs/specs/37에서 제거됐다). 그 부수 효과로 같은 소셜 계정의 재로그인이 신규 가입 흐름을 타 **재가입이 열린다**. 순서가 계약이다 — **개설자 판정이 익명화보다 앞선다**(409로 끝날 요청이 개인정보를 먼저 지우면 되돌릴 수 없다). 세션은 `logout`과 달리 **전 family**를 끄고 모두 denylist에 올린다(§4.3). 개설자는 남은 구성원이 있으면 `CLINIC_OWNER_MUST_TRANSFER`(409)로 막히고, **마지막 구성원**이면 그 클리닉이 파기 예약된다(§34 유예 크론).
+
+**재온보딩 규약 (docs/specs/38)**: 강퇴로 `clinicians.clinicId`가 NULL이 된 계정은 **무소속**이다. 무소속은 「**세션을 가질 수 없는 상태**」로 정의된다 — 세션 발급·복구 경로가 `clinics`를 조인하므로 붙일 클리닉이 없으면 계정을 찾지 못하고, 그 덕에 `ClinicianPrincipal.clinicId`·JWT claim·§4.4 스코프는 여전히 non-null 전제 위에 선다. 무소속에서 나가는 문은 **재온보딩 하나**다: 소셜 재로그인이 기존 `clinicianId`를 실은 티켓을 발급하고, signup이 새 행을 만들지 않고 **그 행에 클리닉을 붙인다**(UPDATE). 신규 가입으로 흘리면 같은 소셜 계정으로 두 번째 insert가 일어나 `uq_clinicians_oauth` 위반이므로 이는 편의가 아니라 **정합성 요구**다. `id`·`email`·소셜 식별자·`role`은 보존되고, 붙이기는 `clinic_id IS NULL` 조건부라 이미 소속된 계정이 조용히 이동하지 않는다. 재온보딩에는 **이메일을 다시 요구하지 않는다** — 무소속 회원도 기존 회원이므로 아래 계정 동일성 문단의 「이메일은 신규 가입 시에만 필수」가 그대로 적용되고, 티켓의 이메일은 제공자가 아니라 DB의 기존 값에서 온다.
 
 refresh는 GET이 아닌 **POST**를 사용한다(멱등이 아니고 프리페치 오발동 위험).
 
@@ -457,7 +459,7 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 **공통**: 전 목록 API는 불투명 base64url 커서 + `PageMetaDto`. **totalCount 없음이 확정 사양** — 화면에 "총 N건"을 표시하지 않는다.
 
-### 5.8 클리닉 구성원 (docs/specs/35 초대 · docs/specs/36 목록·이양)
+### 5.8 클리닉 구성원 (docs/specs/35 초대 · docs/specs/36 목록·이양 · docs/specs/38 강퇴)
 
 | 기능 | API |
 |---|---|
@@ -466,6 +468,9 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 | 초대 취소 | DELETE /clinic/invitations/{id} |
 | 구성원 목록 | GET /clinic/members |
 | 개설자 이양 | POST /clinic/owner/transfer |
+| 구성원 강퇴 | DELETE /clinic/members/{clinicianId} |
+
+**강퇴 규약 (docs/specs/38)**: 초대의 반대 방향이며 **소속만 끊는다** — 계정도 그 안의 개인정보도 그 사람의 것이므로 개설자가 파기하지 않는다. §36 탈퇴(본인 의사 → 즉시 익명화)와 갈리는 지점이고, 오강퇴를 되돌릴 수 있는 이유이기도 하다(다시 초대하면 **같은 계정으로** 복귀한다). 대상의 대화·피드백·검토는 클리닉에 그대로 남는다(§5.7 공유 자산). 순서가 계약이다 — **판정이 UPDATE보다 앞선다**(409로 끝날 요청이 소속을 먼저 끊지 않는다). 세션은 §36 탈퇴와 같이 **전 family**를 끊고 모두 denylist에 올린다(§4.3): 소속만 끊고 세션을 남기면 access 토큰이 TTL 동안 살아 그 클리닉을 계속 읽는다. 대상이 발급했던 **미수락·미취소 초대는 함께 취소**된다 — 토큰 원문은 발급자만 갖고 있어(아래) 남겨두면 내보낸 사람의 링크로 제3자가 들어온다. 개설자의 **자기 강퇴는 `CLINIC_OWNER_CANNOT_REMOVE_SELF`(409)** 로 막힌다(owner가 비면 그 클리닉은 영구히 잠긴다). 강퇴 이력은 `clinic_member_removals`에 남으며 조회 API는 없다.
 
 **구성원 목록만 전원에게 열려 있다** — 환자·대화를 전원 공유하면서(§5.7) 동료가 누구인지 모르는 상태가 더 이상하고, 이양 대상을 고르려면 목록이 먼저 필요하다. 탈퇴한 tombstone은 목록에서 빠진다. 커서를 두지 않는 유일한 목록 API다(클리닉당 소수라 전건이 한 화면에 들어온다 — §10.4의 커서 강제는 탐색이 필요한 목록을 향한 규칙이다).
 
@@ -588,7 +593,8 @@ type GuidelineJobStreamEventDto =
 |---|---|
 | ClinicEntity | `ownerClinicianId`(개설자 — 초대·이양 권한)는 `clinicians.clinicId`와 **순환 참조라 nullable**이며 clinician 생성 후 UPDATE로 채운다 (docs/specs/35). `deletedAt`은 마지막 구성원이 떠나면 찍히는 파기 예약 (docs/specs/36) |
 | ClinicInvitationEntity | `tokenHash`는 sha256만 저장하고 원문을 남기지 않는다. 상태는 컬럼이 아니라 `expiresAt`·`acceptedAt`·`revokedAt` 세 시각에서 **파생**한다 (§5.8, docs/specs/35) |
-| ClinicianEntity | 계정 동일성 기준은 이메일이 아니라 **`oauthProvider`+`oauthProviderId`(unique)**다. `licenseNumber`는 AES-GCM 암호화. `deletedAt`이 찍힌 행은 개인정보 네 필드가 익명화된 tombstone이다 (docs/specs/36) |
+| ClinicianEntity | 계정 동일성 기준은 이메일이 아니라 **`oauthProvider`+`oauthProviderId`(unique)**다. `licenseNumber`는 AES-GCM 암호화. `deletedAt`이 찍힌 행은 개인정보 네 필드가 익명화된 tombstone이다 (docs/specs/36). **`clinicId`는 nullable**이며 NULL은 강퇴로 소속이 끊긴 상태다 — 세션을 가질 수 없고 재온보딩으로만 벗어난다 (§4.2, docs/specs/38) |
+| ClinicMemberRemovalEntity | 강퇴 이력. 소속을 끊으면 `clinicians`에 그 클리닉의 흔적이 남지 않으므로 「누가 누구를 언제」를 여기에 남긴다. **unique를 걸지 않는다** — 재합류 후 재강퇴가 정상 경로다 (docs/specs/38) |
 | AuthSessionEntity | `familyId`·`rotatedAt`·`reuseDetectedAt`은 refresh 토큰 **재사용 감지**용이다 — 탐지되면 패밀리 전체를 무효화한다 (§4.3) |
 | PatientEntity | 병력·약물·알레르기·노트는 AES-GCM 암호화하고, **검색이 필요한 필드는 HMAC blind index를 병행**한다 (§4.5). `version`은 낙관적 잠금 |
 | PatientProfileSnapshotEntity | 생성 당시 환자 정보를 **immutable JSON**으로 고정한다 — 원본이 바뀌어도 과거 답변을 재현하기 위한 것이다. 암호화·보존 기간 정책 대상 |

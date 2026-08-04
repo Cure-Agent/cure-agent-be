@@ -284,6 +284,30 @@
         ]
       }
     },
+    "/api/v1/clinic/members/{clinicianId}": {
+      "delete": {
+        "operationId": "ClinicMemberController_remove",
+        "parameters": [
+          {
+            "name": "clinicianId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "구성원 강퇴 — 소속 해제 (개설자 전용)",
+        "tags": [
+          "ClinicMember"
+        ]
+      }
+    },
     "/api/v1/auth/signup": {
       "post": {
         "description": "소셜 콜백이 발급한 티켓과 한의원명·면허번호를 받아 가입을 마친다 (docs/specs/17). 이메일·소셜 신원은 티켓에서 꺼내므로 바디로 받지 않는다.",

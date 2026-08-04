@@ -16,9 +16,15 @@ export const clinicians = pgTable(
   'clinicians',
   {
     id: text('id').primaryKey(), // ULID
-    clinicId: text('clinic_id')
-      .notNull()
-      .references(() => clinics.id),
+    /**
+     * 소속 클리닉. **nullable이다** (docs/specs/38) — 강퇴당한 계정의 「소속 없음」을 표현한다.
+     *
+     * 무소속은 「**세션을 가질 수 없는 상태**」로 정의된다. `findById`·`findByOAuthAccount`가
+     * `clinics`를 조인하므로 clinic이 없으면 세션 발급·복구 경로가 계정을 찾지 못하고, 그래서
+     * `ClinicianPrincipal.clinicId`·JWT claim·§4.4 스코프는 여전히 non-null 전제 위에 선다.
+     * 무소속에서 나가는 문은 재온보딩뿐이다(소셜 재로그인 → 온보딩 티켓 → 클리닉 개설·초대 합류).
+     */
+    clinicId: text('clinic_id').references(() => clinics.id),
     /**
      * 연락 수단이지 식별자가 아니다 — **unique를 걸지 않는다** (docs/specs/37).
      *

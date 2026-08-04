@@ -148,6 +148,13 @@
       "when": 1785802080000,
       "tag": "0020_drop_clinicians_email_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785802140000,
+      "tag": "0021_clinic_member_removal",
+      "breakpoints": true
     }
   ]
 }
