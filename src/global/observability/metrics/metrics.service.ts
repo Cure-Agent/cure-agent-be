@@ -273,6 +273,14 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** 탈퇴 결말 (docs/specs/36) */
+  private readonly clinicianWithdrawals = new Counter({
+    name: 'clinician_withdrawal_total',
+    help: '회원탈퇴 결말 수',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     // 이벤트 루프 지연·힙·GC·핸들 수 — Node 앱 병목 판별의 기본 지표
     collectDefaultMetrics({ register: this.registry });
@@ -283,9 +291,19 @@ export class MetricsService {
     this.clinicInvitations.inc({ outcome });
   }
 
+  /**
+   * 탈퇴 결말 기록 (docs/specs/36).
+   *
+   * `blocked`(개설자가 이양 없이 시도)를 따로 두는 이유는 §35 `rejected`와 같다 — 정상 방어이지
+   * 장애가 아니다. 다만 이 값이 계속 오르면 「이양 경로를 찾지 못하는 사용자가 있다」는 UX 신호다.
+   */
+  recordClinicianWithdrawal(outcome: 'withdrawn' | 'blocked'): void {
+    this.clinicianWithdrawals.inc({ outcome });
+  }
+
   /** 파기 결말 기록 (docs/specs/34) */
   recordDataPurge(
-    target: 'conversation' | 'patient',
+    target: 'conversation' | 'patient' | 'clinic',
     outcome: 'purged' | 'failed' | 'skipped',
     count = 1,
   ): void {

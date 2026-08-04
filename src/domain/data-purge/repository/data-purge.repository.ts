@@ -12,6 +12,10 @@ import {
   messageCitations,
   messages,
 } from '../../conversation/persistence/conversation.schema';
+import { authSessions } from '../../auth/persistence/auth-session.schema';
+import { clinicInvitations } from '../../clinician/persistence/clinic-invitation.schema';
+import { clinics } from '../../clinician/persistence/clinic.schema';
+import { clinicians } from '../../clinician/persistence/clinician.schema';
 import { patientProfileSnapshots, patients } from '../../patient/persistence/patient.schema';
 
 /**
@@ -47,9 +51,22 @@ export class DataPurgeRepository {
     return rows.map((row) => row.id);
   }
 
-  /** 컷오프 이전에 삭제된 대화·환자의 총 수 — 배치 상한으로 남긴 수 산출용 (기준 21) */
-  async countPurgeable(cutoff: Date): Promise<{ conversations: number; patients: number }> {
-    const [conversationRows, patientRows] = await Promise.all([
+  /** 유예가 지난 클리닉 id (docs/specs/36) — 마지막 구성원이 떠나며 예약된 것들 */
+  async findPurgeableClinicIds(cutoff: Date, limit: number): Promise<string[]> {
+    const rows = await this.txManager.conn
+      .select({ id: clinics.id })
+      .from(clinics)
+      .where(and(isNotNull(clinics.deletedAt), lt(clinics.deletedAt, cutoff)))
+      .orderBy(clinics.deletedAt)
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
+  /** 컷오프 이전에 삭제된 대화·환자·클리닉의 총 수 — 배치 상한으로 남긴 수 산출용 (기준 21) */
+  async countPurgeable(
+    cutoff: Date,
+  ): Promise<{ conversations: number; patients: number; clinics: number }> {
+    const [conversationRows, patientRows, clinicRows] = await Promise.all([
       this.txManager.conn
         .select({ total: count() })
         .from(conversations)
@@ -58,11 +75,70 @@ export class DataPurgeRepository {
         .select({ total: count() })
         .from(patients)
         .where(and(isNotNull(patients.deletedAt), lt(patients.deletedAt, cutoff))),
+      this.txManager.conn
+        .select({ total: count() })
+        .from(clinics)
+        .where(and(isNotNull(clinics.deletedAt), lt(clinics.deletedAt, cutoff))),
     ]);
     return {
       conversations: conversationRows[0]?.total ?? 0,
       patients: patientRows[0]?.total ?? 0,
+      clinics: clinicRows[0]?.total ?? 0,
     };
+  }
+
+  /**
+   * 클리닉 전체 물리 삭제 (docs/specs/36) — 마지막 구성원이 떠난 클리닉이다.
+   *
+   * **`patients`·`conversations`·`clinical_guidances`에는 clinic FK가 없다**(실측). DB가
+   * 막아주지 않으므로 이 세 계열을 clinic_id 기준으로 **직접 산출해 먼저 지운다** — 빠뜨리면
+   * 조용히 고아가 된다. §34의 고아 스냅샷과 같은 자리이나 이번엔 제약이 없다는 사실 자체가 위험이다.
+   *
+   * ⑤단계(owner NULL)가 없으면 ⑥이 FK로 실패한다:
+   * `clinics.owner_clinician_id → clinicians.id`와 `clinicians.clinic_id → clinics.id`가 순환이다.
+   */
+  async purgeClinics(clinicIds: string[]): Promise<void> {
+    if (clinicIds.length === 0) return;
+    const conn = this.txManager.conn;
+
+    // ①② 대화·환자 계열 — clinic_id 기준으로 전건을 산출한다(deletedAt 유무와 무관하다)
+    const conversationRows = await conn
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(inArray(conversations.clinicId, clinicIds));
+    await this.purgeConversations(conversationRows.map((row) => row.id));
+
+    const patientRows = await conn
+      .select({ id: patients.id })
+      .from(patients)
+      .where(inArray(patients.clinicId, clinicIds));
+    await this.purgePatients(patientRows.map((row) => row.id));
+
+    // ③ 초대 (clinic FK 있음)
+    await conn.delete(clinicInvitations).where(inArray(clinicInvitations.clinicId, clinicIds));
+
+    const clinicianRows = await conn
+      .select({ id: clinicians.id })
+      .from(clinicians)
+      .where(inArray(clinicians.clinicId, clinicIds));
+    const clinicianIds = clinicianRows.map((row) => row.id);
+
+    // ④ 세션
+    if (clinicianIds.length > 0) {
+      await conn.delete(authSessions).where(inArray(authSessions.clinicianId, clinicianIds));
+    }
+
+    // ⑤ 순환 FK 절단 — 이 UPDATE가 없으면 ⑥이 실패한다
+    await conn
+      .update(clinics)
+      .set({ ownerClinicianId: null })
+      .where(inArray(clinics.id, clinicIds));
+
+    // ⑥⑦ 구성원 → 클리닉
+    if (clinicianIds.length > 0) {
+      await conn.delete(clinicians).where(inArray(clinicians.id, clinicianIds));
+    }
+    await conn.delete(clinics).where(inArray(clinics.id, clinicIds));
   }
 
   /**

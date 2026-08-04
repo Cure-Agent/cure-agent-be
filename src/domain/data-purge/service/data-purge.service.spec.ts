@@ -44,6 +44,9 @@ const createHarness = ({
     findPurgeablePatientIds: jest.fn(
       async (_cutoff: Date, _limit: number): Promise<string[]> => [],
     ),
+    findPurgeableClinicIds: jest.fn(
+      async (_cutoff: Date, _limit: number): Promise<string[]> => [],
+    ),
     countPurgeable: jest.fn(
       async (_cutoff: Date): Promise<{ conversations: number; patients: number }> => ({
         conversations: 0,
@@ -52,6 +55,7 @@ const createHarness = ({
     ),
     purgeConversations: jest.fn(async (_ids: string[]): Promise<void> => undefined),
     purgePatients: jest.fn(async (_ids: string[]): Promise<void> => undefined),
+    purgeClinics: jest.fn(async (_ids: string[]): Promise<void> => undefined),
   };
   const lock = {
     acquire: jest.fn(
@@ -157,5 +161,47 @@ describe('DataPurgeService — docs/specs/34', () => {
 
     const logged = JSON.stringify([...logSpy.mock.calls, ...warnSpy.mock.calls]);
     expect(logged).toContain('1');
+  });
+
+  it('docs/specs/36 기준 35: 주입 시각 기준 유예 미경과 클리닉은 파기하지 않는다', async () => {
+    jest.useFakeTimers();
+    const now = new Date('2026-08-04T03:04:05.678Z');
+    jest.setSystemTime(now);
+    const { subject, repository } = createHarness({ retentionDays: 30, batchSize: 10 });
+    const clinics = [
+      {
+        id: 'clinic-expired-control',
+        deletedAt: new Date(now.getTime() - 31 * 24 * 60 * 60 * 1_000),
+      },
+      {
+        id: 'clinic-within-retention',
+        deletedAt: new Date(now.getTime() - 29 * 24 * 60 * 60 * 1_000),
+      },
+    ];
+
+    repository.countPurgeable.mockResolvedValue({
+      conversations: 0,
+      patients: 0,
+      clinics: 1,
+    } as never);
+    repository.findPurgeableClinicIds.mockImplementation(
+      async (cutoff: Date, limit: number): Promise<string[]> =>
+        clinics
+          .filter((clinic) => clinic.deletedAt.getTime() <= cutoff.getTime())
+          .slice(0, limit)
+          .map((clinic) => clinic.id),
+    );
+
+    await subject.purge();
+
+    expect(repository.findPurgeableClinicIds).toHaveBeenCalledTimes(1);
+    const cutoff = repository.findPurgeableClinicIds.mock.calls[0][0];
+    expect(cutoff).toBeInstanceOf(Date);
+    expect(cutoff.getTime()).toBe(now.getTime() - 30 * 24 * 60 * 60 * 1_000);
+    expect(repository.purgeClinics).toHaveBeenCalledTimes(1);
+    expect(repository.purgeClinics).toHaveBeenCalledWith(['clinic-expired-control']);
+    expect(repository.purgeClinics.mock.calls[0][0]).not.toContain(
+      'clinic-within-retention',
+    );
   });
 });

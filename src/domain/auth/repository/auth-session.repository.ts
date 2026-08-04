@@ -43,4 +43,27 @@ export class AuthSessionRepository {
         .where(eq(authSessions.id, reuseSessionId));
     }
   }
+
+  /**
+   * 이 의료인의 **모든** family id (docs/specs/36).
+   *
+   * 탈퇴는 `logout`과 달리 현재 family 하나로 끝낼 수 없다 — 다른 기기·브라우저의 로그인은
+   * 각자 다른 family를 갖기 때문이다(실측 최대 74세션). denylist가 family 단위이므로
+   * 폐기한 전 family를 올려야 TTL이 남은 access 토큰이 즉시 막힌다(§4.3).
+   */
+  async findFamilyIdsByClinician(clinicianId: string): Promise<string[]> {
+    const rows = await this.txManager.conn
+      .select({ familyId: authSessions.familyId })
+      .from(authSessions)
+      .where(eq(authSessions.clinicianId, clinicianId));
+    return [...new Set(rows.map((row) => row.familyId))];
+  }
+
+  /** 이 의료인의 살아 있는 세션 전부 폐기 (docs/specs/36) */
+  async revokeAllByClinician(clinicianId: string, at: Date): Promise<void> {
+    await this.txManager.conn
+      .update(authSessions)
+      .set({ revokedAt: at })
+      .where(and(eq(authSessions.clinicianId, clinicianId), isNull(authSessions.revokedAt)));
+  }
 }
