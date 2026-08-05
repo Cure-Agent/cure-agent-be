@@ -54,3 +54,4 @@ effort: xhigh
 ## Phase 4 — 마무리
 
 - 사용자 확인 후 `/ship docs spec <번호> <제목>`으로 위임한다. 구현은 별도 `/implement <번호>`.
+- **배포 범위는 `dev-only`다** — 스펙은 배포 산출물을 바꾸지 않으므로 dev 머지 + CI까지만 돌고 main 머지·프로덕션 CD는 돌지 않는다. 타입이 `[DOCS]`라 `/ship`이 기본값으로 잡지만(`automation/ship.md` Phase 1-3), 승인 문구의 「배포 범위」 줄로 한 번 더 확인한다. 스펙은 dev에 남아 **다음 `full` 배포에 함께 실린다** (`automation/pipeline.md` 「배포 범위」).

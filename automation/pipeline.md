@@ -12,6 +12,19 @@
 **실행 주체**: 전 과정(Step 1~4)을 하나의 실행 흐름이 직접 수행한다.
 - **Claude Code**: 메인 세션이 직접 수행하고 서브에이전트에 위임하지 않는다 — 파이프라인은 "액션 → CI/체크 폴링 → 다음 액션"의 반복인데, 서브에이전트 안에서 백그라운드 폴링을 돌리면 완료 후 재개가 안 돼 대기 지점에서 멈춘다. 메인 세션의 `run_in_background` Bash는 완료 시 세션을 확실히 재호출한다.
 
+## 배포 범위 — full(기본) / dev-only
+
+호출자가 배포 범위를 전달한다. **전달하지 않으면 `full`이다.**
+
+| 범위 | 수행 구간 | 종료 지점 |
+|------|-----------|-----------|
+| `full` (기본) | Step 1 → Step 4 | 프로덕션 CD 완료 |
+| `dev-only` | Step 1 → **Step 2-2** | dev 머지 + dev push CI 성공 (「dev-only 종료 절차」) |
+
+`dev-only`는 **배포 산출물이 바뀌지 않는 변경**(스펙·문서 등)에 쓴다. main 머지·CD를 돌려도 같은 이미지가 다시 배포될 뿐이므로, 프로덕션을 건드리지 않고 dev에 통합만 한다. 그 변경은 dev에 남아 **다음 `full` 배포에 함께 실린다** — dev가 통합 브랜치인 이상 이게 정상 경로다.
+
+**`openapi/**` 변경이 포함되면 `dev-only`를 거부하고 중단한다.** Step 1 진입 시 `git diff origin/dev --name-only`(또는 Step 1-1 커밋 후 `git diff origin/dev..HEAD --name-only`)에 `openapi/`가 있으면 그 사실과 함께 보고하고 `full`로 다시 실행하도록 요구한다 — `contract-notify`는 **main** push의 `openapi/**`에서만 도는데(`.github/workflows/contract-notify.yml`), dev에서 멈추면 FE 타입 동기화 PR이 만들어지지 않아 **계약이 조용히 어긋난다**. 조용한 불일치보다 명시적 거부가 낫다.
+
 ## 폴링 실행 규칙
 
 CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate.sh`, `run-wait.sh`)로 실행한다 — 루프를 즉석에서 작성하지 않는다. 스크립트의 *실행 모드*(포그라운드/백그라운드)는 진입 어댑터가 지정한 **하네스별 폴링 모드**를 따른다:
@@ -59,7 +72,7 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
 
 1. dev push → CI(`CI - GHCR Build & Push`, `ci-ghcr.yml`) 자동 트리거.
 2. CI 폴링: **`automation/bin/run-wait.sh ci-ghcr.yml dev "<MERGE_SHA>" 900`** (60초 간격, 최대 15분) → `RUN_RESULT` 마커.
-   - `result=success` → 3으로 진행.
+   - `result=success` → 범위가 **`dev-only`면 여기서 종료**한다(아래 「dev-only 종료 절차」). 배포 이슈·배포 PR을 만들지 않으므로 3~5도 수행하지 않는다. `full`이면 3으로 진행.
    - `result=failure` 등 실패 conclusion → 마커의 `run_id=`로 `gh run view <run-id> --log-failed`를 요약하고 중단.
    - `result=NOT_FOUND` → run이 아예 생성되지 않았다 — 워크플로우 미트리거(트리거 조건·파일명 변경 등) 신호이므로 `TIMEOUT`(진행 중일 수 있음)과 구분해 보고하고 중단. `TIMEOUT`·`API_ERROR`·`ERROR`는 「폴링 실행 규칙」대로 처리.
 3. CI 성공 → 배포 이슈: 이미 있으면 재사용, 없으면 생성한다 — `.github/ISSUE_TEMPLATE/기타-수정.yml`은 GitHub 이슈 폼(form)이므로 그 `body:` 각 항목의 `label`을 마크다운 섹션으로 매핑해 `--body`를 구성하고 `gh issue create --title "[CHORE] 배포" --label "🔩 CHORE"`로 생성. 출력 URL 끝 숫자가 `<배포 이슈 번호>`.
@@ -68,6 +81,21 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
    - `result=PASS` → Step 3 진행.
    - `result=FAIL* mergeable=CONFLICTING` → **단방향 플로우 전제 위반 신호**(Step 3-1과 동일) — 즉시 중단하고 main 히스토리 확인을 요청한다.
    - 그 외 `FAIL*`·`TIMEOUT`·`API_ERROR`·`ERROR` → 실패한 체크 또는 stderr와 배포 PR·이슈 번호를 보고하고 중단.
+
+### dev-only 종료 절차
+
+범위가 `dev-only`이면 Step 2-2의 CI 성공을 확인한 뒤 아래를 수행하고 종료한다. Step 2-3~2-5(배포 이슈·배포 PR)와 Step 3·4는 수행하지 않는다.
+
+1. 정리 — 각 명령이 실패해도 **중단하지 않고 계속 진행**(실패 내역만 기록):
+   1. `git branch -D "<브랜치명>"`
+   2. `git push origin --delete "<브랜치명>"` (이미 삭제됐으면 무시)
+
+   > **작업 이슈는 따로 닫지 않는다** — dev PR 본문의 `close #<이슈번호>`로 dev 머지 시 자동 close된다(이 레포의 default branch가 `dev`이기 때문). Step 4-4의 `gh issue close`가 필요한 것은 **배포 이슈**(main 머지 경로라 자동 완료가 안 되는 쪽)뿐이고, `dev-only`는 배포 이슈를 만들지 않는다.
+
+2. 최종 보고에 아래를 포함한다:
+   - dev 머지 커밋(`MERGE_SHA`)과 CI 결과
+   - 정리 실패 내역(있으면)
+   - **"프로덕션에는 반영되지 않았으며 다음 `full` 배포에 함께 실린다"** — 배포됐다고 오해하지 않도록 명시한다
 
 ## Step 3: main 머지
 
