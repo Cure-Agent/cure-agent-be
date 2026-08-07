@@ -1,5 +1,7 @@
 # SDD — 스펙 주도 개발과 자동화 하네스
 
+<img src="assets/sdd-harness-architecture.png" alt="2단계 하네스 아키텍처 — spec → freeze → implement → ship → pipeline 흐름과 각 단계의 담당 에이전트" width="640">
+
 이 레포는 1인 개발 + AI 에이전트(Claude Code 구현 / Codex 테스트 파생) 체제로 개발한다.
 속도는 AI가 내고, 품질은 사람의 주의력이 아니라 **기계적 장치**(훅·게이트·감사·CI)가 지킨다.
 이 문서는 그 구조의 안내서다 — 규칙 원문은 각 링크가 원천이고, 여기서는 구조와 검증 경로만 담는다.
