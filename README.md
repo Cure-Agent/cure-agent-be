@@ -17,61 +17,19 @@ docker compose up -d          # pgvector + redis (.env.example의 DATABASE_URL�
 cp .env.example .env          # 키 값 채우기 (openssl rand -base64 32/48)
 pnpm db:migrate               # drizzle 마이그레이션
 pnpm start:dev                # http://localhost:3000/api/v1
-```
 
-## LLM 프로바이더 (docs/specs/13)
-
-`.env`에 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 넣으면 해당 실 프로바이더가 우선순위(openai → anthropic)로
-등록되고, 하나도 없으면 결정적 fake 단독으로 동작한다(로컬·CI 기본값 — 키 없이 전 구간 검증 가능).
-실 프로바이더가 등록되면 fake는 폴백에서 빠진다: 전 프로바이더 실패는 fake 답변이 아니라
-503 `LLM_UNAVAILABLE`이어야 하기 때문이다. 재시도·서킷브레이커·rate-limit 차단·우선순위 폴백은 §11 참조.
-
-## 임베딩과 재인제스트 (docs/specs/14)
-
-임베딩도 같은 키(`OPENAI_API_KEY`)로 실 프로바이더가 켜지고(`OPENAI_EMBEDDING_MODEL`, 기본
-`text-embedding-3-small`), 없으면 결정적 fake다. **검색은 현재 모델로 만들어진 청크만 대상으로 한다** —
-청크마다 `evidence_chunks.embedding_model`에 출처를 기록하기 때문이다.
-
-> 모델을 바꾸면 기존 벡터는 좌표계가 달라 무의미하지만 코사인 거리는 그래도 "가장 가까운 5건"을 돌려준다.
-> 그래서 출처가 다른 청크는 검색에서 빼고, **재인제스트 전까지 근거 0건(abstain)**이 되게 했다.
-> 조용한 오답보다 안전한 실패를 택한 것이다. 모델 변경 후에는 `pnpm ingest`로 재적재한다.
-
-## 장애 알림 (docs/specs/15)
-
-`ALERT_WEBHOOK_URLS`(콤마 구분)에 넣은 채널 전부에 동시 발송한다. 호스트로 형식을 판별하므로
-Slack(`{text}`)과 Discord(`{content}`)를 섞어 써도 되고, 그 외 호스트에는 구조화 JSON을 보낸다.
-같은 `title`+`detail`은 **5분 내 1회만** 나가서 장애가 지속돼도 채널이 마비되지 않는다.
-발송은 fire-and-forget이며 한 채널 실패가 다른 채널·요청 처리에 영향을 주지 않는다.
-
-## 배포·헬스체크 (docs/specs/16)
-
-```bash
-docker build -t cure-agent-be .              # 런타임 이미지(멀티스테이지, 비-root)
-docker compose --profile app up --build      # pg·redis + 앱까지 한 번에
-```
-
-- `GET /api/v1/health` — **liveness**. 프로세스 생존만 본다. 의존성 장애로 재시작되면 안 되므로 DB·Redis를 보지 않는다
-- `GET /api/v1/health/ready` — **readiness**. DB `SELECT 1` + Redis `PING`. 하나라도 끊기면 503 `SERVICE_NOT_READY`와
-  함께 어느 의존성이 죽었는지 반환한다. 로드밸런서·오케스트레이터는 이 엔드포인트를 본다
-
-> 둘을 합치면 안 된다: Redis는 서비스 전반에서 fail-open이라 장애 중에도 앱은 동작해야 하는데,
-> liveness가 Redis를 보면 Redis 장애가 **전 인스턴스 재시작 루프**가 된다.
-
-## 검증
-
-```bash
 pnpm lint && pnpm test        # 유닛
 pnpm test:e2e                 # e2e (Docker 필요 — Testcontainers, 직렬 실행)
-pnpm build
 ```
 
-## 계약 파이프라인 (§1)
-
-DTO·컨트롤러 변경 → `pnpm openapi:export`로 `openapi/cure-agent.v1.json` 재생성 후 커밋.
-CI가 "커밋본 = 재생성본"(contract)과 breaking 여부(oasdiff)를 검사하고, main 머지 시
-repository_dispatch로 cure-agent-fe에 타입 동기화 PR이 자동 생성된다.
+LLM·임베딩 API 키(`OPENAI_API_KEY`·`ANTHROPIC_API_KEY`)가 없으면 결정적 fake 프로바이더로
+동작한다 — **키 없이 전 구간 구동·검증 가능**하다(로컬·CI 기본값, docs/specs/13·14).
 
 ## 개발 방식 (SDD)
 
-스텝당 1페이지 스펙(docs/specs) → 수용 기준 e2e를 **구현 전 작성·동결**(Codex 작성/Claude 리뷰·구현,
-`.claude/commands/implement.md`) → 구현은 동결 테스트를 통과시키는 방식. 구현 중 테스트 수정 금지.
+스텝당 1페이지 스펙([docs/specs/](docs/specs/)) → 수용 기준 e2e를 **구현 전 작성·동결**(테스트는
+Codex가 스펙에서 독립 파생, Claude가 리뷰·동결·구현 — 심판과 선수를 같은 에이전트가 만들지 않는다)
+→ 동결 테스트를 통과시키는 구현 → dev PR부터 프로덕션 CD까지 자동 배포. "구현 중 테스트 수정 금지"는
+규율이 아니라 **훅(예방)과 사후 감사(탐지)로 기계적으로 강제**된다.
+
+전체 구조·강제 장치·실제 추적 사례는 **[docs/sdd.md](docs/sdd.md)**를 본다.
