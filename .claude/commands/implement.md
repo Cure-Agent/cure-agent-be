@@ -83,7 +83,9 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 2. **배포는 `automation/ship.md`에 위임한다.** 그 문서를 읽고 실행하면 현재 이슈 브랜치를
    Preflight가 감지해 **Phase 1·3을 스킵하고 Phase 2(검증)로 직행**하며, Phase 4에서
    `automation/pipeline.md`가 dev PR → CI → 배포 PR → CD까지 수행한다.
-   전달할 컨텍스트: 브랜치명, 타입(`[FEAT]`), 이슈번호, Phase 4의 검증 결과 요약.
+   전달할 컨텍스트: 브랜치명, 타입(`[FEAT]`), 이슈번호, 그리고 **Phase 4-1 검증 완료 사실**
+   (전 구간 green 여부) — ship Preflight의 린트·빌드·테스트 스킵 판정 입력이다. rebase가 no-op이면
+   ship이 같은 검증을 반복하지 않고 배포 전 게이트(환경변수·파괴적 마이그레이션)부터 수행한다.
    - PR 본문에는 **스펙 링크(`docs/specs/<번호>`) + 수용 기준 ↔ 테스트 매핑 표**를 넣는다.
      dev PR에서만 `openapi-breaking` job이 동작한다.
 

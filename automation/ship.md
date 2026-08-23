@@ -18,8 +18,11 @@
    - **이슈 브랜치에 있는 경우** (브랜치명이 `<prefix>#<번호>` 형식):
      - 브랜치명에서 타입과 이슈번호를 파싱
      - `git log origin/dev..HEAD`와 `git status --porcelain`으로 변경사항 확인 — 커밋도 변경도 없으면 **중단** ("배포할 변경사항이 없습니다"). 변경 유무 판정에 `git diff`(무인자)를 쓰지 않는다 — staged 변경이 보이지 않는다.
-     - 최신 동기화: `git pull --rebase --autostash origin dev` — **충돌 시 자동 해결하지 않는다**: rebase 충돌은 `git rebase --abort`로 원상복구 후 보고하고 중단, autostash 재적용 충돌은 변경이 stash에 보존된 상태이므로(`git stash list`로 확인) 그대로 두고 보고하고 중단한다. 이 rebase로 Phase 2가 실제 push될 트리를 검증하고, `automation/pipeline.md` Step 1-2의 rebase는 사실상 no-op이 된다.
+     - 최신 동기화: **rebase 직전 HEAD를 `git rev-parse HEAD`로 기록**한 뒤 `git pull --rebase --autostash origin dev` — **충돌 시 자동 해결하지 않는다**: rebase 충돌은 `git rebase --abort`로 원상복구 후 보고하고 중단, autostash 재적용 충돌은 변경이 stash에 보존된 상태이므로(`git stash list`로 확인) 그대로 두고 보고하고 중단한다. 이 rebase로 Phase 2가 실제 push될 트리를 검증하고, `automation/pipeline.md` Step 1-2의 rebase는 사실상 no-op이 된다. 기록해 둔 HEAD는 아래 스킵 판정의 입력이다.
      - Phase 1, Phase 3을 스킵하고 Phase 2로 직행
+     - **Phase 2의 린트·빌드·테스트 조건부 스킵**: 호출자가 **검증 완료 사실을 전달했고**(`/problem` Phase 5-2 또는 `/implement` Phase 4-1의 `pnpm lint && pnpm test && pnpm test:e2e && pnpm build` 전 구간 green) **위 rebase가 no-op**이면(rebase 전후 HEAD 동일) Phase 2의 **1~3번(린트·빌드·테스트)을 스킵**하고 4번부터 수행한다 — 호출자가 검증한 트리와 실제 push될 트리가 동일하므로 같은 검증을 두 번 돌 이유가 없고, 최종 관문은 어차피 CI다. 판정 근거(스킵 여부와 그 이유)는 사용자에게 보고한다.
+       - **rebase로 HEAD가 움직였으면 스킵하지 않는다** — 검증한 트리와 push될 트리가 달라졌으므로, dev의 최신 변경과 맞물려 깨지는지 다시 봐야 한다.
+       - **4~5번(환경변수 체크·파괴적 마이그레이션 판정)은 어떤 경우에도 스킵하지 않는다** — 배포 전 게이트이며 호출자는 이를 수행하지 않는다. 스킵 대상은 「같은 트리에 대한 반복 검증」뿐이다.
    - **dev 브랜치에 있는 경우**:
      - `git log origin/dev..HEAD --oneline` — **push 안 된 로컬 커밋이 있으면 중단**하고 커밋 목록과 함께 보고한다. dev 직접 커밋은 ship가 배포하지 않는다 — 워킹트리만 보는 아래 판정이 이 커밋들을 놓치므로, 사용자가 브랜치로 옮기는 등 직접 처리해야 한다.
      - `git status --porcelain` — 변경사항이 없으면 **중단** ("배포할 변경사항이 없습니다")
@@ -42,16 +45,23 @@
 | `[REFACT]` | `♻️ REFACT` | `refact/` | `리팩토링.yml` |
 | `[DOCS]` | `📜 DOC` | `docs/` | `문서-작업.yml` |
 
-3. 변경 내용을 한 줄로 요약한다.
-4. **사용자 확인 대기**:
+3. **배포 범위를 정한다** (`automation/pipeline.md` 「배포 범위」):
+   - 호출자가 범위를 명시했으면 그것을 따른다.
+   - 명시가 없으면 타입으로 정한다 — **`[DOCS]`는 `dev-only`**(문서 변경은 배포 산출물을 바꾸지 않는다), 나머지는 `full`.
+   - 단, `openapi/` 변경이 포함되면 `dev-only`를 쓰지 않는다 — 파이프라인이 거부하는 조건이므로 여기서 미리 `full`로 올리고 그 이유를 사용자 확인 문구에 적는다.
+4. 변경 내용을 한 줄로 요약한다.
+5. **사용자 확인 대기**:
    ```
    변경사항 요약:
    - 타입: [FEAT]
    - 설명: ...
    - 변경 파일: N개
+   - 배포 범위: full (dev 머지 → CI → main 머지 → 프로덕션 CD)
 
-   이대로 배포를 진행할까요? (타입이나 설명을 변경하려면 알려주세요)
+   이대로 배포를 진행할까요? (타입·설명·배포 범위를 변경하려면 알려주세요)
    ```
+   범위가 `dev-only`이면 그 줄을 `dev-only (dev 머지 → CI까지, 프로덕션 배포 없음)`으로 적는다 —
+   **배포됐다고 오해하지 않도록 승인 시점에 알린다.**
 
 ## Phase 2: 검증
 
@@ -80,6 +90,7 @@ CI/CD·PR 체크 대기 폴링은 `automation/pipeline.md`의 「폴링 실행 �
 전달할 컨텍스트:
 - 브랜치명, 타입, 이슈번호
 - 변경사항 요약 (Phase 1에서 생성한 요약 또는 사용자 인자)
+- **배포 범위** (Phase 1-3에서 정한 `full` 또는 `dev-only`) — 전달하지 않으면 파이프라인이 `full`로 간주한다
 
 ## 규칙
 

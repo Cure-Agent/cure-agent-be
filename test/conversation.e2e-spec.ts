@@ -11,6 +11,7 @@ import { AppModule } from '../src/app.module';
 import { GuidelineIngestService } from '../src/domain/guideline/service/guideline-ingest.service';
 import {
   LLM_PROVIDERS,
+  LlmAnswerChunk,
   LlmProvider,
   LlmProviderError,
 } from '../src/infrastructure/llm/llm-provider.port';
@@ -41,7 +42,7 @@ function parseSse(body: string): SseEvent[] {
 const failingProvider: LlmProvider = {
   name: 'always-fail',
   // eslint-disable-next-line require-yield
-  async *streamAnswer(): AsyncIterable<string> {
+  async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
     throw new LlmProviderError('provider down', { retryable: false });
   },
 };
@@ -49,9 +50,9 @@ const failingProvider: LlmProvider = {
 /** 테스트 전용 프로바이더: 고정 응답 */
 const okProvider: LlmProvider = {
   name: 'test-ok',
-  async *streamAnswer(): AsyncIterable<string> {
-    yield '침 치료는 만성 요통에 ';
-    yield '권고됩니다 [1].';
+  async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
+    yield { kind: 'delta', text: '침 치료는 만성 요통에 ' };
+    yield { kind: 'delta', text: '권고됩니다 [1].' };
   },
 };
 

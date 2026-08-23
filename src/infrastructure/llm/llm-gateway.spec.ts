@@ -1,7 +1,7 @@
 import { MetricsService } from '../../global/observability/metrics/metrics.service';
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import { LlmExhaustedError, LlmGateway } from './llm-gateway';
-import { LlmProvider } from './llm-provider.port';
+import { LlmAnswerChunk, LlmProvider } from './llm-provider.port';
 import { CircuitBreaker } from './resilience/circuit-breaker';
 import { RateLimitBlockStore } from './resilience/rate-limit-block-store';
 
@@ -10,7 +10,7 @@ const CIRCUIT_FAILURE_THRESHOLD = 5;
 function failingProvider(name: string): LlmProvider {
   return {
     name,
-    async *streamAnswer(): AsyncIterable<string> {
+    async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
       throw new Error('provider down');
     },
   };
@@ -63,7 +63,7 @@ describe('LlmGateway 실시간 알림 (docs/specs/12 기준 1·2)', () => {
     const abortingProvider: LlmProvider = {
       name: 'aborting',
       // eslint-disable-next-line require-yield
-      async *streamAnswer(): AsyncIterable<string> {
+      async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
         abortController.abort();
         throw new Error('aborted mid-stream');
       },
@@ -105,8 +105,8 @@ describe('LlmGateway 모델 기록 (docs/specs/13 기준 8)', () => {
     const provider: LlmProvider = {
       name: 'modeled-provider',
       model: 'model-v1',
-      async *streamAnswer(): AsyncIterable<string> {
-        yield '답변';
+      async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
+        yield { kind: 'delta', text: '답변' };
       },
     };
     const gateway = buildGateway([provider]);
@@ -119,8 +119,8 @@ describe('LlmGateway 모델 기록 (docs/specs/13 기준 8)', () => {
   it('model이 없는 프로바이더로 스트림 성공 시 outcome.model은 undefined이고 provider 이름을 기록한다', async () => {
     const provider: LlmProvider = {
       name: 'unmodeled-provider',
-      async *streamAnswer(): AsyncIterable<string> {
-        yield '답변';
+      async *streamAnswer(): AsyncIterable<LlmAnswerChunk> {
+        yield { kind: 'delta', text: '답변' };
       },
     };
     const gateway = buildGateway([provider]);

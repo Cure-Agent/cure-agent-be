@@ -3,6 +3,7 @@ import { MetricsService } from '../../global/observability/metrics/metrics.servi
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import {
   LLM_PROVIDERS,
+  LlmAnswerVerdict,
   LlmProvider,
   LlmProviderError,
   LlmStreamRequest,
@@ -17,6 +18,8 @@ export interface LlmStreamOutcome {
   model?: string;
   text: string;
   latencyMs: number;
+  /** 답변가능성 판정 — 프로바이더가 방출한 경우에만 (docs/specs/40, 미방출은 fail-open) */
+  verdict?: LlmAnswerVerdict;
 }
 
 /** 게이트웨이 소진(전 프로바이더 불가) — 서비스에서 LLM_UNAVAILABLE로 매핑한다 */
@@ -31,6 +34,9 @@ export class LlmExhaustedError extends Error {
  * 우선순위 폴백 라우터 (architecture.md §11-4).
  * 차단(레이트리밋)·서킷 open 프로바이더는 건너뛰고, 첫 토큰 수신 전 실패 시 다음으로 폴백한다.
  * 첫 토큰 이후 실패는 폴백하지 않는다 — 중복 출력을 만들기 때문이며, 호출자가 실패 처리한다.
+ *
+ * 「첫 토큰」의 기준은 **delta**다 (docs/specs/40) — 답변가능성 판정(verdict)은 사용자에게
+ * 나가는 출력이 아니므로, 판정만 받고 죽은 시도는 여전히 폴백 대상이다.
  */
 @Injectable()
 export class LlmGateway {
@@ -75,14 +81,31 @@ export class LlmGateway {
             ),
         };
 
-        const text = await withRetry(async () => {
+        const attempt = await withRetry(async () => {
           let accumulated = '';
-          for await (const delta of provider.streamAnswer(providerRequest)) {
+          let verdict: LlmAnswerVerdict | undefined;
+          for await (const chunk of provider.streamAnswer(providerRequest)) {
+            if (chunk.kind === 'verdict') {
+              verdict = {
+                insufficientEvidence: chunk.insufficientEvidence,
+                missingAspects: chunk.missingAspects,
+              };
+              continue;
+            }
+            /**
+             * 기권 판정 뒤의 델타는 여기서 닫는다 (docs/specs/40).
+             * 포트는 프로바이더가 내지 않기를 권하고 openai는 파싱조차 하지 않지만, 계약을
+             * 어긴 프로바이더가 거부 산문을 사용자 화면에 흘리는 것을 막는 곳은 여기다 —
+             * 판정과 델타를 한 채널에서 함께 보는 지점이 게이트웨이뿐이기 때문이다.
+             */
+            if (verdict?.insufficientEvidence) continue;
+            // firstTokenReceived는 **실제로 나간 델타**에서만 선다 — verdict만 받고 죽은
+            // 시도는 아직 아무것도 내보내지 않았으므로 폴백해도 중복 출력이 없다
             firstTokenReceived = true;
-            accumulated += delta;
-            await onDelta(delta);
+            accumulated += chunk.text;
+            await onDelta(chunk.text);
           }
-          return accumulated;
+          return { text: accumulated, verdict };
         });
 
         this.circuitBreaker.recordSuccess(provider.name);
@@ -92,8 +115,9 @@ export class LlmGateway {
         return {
           provider: provider.name,
           model: provider.model,
-          text,
+          text: attempt.text,
           latencyMs: Date.now() - startedAt,
+          verdict: attempt.verdict,
         };
       } catch (error) {
         // 클라이언트 abort는 폴백 대상이 아니다 — 즉시 전파.

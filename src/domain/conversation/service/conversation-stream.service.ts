@@ -13,7 +13,11 @@ import {
   SseOutcome,
 } from '../../../global/observability/metrics/metrics.service';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
-import { LlmExhaustedError, LlmGateway } from '../../../infrastructure/llm/llm-gateway';
+import {
+  LlmExhaustedError,
+  LlmGateway,
+  LlmStreamOutcome,
+} from '../../../infrastructure/llm/llm-gateway';
 import {
   LlmEvidenceContext,
   LlmProviderError,
@@ -93,6 +97,9 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
 const ABSTAIN_REASON_MESSAGE: Record<AbstainReason, string> = {
   no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
   beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
+  // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
+  // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
+  insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
 };
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
@@ -338,7 +345,8 @@ export class ConversationStreamService {
         question = composeGuidanceQuestion(captured.payload, dto.content);
       }
 
-      await this.generateAnswer({
+      // 게이트 ④ 생성 (docs/specs/40) — 발화하면 답변이 아니라 기권으로 끝난다
+      ragOutcome = await this.generateAnswer({
         sse,
         principal,
         retrieved: evidenceRows,
@@ -373,7 +381,8 @@ export class ConversationStreamService {
     clientSignal: AbortSignal;
     traceId: string;
     guidanceContext: GuidanceContext | null;
-  }): Promise<void> {
+    /** 답변으로 끝났는지 생성 게이트로 기권했는지 — 호출자가 rag_answers_total에 반영한다 */
+  }): Promise<'answered' | 'abstained'> {
     const { sse, retrieved, question, assistantMessageId, clientSignal, traceId } = args;
 
     const evidenceContext: LlmEvidenceContext[] = retrieved.map((row, index) => ({
@@ -400,6 +409,28 @@ export class ConversationStreamService {
       // CANCELLED가 우선이므로(§8-4) 상위 handleStreamFailure의 판정을 가로채지 않는다.
       if (timeoutSignal.aborted && !clientSignal.aborted) throw new StreamTimeoutError();
       throw error;
+    }
+
+    /**
+     * 게이트 ④ 생성 (docs/specs/40).
+     *
+     * ①~③이 「이 근거가 질문과 관련 있는가」를 쟀다면 여기는 「이 근거로 답할 수 있는가」다.
+     * 둘은 갈린다 — 군발두통 질문에 편두통 청크가 리랭커 관련도 10.0을 받은 실례가 있다.
+     * 답변가능성은 근거 전문을 보고 답을 써 보는 쪽만 판단할 수 있으므로 생성기가 낸다.
+     * 새 판단을 만드는 것이 아니라, 이미 산문으로 내려지고 버려지던 판단의 승격이다.
+     */
+    if (outcome.verdict?.insufficientEvidence) {
+      await this.abstainOnGeneration({
+        sse,
+        principal: args.principal,
+        assistantMessageId,
+        question,
+        missingAspects: outcome.verdict.missingAspects,
+        outcome,
+        retrievalPolicyVersion: args.retrievalPolicyVersion,
+        traceId,
+      });
+      return 'abstained';
     }
 
     // 답변에 실제 등장한 마커만 인용으로 영속화
@@ -486,6 +517,65 @@ export class ConversationStreamService {
     } else {
       sse.send({ eventType: 'answer.completed', message });
     }
+    return 'answered';
+  }
+
+  /**
+   * 생성 게이트 발화의 종결 처리 (docs/specs/40).
+   *
+   * 답변 텍스트도 인용도 남기지 않는다 — 「무관 근거를 인용한 거부」가 프로덕션에서 실제로
+   * 영속화된 적이 있다(만성 아토피 사례, 무관 인용 5건). 반면 **GenerationRun은 기록한다**:
+   * 검색 게이트와 달리 여기는 LLM을 부르고 토큰을 썼고, 과잉 기권을 사후에 문항 단위로
+   * 조사하려면 「어느 프롬프트·어느 검색 정책에서 발화했나」가 남아 있어야 한다.
+   * 덤으로 「ABSTAINED + run 있음 = 생성 게이트 / run 없음 = 검색 게이트」라는 자기서술적
+   * 불변식이 생긴다.
+   */
+  private async abstainOnGeneration(args: {
+    sse: SseStream;
+    principal: ClinicianPrincipal;
+    assistantMessageId: string;
+    question: string;
+    missingAspects: string[];
+    outcome: LlmStreamOutcome;
+    retrievalPolicyVersion: string;
+    traceId: string;
+  }): Promise<void> {
+    const { assistantMessageId, outcome } = args;
+
+    // 사용자에게는 같은 사실이라 문구가 같고, 원인 구분은 내부 축이다 —
+    // 빈 축의 재호출·무효화를 지금 고르지 않는 이유는 원인이 아직 구분되지 않았기 때문이다
+    this.metrics.recordGenerationGate(
+      args.missingAspects.length > 0 ? 'model_verdict' : 'empty_aspects',
+    );
+
+    await this.txManager.run(async () => {
+      await this.repository.updateMessage(assistantMessageId, {
+        content: '',
+        status: 'ABSTAINED',
+      });
+      await this.repository.insertGenerationRun({
+        id: ulid(),
+        messageId: assistantMessageId,
+        provider: outcome.provider,
+        model: outcome.model ?? MODEL_LABEL,
+        promptVersion: PROMPT_VERSION,
+        retrievalPolicyVersion: args.retrievalPolicyVersion,
+        latencyMs: outcome.latencyMs,
+        // 출력 토큰은 판정뿐이다 — 본문은 생성되지 않았거나 게이트웨이가 닫았다
+        tokenUsage: { inputTokens: estimateTokens(args.question), outputTokens: 0 },
+        traceId: args.traceId,
+      });
+    });
+
+    const message = await this.loadMessageDto(assistantMessageId, args.principal);
+    args.sse.send({
+      eventType: 'answer.abstained',
+      message,
+      reason: ABSTAIN_REASON_MESSAGE.insufficient_evidence,
+      // missingAspects는 내부 관측 축이다 — 계약에 실으면 렌더 여부를 이 스펙 밖에서 정하게
+      // 되고, missingInformation은 §7이 환자 프로필 필드명으로 못박은 다른 어휘다
+      missingInformation: [],
+    });
   }
 
   /**
