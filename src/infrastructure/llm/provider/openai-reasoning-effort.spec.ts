@@ -3,15 +3,17 @@
  * 추론 모델은 사고 시간이 곧 TTFT라 low로 낮추지만, 비추론 모델은 이 인자를
  * 400(Unrecognized request argument)으로 거부하므로 설정이 있을 때만 실어야 한다.
  */
-import type { LlmStreamRequest } from '../llm-provider.port';
+import type { LlmAnswerChunk, LlmStreamRequest } from '../llm-provider.port';
 import { resolveLlmConfig } from './llm.config';
 import { OpenAiProvider } from './openai.provider';
 
+// answerabilityGate=false — 이 스위트가 재는 것은 reasoning_effort 전송 계약뿐이다
 const baseConfig = {
   apiKey: 'test-key',
   model: 'test-model',
   baseUrl: 'https://api.test.local/v1',
   maxOutputTokens: 256,
+  answerabilityGate: false,
 };
 
 const request: LlmStreamRequest = {
@@ -32,8 +34,8 @@ function mockFetch(): jest.SpyInstance {
     .mockResolvedValue(new Response('data: [DONE]\n\n', { status: 200 }));
 }
 
-async function drain(iterable: AsyncIterable<string>): Promise<void> {
-  for await (const _delta of iterable) void _delta;
+async function drain(iterable: AsyncIterable<LlmAnswerChunk>): Promise<void> {
+  for await (const _chunk of iterable) void _chunk;
 }
 
 function sentBody(fetchMock: jest.SpyInstance): Record<string, unknown> {

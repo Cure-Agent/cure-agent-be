@@ -6,6 +6,7 @@ import { fetchStream, parseJson, toProviderError } from '../../http/provider-htt
 import { parseSseFrames } from '../../http/sse-stream.parser';
 import {
   LLM_FIRST_BYTE_TIMEOUT_MS,
+  LlmAnswerChunk,
   LlmProvider,
   LlmProviderError,
   LlmStreamRequest,
@@ -23,7 +24,7 @@ export class OpenAiProvider implements LlmProvider {
     this.model = config.model;
   }
 
-  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<string> {
+  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<LlmAnswerChunk> {
     request.signal?.throwIfAborted();
 
     const prompt = buildPrompt(request);
@@ -89,7 +90,7 @@ export class OpenAiProvider implements LlmProvider {
         }
 
         const delta = textDeltaOf(payload);
-        if (delta) yield delta;
+        if (delta) yield { kind: 'delta', text: delta };
       }
     } finally {
       // [DONE]으로 끝나든 스트림이 그냥 닫히든 한 번은 보고한다

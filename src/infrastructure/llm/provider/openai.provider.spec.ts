@@ -1,15 +1,18 @@
 // docs/specs/13 수용 기준 1·2·3·4 동결 테스트 — 구현 중 수정 금지
 import {
   LlmProviderError,
+  type LlmAnswerChunk,
   type LlmStreamRequest,
 } from '../llm-provider.port';
 import { OpenAiProvider } from './openai.provider';
 
+// answerabilityGate=false — 이 스위트는 구조화 이전(docs/specs/13)의 평문 스트리밍 계약을 잰다
 const config = {
   apiKey: 'test-key',
   model: 'test-model',
   baseUrl: 'https://api.test.local/v1',
   maxOutputTokens: 256,
+  answerabilityGate: false,
 };
 
 const request: LlmStreamRequest = {
@@ -41,9 +44,9 @@ function streamResponse(chunks: string[], init?: ResponseInit): Response {
   return new Response(body, { status: 200, ...init });
 }
 
-async function collect(iterable: AsyncIterable<string>): Promise<string[]> {
+async function collect(iterable: AsyncIterable<LlmAnswerChunk>): Promise<string[]> {
   const out: string[] = [];
-  for await (const delta of iterable) out.push(delta);
+  for await (const chunk of iterable) if (chunk.kind === 'delta') out.push(chunk.text);
   return out;
 }
 
@@ -161,11 +164,11 @@ describe('OpenAiProvider', () => {
     let caught: unknown;
 
     try {
-      for await (const delta of provider.streamAnswer({
+      for await (const chunk of provider.streamAnswer({
         ...request,
         signal: abortController.signal,
       })) {
-        deltas.push(delta);
+        if (chunk.kind === 'delta') deltas.push(chunk.text);
       }
     } catch (error) {
       caught = error;

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LlmProvider, LlmStreamRequest } from '../llm-provider.port';
+import { LlmAnswerChunk, LlmProvider, LlmStreamRequest } from '../llm-provider.port';
 
 /**
  * 결정적 fake LLM (docs/specs/06 — 실 프로바이더 연동은 docs/specs/13).
@@ -10,7 +10,7 @@ import { LlmProvider, LlmStreamRequest } from '../llm-provider.port';
 export class FakeLlmProvider implements LlmProvider {
   readonly name = 'fake-llm';
 
-  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<string> {
+  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<LlmAnswerChunk> {
     const parts: string[] = [`질문하신 "${request.question}"에 대한 지침 근거 요약입니다. `];
     for (const evidence of request.evidence) {
       parts.push(
@@ -21,7 +21,7 @@ export class FakeLlmProvider implements LlmProvider {
 
     for (const part of parts) {
       request.signal?.throwIfAborted();
-      yield part;
+      yield { kind: 'delta', text: part };
       // 스트리밍 시뮬레이션 (abort 테스트가 개입할 시간 확보)
       await new Promise((resolve) => setTimeout(resolve, 30));
     }

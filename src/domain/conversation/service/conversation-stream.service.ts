@@ -93,6 +93,9 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
 const ABSTAIN_REASON_MESSAGE: Record<AbstainReason, string> = {
   no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
   beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
+  // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
+  // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
+  insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
 };
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */

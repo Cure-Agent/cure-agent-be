@@ -31,6 +31,8 @@ export interface OpenAiProviderConfig {
   maxOutputTokens: number;
   /** 비우면 reasoning_effort를 보내지 않는다 (비추론 모델 호환) */
   reasoningEffort?: string | null;
+  /** 답변가능성 게이트 (docs/specs/40) — false면 구조화 출력을 요청하지 않는다 */
+  answerabilityGate: boolean;
 }
 
 export interface AnthropicProviderConfig {
@@ -64,6 +66,8 @@ export function resolveLlmConfig(env: NodeJS.ProcessEnv): LlmRuntimeConfig {
           baseUrl: baseUrl(env.OPENAI_BASE_URL, DEFAULTS.openaiBaseUrl),
           maxOutputTokens,
           reasoningEffort: resolveReasoningEffort(env.OPENAI_REASONING_EFFORT),
+          // 스텁: LLM_ANSWERABILITY_GATE_ENABLED 해석은 docs/specs/40 구현에서 채운다
+          answerabilityGate: false,
         }
       : null,
     anthropic: anthropicKey

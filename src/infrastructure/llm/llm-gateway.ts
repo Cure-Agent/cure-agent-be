@@ -3,6 +3,7 @@ import { MetricsService } from '../../global/observability/metrics/metrics.servi
 import { RealTimeAlertSender } from '../../global/observability/real-time-alert.sender';
 import {
   LLM_PROVIDERS,
+  LlmAnswerVerdict,
   LlmProvider,
   LlmProviderError,
   LlmStreamRequest,
@@ -17,6 +18,8 @@ export interface LlmStreamOutcome {
   model?: string;
   text: string;
   latencyMs: number;
+  /** 답변가능성 판정 — 프로바이더가 방출한 경우에만 (docs/specs/40, 미방출은 fail-open) */
+  verdict?: LlmAnswerVerdict;
 }
 
 /** 게이트웨이 소진(전 프로바이더 불가) — 서비스에서 LLM_UNAVAILABLE로 매핑한다 */
@@ -77,10 +80,12 @@ export class LlmGateway {
 
         const text = await withRetry(async () => {
           let accumulated = '';
-          for await (const delta of provider.streamAnswer(providerRequest)) {
+          for await (const chunk of provider.streamAnswer(providerRequest)) {
+            // 스텁: verdict 소비·노출은 docs/specs/40 구현에서 배선한다
+            if (chunk.kind !== 'delta') continue;
             firstTokenReceived = true;
-            accumulated += delta;
-            await onDelta(delta);
+            accumulated += chunk.text;
+            await onDelta(chunk.text);
           }
           return accumulated;
         });

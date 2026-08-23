@@ -3,7 +3,11 @@
  * 추론 모델(gpt-5-mini)의 실측 TTFT가 약 9.5s여서, 기본 10s 상한으로는 실제 근거 프롬프트의
  * 매 요청이 타임아웃 → LLM_UNAVAILABLE로 떨어졌다. LLM 경로는 더 긴 예산을 써야 한다.
  */
-import { LLM_FIRST_BYTE_TIMEOUT_MS, type LlmStreamRequest } from '../llm-provider.port';
+import {
+  LLM_FIRST_BYTE_TIMEOUT_MS,
+  type LlmAnswerChunk,
+  type LlmStreamRequest,
+} from '../llm-provider.port';
 import { AnthropicProvider } from './anthropic.provider';
 import { OpenAiProvider } from './openai.provider';
 
@@ -31,9 +35,9 @@ function respondAfter(ms: number, frames: string): void {
   );
 }
 
-async function collect(iterable: AsyncIterable<string>): Promise<string[]> {
+async function collect(iterable: AsyncIterable<LlmAnswerChunk>): Promise<string[]> {
   const out: string[] = [];
-  for await (const delta of iterable) out.push(delta);
+  for await (const chunk of iterable) if (chunk.kind === 'delta') out.push(chunk.text);
   return out;
 }
 
@@ -54,6 +58,8 @@ describe('LLM 첫 응답 타임아웃 예산', () => {
       model: 'test-model',
       baseUrl: 'https://api.test.local/v1',
       maxOutputTokens: 256,
+      // 이 스위트가 재는 것은 첫 응답 예산뿐이다 — 구조화 파싱은 여기 관심사가 아니다
+      answerabilityGate: false,
     });
 
     const deltas = collect(provider.streamAnswer(request));
