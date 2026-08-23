@@ -35,8 +35,20 @@ export type RagAnswerOutcome = 'answered' | 'abstained' | 'failed';
 /**
  * 기권의 사유 (docs/specs/28) — abstain 급등이 「코퍼스 사고(no_candidates)인가,
  * 범위 밖 질문 유입(beyond_cutoff)인가」를 이 축이 가른다.
+ *
+ * `insufficient_evidence`는 **검색이 아니라 생성**이 낸 기권이다 (docs/specs/40) — 근거를
+ * 찾은 뒤 그것으로 답할 수 없다는 다른 사실이고, 사용자의 재질의 방향도 다르다.
  */
-export type AbstainReason = 'no_candidates' | 'beyond_cutoff';
+export type AbstainReason = 'no_candidates' | 'beyond_cutoff' | 'insufficient_evidence';
+
+/**
+ * 생성 게이트 발화의 원인 (docs/specs/40).
+ * `model_verdict` 모델이 부족한 축을 대며 판정 · `empty_aspects` 판정은 냈으나 축이 비었다.
+ *
+ * 빈 축을 재호출·무효화하지 않고 **원인을 나눠 세기만 하는** 이유는 §12 「측정 후 도입」이다 —
+ * 분포가 드러난 뒤에 처방을 고른다.
+ */
+export type GenerationGateCause = 'model_verdict' | 'empty_aspects';
 
 /** 리랭크 1회의 결말 (docs/specs/29) — fallback 상시화는 이 축이 잡는다 */
 export type RerankOutcome = 'reranked' | 'fallback';
@@ -208,6 +220,18 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 생성 게이트 발화의 원인별 카운트 (docs/specs/40).
+   * `rag_abstains_total{reason="insufficient_evidence"}`의 분해 축이며 두 cause의 합이 그 값과
+   * 같다 — 그래서 증가도 한 지점(`recordGenerationGate`)에서만 일어난다.
+   */
+  private readonly ragGenerationGates = new Counter({
+    name: 'rag_generation_gate_total',
+    help: '생성 게이트 발화 원인별 수',
+    labelNames: ['cause'] as const,
+    registers: [this.registry],
+  });
+
   /** 리랭크 결말 (docs/specs/29) — fallback이 조용히 상시화되면 이 축이 잡는다 */
   private readonly rerankTotal = new Counter({
     name: 'rag_rerank_total',
@@ -364,6 +388,18 @@ export class MetricsService {
 
   recordAbstain(reason: AbstainReason): void {
     this.ragAbstains.inc({ reason });
+  }
+
+  /**
+   * 생성 게이트 발화 기록 (docs/specs/40).
+   *
+   * 기권 카운터까지 여기서 함께 올린다 — 「두 cause의 합 =
+   * `rag_abstains_total{reason="insufficient_evidence"}`」 불변식을 호출자 규율이 아니라
+   * 구조로 지키기 위함이다. 게이트 발화는 정의상 기권이므로 두 축이 갈릴 이유가 없다.
+   */
+  recordGenerationGate(cause: GenerationGateCause): void {
+    this.ragGenerationGates.inc({ cause });
+    this.recordAbstain('insufficient_evidence');
   }
 
   recordRerank(outcome: RerankOutcome, durationSec: number): void {

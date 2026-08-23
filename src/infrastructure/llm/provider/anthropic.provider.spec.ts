@@ -2,6 +2,7 @@
 import { AnthropicProvider } from './anthropic.provider';
 import {
   LlmProviderError,
+  type LlmAnswerChunk,
   type LlmStreamRequest,
 } from '../llm-provider.port';
 
@@ -41,9 +42,9 @@ function streamResponse(chunks: string[], init?: ResponseInit): Response {
   return new Response(body, { status: 200, ...init });
 }
 
-async function collect(iterable: AsyncIterable<string>): Promise<string[]> {
+async function collect(iterable: AsyncIterable<LlmAnswerChunk>): Promise<string[]> {
   const out: string[] = [];
-  for await (const delta of iterable) out.push(delta);
+  for await (const chunk of iterable) if (chunk.kind === 'delta') out.push(chunk.text);
   return out;
 }
 

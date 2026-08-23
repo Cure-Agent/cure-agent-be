@@ -1,11 +1,15 @@
 /**
  * Anthropic Messages 스트리밍 어댑터 (docs/specs/13).
  * content_block_delta(text_delta)만 소비하고 message_stop에서 종료한다.
+ *
+ * **구조화 출력 미적용 — verdict를 내지 않는다** (docs/specs/40). 프로덕션 미등록이고 포트가
+ * 미방출을 허용하므로(fail-open) 폴백 시 동작이 오늘 그대로다. 등록되면 그때 판단한다.
  */
 import { fetchStream, parseJson, toProviderError } from '../../http/provider-http';
 import { parseSseFrames } from '../../http/sse-stream.parser';
 import {
   LLM_FIRST_BYTE_TIMEOUT_MS,
+  LlmAnswerChunk,
   LlmProvider,
   LlmProviderError,
   LlmStreamRequest,
@@ -23,7 +27,7 @@ export class AnthropicProvider implements LlmProvider {
     this.model = config.model;
   }
 
-  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<string> {
+  async *streamAnswer(request: LlmStreamRequest): AsyncIterable<LlmAnswerChunk> {
     request.signal?.throwIfAborted();
 
     const prompt = buildPrompt(request);
@@ -96,7 +100,7 @@ export class AnthropicProvider implements LlmProvider {
           typeof delta.text === 'string' &&
           delta.text.length > 0
         ) {
-          yield delta.text;
+          yield { kind: 'delta', text: delta.text };
         }
       }
     } finally {
