@@ -556,6 +556,13 @@ type ConversationStreamEventDto =
 - **Heartbeat**: 15~30초 간격 SSE 주석(`: ping`) 전송 — 프록시 idle timeout으로 LLM이 느린 날 스트림이 끊기는 것을 방지. 응답 헤더에 `X-Accel-Buffering: no`, `Cache-Control: no-cache`.
 - `error` 이벤트 후 서버는 스트림을 닫는다. `answer.completed`/`answer.abstained`가 정상 종결 이벤트다.
 
+**기권 게이트는 4단이다** — ① 거리(docs/specs/28) ② 리랭크 ③ 점수(docs/specs/29) ④ **생성**(docs/specs/40). ①~③은 검색 단계에서 「이 근거가 질문과 관련 있는가」를 재고, ④는 생성 단계에서 「이 근거로 답할 수 있는가」를 잰다 — 후자는 근거 전문을 보고 답을 써 보는 쪽만 판단할 수 있어 생성기 자신이 낸다.
+
+- `answer.abstained`의 `reason`은 사유별로 다른 문구다: 근거 0건 · 관련도 미달(①~③ 공통) · **근거로 답할 수 없음**(④). 사유가 다르면 다르게 읽혀야 재질의를 유도한다.
+- **④의 `retrieval.completed`는 근거를 싣는다** — 근거를 보낸 뒤에 발화하므로 되부를 수 없고, ①~③이 **빈 배열**을 싣는 것과 다른 사실이라 다르게 보이는 것이 옳다.
+- **④는 `GenerationRun`을 남기고 ①~③은 남기지 않는다**(§9) — 「`ABSTAINED` + run 있음 = 생성 게이트 / run 없음 = 검색 게이트」가 자기서술적 불변식이다.
+- ④가 발화하면 답변 텍스트도 인용도 남기지 않는다(content 빈 문자열, `message_citations` 0건). 무관 근거를 인용한 산문 거부가 프로덕션에서 실제로 영속화된 적이 있다.
+
 **끊김 복구 계약 (필수 사양):**
 
 1. POST 스트림은 자동 재연결이 없다. 스트림이 비정상 종료되면 FE는 `GET /conversations/{id}/messages`로 최종 상태를 조회한다 — `message.accepted`에서 받은 `assistantMessageId`가 기준점.
@@ -605,7 +612,7 @@ type GuidelineJobStreamEventDto =
 | GuidelineJobEntity | PipelineRun N건의 부모. `triggeredBy`(MANUAL/SCHEDULE)로 주체를 구분하며 **크론이 만든 잡은 `requestedBy`가 NULL**이다 (docs/specs/26) |
 | ConversationEntity | **접근 스코프는 `clinicId`**(클리닉 공유)이고, `clinicianId`는 작성자 기록일 뿐 접근 판정에 쓰지 않는다 (§5.7, docs/specs/35) |
 | MessageEntity | `status`에 **`CANCELLED`**를 포함한다 — 좀비 STREAMING 메시지를 남기지 않기 위함이다 (§7) |
-| GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **답변마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다 |
+| GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **LLM 호출마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다. 「답변마다」가 아닌 이유는 생성 게이트 기권(§8-④, docs/specs/40)도 LLM을 부르고 토큰을 쓰기 때문이다 — 과잉 기권을 문항 단위로 조사하려면 그 호출의 프롬프트·정책 버전이 남아야 한다 |
 
 전 테이블에 `base-columns` 공통 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
 
@@ -713,6 +720,12 @@ TypeScript generic은 런타임 reflection에서 구체 타입을 잃으므로 `
 2. **circuit-breaker**: 연속 실패 임계 초과 시 일정 시간 호출 차단(fail-fast). 차단 중 요청은 즉시 `LLM_UNAVAILABLE`.
 3. **rate-limit-block-store**: 429 수신 시 해당 프로바이더를 `Retry-After` 기준 일정 시간 차단.
 4. **provider-router**: 우선순위 기반 폴백 라우팅 — 주 프로바이더 차단·실패 시 보조 프로바이더로 전환. `GenerationRun`에 실사용 프로바이더·모델 기록.
+
+**LLM 포트 계약 (docs/specs/40):** `streamAnswer`는 판별 유니온을 yield한다 — 답변가능성 판정(`verdict`) 또는 토큰(`delta`). `verdict`는 **최대 1회**이고 **어떤 delta보다 먼저** 오며, **미방출을 허용한다**(게이트 없음 = fail-open이 유효한 상태다 — anthropic·킬스위치 off가 그 경우다). 선택 콜백이 아니라 유니온인 이유는 콜백은 fake가 호출하지 않아도 타입이 통과해 **e2e가 계약을 지키지 못하기** 때문이다(§3·§13).
+
+- 폴백 금지선인 「첫 토큰」의 기준은 **delta**다 — 판정만 받고 죽은 시도는 사용자에게 아무것도 내보내지 않았으므로 여전히 폴백된다.
+- 기권 판정 뒤의 delta는 게이트웨이가 닫는다. 판정과 델타를 한 채널에서 함께 보는 지점이 거기뿐이다.
+- 구조화 출력의 파싱 실패는 **판정 확정 시점**으로 등급이 갈린다: 확정 전이면 `LlmProviderError`(→ 폴백), 확정 후면 지금까지 흘린 델타로 정상 완료(출력 상한 잘림과 같은 처리).
 
 **response-cache 규칙 (확정):**
 

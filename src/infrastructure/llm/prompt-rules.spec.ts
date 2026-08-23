@@ -1,8 +1,9 @@
 /**
  * qa-v3·qa-v4에서 추가된 프롬프트 규칙.
  * 전부 실측으로 확인된 결함을 막는다 — 모델을 바꿔도, **프롬프트 버전이 올라가도**
- * 유지되어야 한다. 현행 버전 핀은 prompt-rules-qa-v5.spec(docs/specs/32 기준 1)이
- * 갖는다 — 두 곳에서 핀을 잡으면 버전을 올릴 때마다 양쪽을 고쳐야 한다.
+ * 유지되어야 한다. 현행 버전 핀은 **최신 스펙**이 갖는다(지금은 qa-v6 —
+ * test/answerability-gate.e2e-spec 기준 12, docs/specs/40) — 두 곳에서 핀을 잡으면
+ * 버전을 올릴 때마다 양쪽을 고쳐야 한다.
  */
 import { buildPrompt } from './prompt-builder';
 import type { LlmStreamRequest } from './llm-provider.port';

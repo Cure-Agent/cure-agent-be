@@ -31,7 +31,14 @@ export interface OpenAiProviderConfig {
   maxOutputTokens: number;
   /** 비우면 reasoning_effort를 보내지 않는다 (비추론 모델 호환) */
   reasoningEffort?: string | null;
-  /** 답변가능성 게이트 (docs/specs/40) — false면 구조화 출력을 요청하지 않는다 */
+  /**
+   * 답변가능성 게이트 (docs/specs/40) — false면 구조화 출력을 **요청하지 않는다**.
+   *
+   * `LLM_ANSWERABILITY_GATE_ENABLED`가 정확히 `'false'`일 때만 꺼진다. **기본 켜짐**인 이유는
+   * §33 킬스위치와 같다: 배포가 측정 뒤에 있으므로 통과 상태가 기본이고, 미달이면 기본값을
+   * 뒤집는 커밋이 곧 롤백이다. 기본값은 이 파일이 단독으로 소유한다(#156 규약 — compose는
+   * 빈 값을 통과시킬 뿐이다).
+   */
   answerabilityGate: boolean;
 }
 
@@ -66,8 +73,7 @@ export function resolveLlmConfig(env: NodeJS.ProcessEnv): LlmRuntimeConfig {
           baseUrl: baseUrl(env.OPENAI_BASE_URL, DEFAULTS.openaiBaseUrl),
           maxOutputTokens,
           reasoningEffort: resolveReasoningEffort(env.OPENAI_REASONING_EFFORT),
-          // 스텁: LLM_ANSWERABILITY_GATE_ENABLED 해석은 docs/specs/40 구현에서 채운다
-          answerabilityGate: false,
+          answerabilityGate: env.LLM_ANSWERABILITY_GATE_ENABLED !== 'false',
         }
       : null,
     anthropic: anthropicKey
