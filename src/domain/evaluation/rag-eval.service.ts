@@ -5,6 +5,12 @@
  * 나쁜 것(리랭커)과 애초에 못 찾는 것(하이브리드·모델 교체)을 가르는 축이기 때문이다.
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { LlmGateway } from '../../infrastructure/llm/llm-gateway';
+import {
+  LlmAnswerVerdict,
+  LlmEvidenceContext,
+} from '../../infrastructure/llm/llm-provider.port';
+import { PROMPT_VERSION } from '../../infrastructure/llm/prompt-builder';
 import {
   HybridEvidence,
   RETRIEVAL_TOP_K,
@@ -16,6 +22,12 @@ import { LabelResolver } from './label-resolver';
 
 /** 진단용 상한 — 이 K까지 열어도 못 찾으면 순서 문제가 아니다 */
 export const EVAL_DIAGNOSTIC_K = 30;
+
+/**
+ * 컷 스윕의 상한. 리랭크 점수가 0~10이므로 이 구간이 컷의 정의역 전체다 —
+ * 컷 0은 「점수 게이트 없음」이고(`0 < 0`은 거짓이다) 컷 10은 최강이다.
+ */
+export const CUT_SWEEP_MAX = 10;
 
 /** kind별 거리 분포 — 거리 컷을 데이터로 정하기 위한 원자료 */
 export interface DistanceDistribution {
@@ -70,6 +82,78 @@ export interface AbstainFailure {
   top1Guideline: string;
 }
 
+/**
+ * 생성 게이트(§40 게이트 ④) 판정 상태.
+ *
+ * `no_verdict`와 `failed`를 가르는 이유: 전자는 **정상 상태**(fail-open — 킬스위치 off·anthropic
+ * 폴백)이고 프로덕션이 실제로 답하므로 답변으로 세야 하지만, 후자는 측정 실패라 답변으로 세면
+ * 지표가 낙관 오염된다(§27 계보).
+ */
+export type GenerationGateStatus =
+  /** 판정 방출, insufficientEvidence=false — 답변 */
+  | 'answerable'
+  /** 판정 방출, insufficientEvidence=true — 게이트 발화 */
+  | 'insufficient'
+  /** 프로바이더가 판정을 내지 않았다 — fail-open이 유효한 상태다 (포트가 미방출을 허용한다) */
+  | 'no_verdict'
+  /** 근거 0건 — 생성을 부를 수 없다. 이 문항은 컷과 무관하게 거리 게이트에 잘린다 */
+  | 'not_generated'
+  /** 생성 호출 실패 — 답변으로도 기권으로도 세지 않는다 */
+  | 'failed';
+
+/** 프로덕션 `rag_generation_gate_total`과 같은 판정 — 빈 축의 처방은 이 분포가 드러난 뒤다 (§40) */
+export type GenerationGateCause = 'model_verdict' | 'empty_aspects';
+
+/** 문항별 생성 판정 — 컷 스윕의 원자료이자 과잉 기권 드릴다운의 입구 */
+export interface GenerationVerdictRecord {
+  itemId: string;
+  kind: EvalKind;
+  question: string;
+  status: GenerationGateStatus;
+  /** 발화 문항만 채워진다. 그 외는 null */
+  cause: GenerationGateCause | null;
+  missingAspects: string[];
+  /** 리랭크 top-1 점수 — 컷 스윕의 라우팅 축. 리랭크를 타지 않았으면 null */
+  top1Relevance: number | null;
+  /** 거리 게이트(§28)에 잘렸는가 — 컷과 무관한 고정 축이다 */
+  distanceAbstained: boolean;
+  /** `status='failed'`일 때의 사유. 그 외는 null */
+  failureReason: string | null;
+}
+
+/** 한 컷에서 kind 하나가 어느 게이트로 갈리는가 — 네 값의 합이 그 kind의 문항 수다 */
+export interface GateBreakdown {
+  /** 거리 게이트 || 점수 < 컷 */
+  retrievalGate: number;
+  /** 검색을 통과한 뒤 생성 게이트가 발화 */
+  generationGate: number;
+  /** 두 게이트를 다 통과 — verdict 미방출(fail-open) 포함 */
+  answered: number;
+  /** 검색은 통과했으나 생성이 실패해 판정이 없다 — 답변으로 세면 낙관 오염이다 */
+  generationFailed: number;
+}
+
+/**
+ * 컷 c에서의 문항 배분. `cutoff`는 0~10 정수 오름차순으로 전 구간을 싣는다.
+ *
+ * 한 번의 실행으로 전 구간을 재구성할 수 있는 이유: **컷은 라우팅에만 쓰이고 생성 입력을 바꾸지
+ * 않는다.** 리랭크 top-5는 컷과 무관하게 정해지므로, 컷 c를 통과한 문항이 받는 근거는 이 평가가
+ * 보낸 것과 같다 — 재구성이 컷 c의 운영 동작과 정확히 일치한다.
+ */
+export interface CutSweepRow {
+  cutoff: number;
+  answerable: GateBreakdown;
+  abstain: GateBreakdown;
+}
+
+export interface RagEvalOptions {
+  /**
+   * 생성 게이트를 측정할지 (기본 **true**).
+   * 끄면 문항당 LLM 호출이 사라지는 대신 컷 스윕에 생성 축이 비고, 리포트가 그 사실을 명시한다.
+   */
+  generation?: boolean;
+}
+
 export interface RagEvalReport {
   /** 검색 정책 — 이 값이 다르면 지표를 나란히 비교하지 않는다 */
   retrievalPolicyVersion: string;
@@ -109,6 +193,17 @@ export interface RagEvalReport {
   abstainFailures: AbstainFailure[];
   /** 답해야 하는데 기권된 문항 — 컷 상향의 대가를 문항 단위로 본다 */
   overAbstainFailures: OverAbstainFailure[];
+  /**
+   * 판정을 낸 생성 계약 (prompt-builder의 PROMPT_VERSION) — 프롬프트가 바뀌면 verdict도
+   * 바뀌므로, 정책 버전이 검색 지표에 하는 역할을 이 값이 생성 지표에 한다. 미측정이면 빈 문자열.
+   */
+  promptVersion: string;
+  /** 생성을 실제로 호출했는가 — false면 아래 두 필드의 생성 축은 「측정하지 않음」이다 */
+  generationMeasured: boolean;
+  /** 문항별 생성 판정 — 발화 문항 드릴다운과 컷 스윕의 원자료 */
+  generationVerdicts: GenerationVerdictRecord[];
+  /** 컷 0~10 스윕 — 「컷을 낮추면 생성 게이트가 얼마나 받아내는가」에 답하는 표 */
+  cutSweep: CutSweepRow[];
 }
 
 /**
@@ -165,12 +260,109 @@ function distributionOf(kind: EvalKind, distances: number[]): DistanceDistributi
   };
 }
 
+/**
+ * 문항 하나의 라우팅 원자료 — 컷 스윕은 이 배열 위에서 컷마다 재계산된다.
+ * 생성을 측정하지 않아도 검색 축은 채워지므로 스윕 자체는 언제나 성립한다(생성 축만 빈다).
+ */
+interface ItemRouting {
+  item: EvalSetItem;
+  /** 거리 게이트(§28) 판정 — 컷과 무관한 고정 축이다 */
+  distanceAbstained: boolean;
+  /** 리랭크 top-1 점수. 검색 0건이면 null */
+  top1Relevance: number | null;
+  /** 생성을 측정한 경우에만 채워진다 */
+  verdict: GenerationVerdictRecord | null;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 컷 c에서 문항 하나가 어느 갈래로 가는가 — **런타임 게이트와 같은 판정**이다.
+ *
+ * 점수 비교는 반올림하지 않고 원 점수로 한다: `conversation-stream`이
+ * `top1Relevance < rerankScoreCutoff`를 원 값으로 재므로, 버킷팅하면 재구성이 운영과 갈린다
+ * (히스토그램만 반올림하는 이유는 도수를 세기 위한 것이고 판정 축이 아니기 때문이다).
+ */
+function breakdownOf(routings: ItemRouting[], cutoff: number): GateBreakdown {
+  const breakdown: GateBreakdown = {
+    retrievalGate: 0,
+    generationGate: 0,
+    answered: 0,
+    generationFailed: 0,
+  };
+
+  for (const routing of routings) {
+    const scoreAbstained =
+      routing.top1Relevance === null || routing.top1Relevance < cutoff;
+    if (routing.distanceAbstained || scoreAbstained) {
+      breakdown.retrievalGate += 1;
+      continue;
+    }
+
+    switch (routing.verdict?.status) {
+      case 'insufficient':
+        breakdown.generationGate += 1;
+        break;
+      case 'failed':
+        // 답변으로 세면 지표가 낙관 오염된다 — 판정을 못 받은 것과 답한 것은 다른 사실이다
+        breakdown.generationFailed += 1;
+        break;
+      default:
+        // answerable · no_verdict(fail-open) · 미측정. 미방출은 프로덕션이 실제로 답하는 상태다
+        breakdown.answered += 1;
+    }
+  }
+
+  return breakdown;
+}
+
+/**
+ * 컷 0~10 전 구간 재구성.
+ *
+ * **한 번의 실행으로 전 구간을 재구성할 수 있는 이유**는 컷이 라우팅에만 쓰이고 생성 입력을
+ * 바꾸지 않기 때문이다 — 리랭크 top-5는 컷과 무관하게 정해지므로, 컷 c를 통과한 문항이 받는
+ * 근거는 이 평가가 실제로 보낸 것과 같다. 그래서 재구성이 컷 c의 운영 동작과 정확히 일치한다.
+ */
+/**
+ * 생성에 실을 근거 — 리랭크 순서의 상위 K개다.
+ *
+ * 리랭크 결과가 비면 융합·코사인 순서를 그대로 쓴다 (프로덕션 `conversation-stream`의
+ * 「재정렬 결과가 비면 기존 순서 유지」와 같은 폴백이다).
+ */
+function topEvidenceOf(
+  results: HybridEvidence[],
+  orderedChunkIds: string[] | null,
+): HybridEvidence[] {
+  if (orderedChunkIds === null) return results.slice(0, RETRIEVAL_TOP_K);
+
+  const byChunkId = new Map(results.map((row) => [row.chunk.id, row]));
+  const ordered = orderedChunkIds
+    .map((chunkId) => byChunkId.get(chunkId))
+    .filter((row): row is HybridEvidence => row !== undefined)
+    .slice(0, RETRIEVAL_TOP_K);
+  return ordered.length > 0 ? ordered : results.slice(0, RETRIEVAL_TOP_K);
+}
+
+function cutSweepOf(routings: ItemRouting[]): CutSweepRow[] {
+  const answerable = routings.filter((routing) => routing.item.kind === 'answerable');
+  const abstain = routings.filter((routing) => routing.item.kind === 'abstain');
+
+  return Array.from({ length: CUT_SWEEP_MAX + 1 }, (_, cutoff) => ({
+    cutoff,
+    answerable: breakdownOf(answerable, cutoff),
+    abstain: breakdownOf(abstain, cutoff),
+  }));
+}
+
 @Injectable()
 export class RagEvalService {
   constructor(
     private readonly retrieval: RetrievalService,
     @Inject(RERANKER) private readonly reranker: Reranker,
     private readonly labelResolver: LabelResolver,
+    private readonly llmGateway: LlmGateway,
   ) {}
 
   /**
@@ -178,8 +370,13 @@ export class RagEvalService {
    *
    * 검색은 **K=30 한 번**으로 끝내고 Recall@5·MRR@5는 그 결과의 앞 5개로 계산한다 —
    * K를 달리해 두 번 조회하면 지표 사이에 코퍼스 변화가 끼어들 여지가 생긴다.
+   *
+   * 생성 게이트(§40)는 **컷과 무관하게 전 문항에** 잰다 — 컷은 라우팅에만 쓰이므로 한 번의
+   * 실행으로 컷 전 구간을 사후 재구성할 수 있다.
    */
-  async evaluate(items: EvalSetItem[]): Promise<RagEvalReport> {
+  async evaluate(items: EvalSetItem[], options: RagEvalOptions = {}): Promise<RagEvalReport> {
+    const generationEnabled = options.generation ?? true;
+    const routings: ItemRouting[] = [];
     const answerable = items.filter((item) => item.kind === 'answerable');
     const abstain = items.filter((item) => item.kind === 'abstain');
 
@@ -249,6 +446,79 @@ export class RagEvalService {
       return { orderedChunkIds: result.order, top1Relevance: result.top1Relevance };
     };
 
+    /**
+     * 게이트 ④ 측정 (docs/specs/40 Out of scope 확장).
+     *
+     * **컷과 무관하게 전 문항에 부른다** — 컷은 라우팅 축일 뿐이고, 컷 c를 통과했을 때 생성이
+     * 무엇을 받는지는 컷과 독립이다. 검색·리랭크를 다시 돌지 않고 이미 얻은 결과를 그대로
+     * 넘기므로, 프로덕션 `conversation-stream`과 같은 순서(검색 → 리랭크 → top-5 → 생성)이면서
+     * 호출 비용은 문항당 생성 1회만 는다.
+     */
+    const routeOf = async (
+      item: EvalSetItem,
+      args: {
+        distanceAbstained: boolean;
+        top1Relevance: number | null;
+        results: HybridEvidence[];
+        orderedChunkIds: string[] | null;
+      },
+    ): Promise<void> => {
+      const routing: ItemRouting = {
+        item,
+        distanceAbstained: args.distanceAbstained,
+        top1Relevance: args.top1Relevance,
+        verdict: null,
+      };
+      routings.push(routing);
+      if (!generationEnabled) return;
+
+      const base = {
+        itemId: item.id,
+        kind: item.kind,
+        question: item.question,
+        cause: null,
+        missingAspects: [],
+        top1Relevance: args.top1Relevance,
+        distanceAbstained: args.distanceAbstained,
+        failureReason: null,
+      } satisfies Omit<GenerationVerdictRecord, 'status'> & {
+        cause: null;
+        failureReason: null;
+      };
+
+      // 근거가 없으면 부를 것도 없다 — 이 문항은 컷과 무관하게 거리 게이트에 잘린다
+      if (args.results.length === 0) {
+        routing.verdict = { ...base, status: 'not_generated' };
+        return;
+      }
+
+      try {
+        const verdict = await this.generationVerdictOf(
+          item.question,
+          topEvidenceOf(args.results, args.orderedChunkIds),
+        );
+        if (verdict === undefined) {
+          routing.verdict = { ...base, status: 'no_verdict' };
+          return;
+        }
+        routing.verdict = {
+          ...base,
+          status: verdict.insufficientEvidence ? 'insufficient' : 'answerable',
+          // 프로덕션 rag_generation_gate_total과 같은 판정 — 빈 축의 처방은 이 분포가 드러난 뒤다
+          cause: verdict.insufficientEvidence
+            ? verdict.missingAspects.length > 0
+              ? 'model_verdict'
+              : 'empty_aspects'
+            : null,
+          missingAspects: verdict.missingAspects,
+        };
+      } catch (error) {
+        // 한 문항의 LLM 실패로 비싼 실행을 통째로 버리지 않는다. 조용히 빼지도 않는다 —
+        // 답변으로 세면 지표가 낙관 오염되므로 별도 갈래로 남긴다 (docs/specs/27 계보)
+        routing.verdict = { ...base, status: 'failed', failureReason: messageOf(error) };
+      }
+    };
+
     for (const item of answerable) {
       // 검색 1회로 두 arm 순위를 함께 얻는다 (docs/specs/31) — 벡터 원 지표는 vectorRank로
       // 계산되므로 §27·§28과 같은 축이 유지되고, 코퍼스 변화가 두 측정 사이에 끼어들 여지도 없다.
@@ -304,6 +574,7 @@ export class RagEvalService {
           rerankHitAt5 += 1;
           rerankReciprocalSum += 1 / (rerankZeroBased + 1);
         }
+        await routeOf(item, { distanceAbstained, top1Relevance, results, orderedChunkIds });
       } else {
         // 검색 0건 — 게이트가 아니라 코퍼스에 없다. 거리·점수 판정 자체가 성립하지 않는다
         rerankAbstainedAnswerable += 1;
@@ -314,6 +585,12 @@ export class RagEvalService {
           top1Relevance: null,
           gate: 'distance',
           foundAtRank: rank,
+        });
+        await routeOf(item, {
+          distanceAbstained,
+          top1Relevance: null,
+          results,
+          orderedChunkIds: null,
         });
       }
     }
@@ -327,8 +604,11 @@ export class RagEvalService {
       if (distanceAbstained) abstainedAbstain += 1;
 
       if (results.length > 0) {
-        const { top1Relevance } = await rerankOf(item.question, results);
+        const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
         abstainRelevances.push(top1Relevance);
+        // abstain 문항도 생성을 탄다 — 「컷을 낮추면 생성 게이트가 무엇을 받아내는가」의 대상이
+        // 바로 이들이다. 컷을 내려 검색 게이트를 통과한 기권 문항이 여기서 다시 걸릴 수 있다
+        await routeOf(item, { distanceAbstained, top1Relevance, results, orderedChunkIds });
         if (distanceAbstained || top1Relevance < scoreCutoff) {
           rerankAbstainedAbstain += 1;
         } else {
@@ -345,6 +625,12 @@ export class RagEvalService {
         }
       } else {
         rerankAbstainedAbstain += 1;
+        await routeOf(item, {
+          distanceAbstained,
+          top1Relevance: null,
+          results,
+          orderedChunkIds: null,
+        });
       }
     }
 
@@ -384,6 +670,36 @@ export class RagEvalService {
       failures,
       abstainFailures,
       overAbstainFailures,
+      // 미측정이면 빈 문자열이다 — 이 값은 「무엇이 verdict를 냈는가」의 식별자이고,
+      // 부르지도 않은 프롬프트 버전을 싣는 것은 측정하지 않은 것을 측정했다고 말하는 셈이다
+      promptVersion: generationEnabled ? PROMPT_VERSION : '',
+      generationMeasured: generationEnabled,
+      generationVerdicts: routings
+        .map((routing) => routing.verdict)
+        .filter((verdict): verdict is GenerationVerdictRecord => verdict !== null),
+      cutSweep: cutSweepOf(routings),
     };
+  }
+
+  /**
+   * 답변가능성 판정 1건. 델타는 버린다 — 이 평가가 재는 것은 답변 품질(§30 groundedness의 몫)이
+   * 아니라 **게이트가 발화하는가**뿐이다.
+   *
+   * 판정 미방출은 오류가 아니라 정상 상태다(포트가 허용한다) — `undefined`로 그대로 올려
+   * fail-open을 호출측이 답변으로 세게 한다.
+   */
+  private async generationVerdictOf(
+    question: string,
+    top: HybridEvidence[],
+  ): Promise<LlmAnswerVerdict | undefined> {
+    const evidence: LlmEvidenceContext[] = top.map((row, index) => ({
+      marker: index + 1,
+      content: row.chunk.content,
+      guidelineTitle: row.guideline.title,
+      sectionPath: row.section.path,
+    }));
+
+    const outcome = await this.llmGateway.stream({ question, evidence }, () => {});
+    return outcome.verdict;
   }
 }
