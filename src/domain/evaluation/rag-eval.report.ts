@@ -4,7 +4,7 @@
  * 마크다운인 이유: 이 산출물의 소비처는 화면이 아니라 **PR의 전후 비교표**다 —
  * diff가 남고 리뷰에 그대로 붙는다.
  */
-import { RagEvalReport } from './rag-eval.service';
+import { GateBreakdown, GenerationVerdictRecord, RagEvalReport } from './rag-eval.service';
 
 const RATIO_DIGITS = 3;
 const DISTANCE_DIGITS = 4;
@@ -16,6 +16,120 @@ function ratio(value: number): string {
 /** 표 셀이 깨지지 않게 파이프를 이스케이프하고 질문을 한 줄로 줄인다 */
 function cell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+}
+
+/** 컷 스윕 한 kind의 네 갈래를 표 셀 순서로 편다 */
+function breakdownCells(breakdown: GateBreakdown): string {
+  return [
+    breakdown.retrievalGate,
+    breakdown.generationGate,
+    breakdown.answered,
+    breakdown.generationFailed,
+  ].join(' | ');
+}
+
+/**
+ * 생성 게이트 절 (docs/specs/40 게이트 ④).
+ *
+ * 컷 스윕이 이 리포트의 다른 표와 다른 점: 나머지는 **실행에 쓰인 컷 하나**를 재는데 이 표는
+ * **컷 전 구간**을 잰다. 한 번의 실행으로 그게 가능한 이유는 컷이 라우팅에만 쓰이고 생성
+ * 입력을 바꾸지 않기 때문이다 — 그래서 각 행은 「그 컷으로 배포했다면」의 운영 동작과 같다.
+ */
+function generationGateLines(report: RagEvalReport): string[] {
+  const lines: string[] = [];
+
+  lines.push('## 생성 게이트 (docs/specs/40 게이트 ④)');
+  lines.push('');
+  if (!report.generationMeasured) {
+    lines.push(
+      '- 생성 게이트: **측정하지 않음** — `--no-generation`으로 실행됐다. ' +
+        '아래 스윕의 생성 축은 전부 0이고 「답변」은 검색 게이트만 통과한 수다.',
+    );
+  } else {
+    lines.push(`- 생성 프롬프트: \`${report.promptVersion}\``);
+    lines.push(
+      '- 판정은 **컷과 무관하게 전 문항**에 냈다 — 컷은 라우팅 축일 뿐이라 한 번의 실행으로 ' +
+        '컷 전 구간을 재구성할 수 있고, 각 행은 그 컷의 운영 동작과 일치한다.',
+    );
+  }
+  lines.push('');
+
+  lines.push('### 컷 스윕');
+  lines.push('');
+  lines.push(
+    '| 컷 | ans 검색게이트 | ans 생성게이트 | ans 답변 | ans 생성실패 | ' +
+      'abs 검색게이트 | abs 생성게이트 | abs 답변 | abs 생성실패 |',
+  );
+  lines.push(`| ${Array.from({ length: 9 }, () => '---').join(' | ')} |`);
+  for (const row of report.cutSweep) {
+    lines.push(
+      `| ${row.cutoff} | ${breakdownCells(row.answerable)} | ${breakdownCells(row.abstain)} |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    'ans=answerable(답해야 하는 문항) · abs=abstain(기권해야 하는 문항). ' +
+      '컷을 한 칸 내렸을 때 **ans 검색게이트 감소분이 회수**이고 **abs 검색게이트 감소분이 누출**인데, ' +
+      '그 누출 중 얼마가 다시 걸리는지는 **abs 생성게이트** 열이 답한다 — ' +
+      '컷 하향의 진짜 대가는 abs 「답변」 열의 증가분이다. ' +
+      '반대로 ans 「생성게이트」는 컷을 내려 살린 문항을 생성이 도로 죽인 수, 즉 과잉 기권의 새 축이다. ' +
+      '「생성실패」는 판정을 받지 못한 수다 — 답변으로 섞으면 지표가 낙관 오염되므로 따로 센다.',
+  );
+  lines.push('');
+
+  const triggered = report.generationVerdicts.filter(
+    (verdict) => verdict.status === 'insufficient',
+  );
+  lines.push(`### 생성 게이트 발화 문항 — ${triggered.length}건`);
+  lines.push('');
+  if (triggered.length === 0) {
+    lines.push('없음.');
+  } else {
+    lines.push('| 문항 | kind | 질문 | 원인 | 리랭크 점수 | 누락 축 |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
+    for (const verdict of triggered) {
+      lines.push(
+        `| ${cell(verdict.itemId)} | ${verdict.kind} | ${cell(verdict.question)} | ` +
+          `${verdict.cause ?? '—'} | ${relevanceCell(verdict)} | ` +
+          `${verdict.missingAspects.length === 0 ? '—' : cell(verdict.missingAspects.join('; '))} |`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      'kind가 abstain이면 **회수**(기권해야 할 문항을 생성이 잡았다)이고, answerable이면 ' +
+        '**과잉 기권 후보**다. `empty_aspects`는 모델이 이유를 대지 못한 발화로, ' +
+        '이 원인의 분포가 재호출·무효화 처방의 선행 조건이다(spec 40 판단표).',
+    );
+  }
+  lines.push('');
+
+  const failed = report.generationVerdicts.filter((verdict) => verdict.status === 'failed');
+  lines.push(`### 생성 실패 문항 — ${failed.length}건`);
+  lines.push('');
+  if (failed.length === 0) {
+    lines.push('없음.');
+  } else {
+    lines.push('| 문항 | kind | 사유 |');
+    lines.push('| --- | --- | --- |');
+    for (const verdict of failed) {
+      lines.push(
+        `| ${cell(verdict.itemId)} | ${verdict.kind} | ${cell(verdict.failureReason ?? '')} |`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      '실패 문항은 컷 스윕의 「생성실패」 열에만 들어간다 — ' +
+        '이 수가 크면 스윕의 생성 축 자체를 신뢰할 수 없다는 뜻이다.',
+    );
+  }
+  lines.push('');
+
+  return lines;
+}
+
+/** 리랭크를 타지 않은 문항(검색 0건)은 점수가 없다 */
+function relevanceCell(verdict: GenerationVerdictRecord): string {
+  return verdict.top1Relevance === null ? '—' : String(verdict.top1Relevance);
 }
 
 export function renderEvalReport(report: RagEvalReport): string {
@@ -152,6 +266,10 @@ export function renderEvalReport(report: RagEvalReport): string {
       'abstain 행의 컷 이상 칸이 기권 실패이고, answerable 행의 컷 미만 칸이 과잉 기권이다.',
   );
   lines.push('');
+
+  // 위 히스토그램이 「컷을 옮기면 검색 게이트가 무엇을 가르는가」에 답하고,
+  // 아래 스윕이 「그렇게 통과한 것을 생성 게이트가 얼마나 되받는가」에 답한다 — 이어서 읽는 표다
+  lines.push(...generationGateLines(report));
 
   // 기권율만으로는 손댈 수 없다 — 게이트를 조정하려면 어느 문항이 몇 점으로 통과했는지,
   // 그게 라벨 오류(사실은 답 가능)인지 진짜 게이트 실패인지 봐야 한다

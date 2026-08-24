@@ -1,7 +1,10 @@
 /**
  * RAG 기준선 측정 CLI (docs/specs/27).
- * 사용법: DATABASE_URL 등 env 설정 후 `pnpm eval:rag [평가셋.json]`
+ * 사용법: DATABASE_URL 등 env 설정 후 `pnpm eval:rag [평가셋.json] [--no-generation]`
  * 기본 평가셋은 test/fixtures/rag-eval/evalset.json이다.
+ *
+ * `--no-generation`은 생성 게이트 판정(docs/specs/40)을 건너뛴다 — 문항당 LLM 호출 1회가
+ * 사라지는 대신 컷 스윕의 생성 축이 빈다. 검색 축만 빠르게 다시 볼 때 쓴다.
  *
  * 로직은 domain/evaluation이 갖는다 — 이 파일은 ingest-guidelines.ts와 같은 얇은 래퍼다.
  */
@@ -15,14 +18,16 @@ import { RagEvalService } from '../src/domain/evaluation/rag-eval.service';
 const DEFAULT_EVALSET = 'test/fixtures/rag-eval/evalset.json';
 
 async function main(): Promise<void> {
-  const file = process.argv[2] ?? DEFAULT_EVALSET;
+  const args = process.argv.slice(2);
+  const generation = !args.includes('--no-generation');
+  const file = args.find((arg) => !arg.startsWith('--')) ?? DEFAULT_EVALSET;
   const items = loadEvalSet(JSON.parse(readFileSync(file, 'utf8')));
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });
   try {
-    const report = await app.get(RagEvalService).evaluate(items);
+    const report = await app.get(RagEvalService).evaluate(items, { generation });
     console.log(renderEvalReport(report));
   } finally {
     await app.close();
