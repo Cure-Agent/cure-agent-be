@@ -5,6 +5,7 @@
  * 나쁜 것(리랭커)과 애초에 못 찾는 것(하이브리드·모델 교체)을 가르는 축이기 때문이다.
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { LlmGateway } from '../../infrastructure/llm/llm-gateway';
 import {
   HybridEvidence,
   RETRIEVAL_TOP_K,
@@ -70,6 +71,78 @@ export interface AbstainFailure {
   top1Guideline: string;
 }
 
+/**
+ * 생성 게이트(§40 게이트 ④) 판정 상태.
+ *
+ * `no_verdict`와 `failed`를 가르는 이유: 전자는 **정상 상태**(fail-open — 킬스위치 off·anthropic
+ * 폴백)이고 프로덕션이 실제로 답하므로 답변으로 세야 하지만, 후자는 측정 실패라 답변으로 세면
+ * 지표가 낙관 오염된다(§27 계보).
+ */
+export type GenerationGateStatus =
+  /** 판정 방출, insufficientEvidence=false — 답변 */
+  | 'answerable'
+  /** 판정 방출, insufficientEvidence=true — 게이트 발화 */
+  | 'insufficient'
+  /** 프로바이더가 판정을 내지 않았다 — fail-open이 유효한 상태다 (포트가 미방출을 허용한다) */
+  | 'no_verdict'
+  /** 근거 0건 — 생성을 부를 수 없다. 이 문항은 컷과 무관하게 거리 게이트에 잘린다 */
+  | 'not_generated'
+  /** 생성 호출 실패 — 답변으로도 기권으로도 세지 않는다 */
+  | 'failed';
+
+/** 프로덕션 `rag_generation_gate_total`과 같은 판정 — 빈 축의 처방은 이 분포가 드러난 뒤다 (§40) */
+export type GenerationGateCause = 'model_verdict' | 'empty_aspects';
+
+/** 문항별 생성 판정 — 컷 스윕의 원자료이자 과잉 기권 드릴다운의 입구 */
+export interface GenerationVerdictRecord {
+  itemId: string;
+  kind: EvalKind;
+  question: string;
+  status: GenerationGateStatus;
+  /** 발화 문항만 채워진다. 그 외는 null */
+  cause: GenerationGateCause | null;
+  missingAspects: string[];
+  /** 리랭크 top-1 점수 — 컷 스윕의 라우팅 축. 리랭크를 타지 않았으면 null */
+  top1Relevance: number | null;
+  /** 거리 게이트(§28)에 잘렸는가 — 컷과 무관한 고정 축이다 */
+  distanceAbstained: boolean;
+  /** `status='failed'`일 때의 사유. 그 외는 null */
+  failureReason: string | null;
+}
+
+/** 한 컷에서 kind 하나가 어느 게이트로 갈리는가 — 네 값의 합이 그 kind의 문항 수다 */
+export interface GateBreakdown {
+  /** 거리 게이트 || 점수 < 컷 */
+  retrievalGate: number;
+  /** 검색을 통과한 뒤 생성 게이트가 발화 */
+  generationGate: number;
+  /** 두 게이트를 다 통과 — verdict 미방출(fail-open) 포함 */
+  answered: number;
+  /** 검색은 통과했으나 생성이 실패해 판정이 없다 — 답변으로 세면 낙관 오염이다 */
+  generationFailed: number;
+}
+
+/**
+ * 컷 c에서의 문항 배분. `cutoff`는 0~10 정수 오름차순으로 전 구간을 싣는다.
+ *
+ * 한 번의 실행으로 전 구간을 재구성할 수 있는 이유: **컷은 라우팅에만 쓰이고 생성 입력을 바꾸지
+ * 않는다.** 리랭크 top-5는 컷과 무관하게 정해지므로, 컷 c를 통과한 문항이 받는 근거는 이 평가가
+ * 보낸 것과 같다 — 재구성이 컷 c의 운영 동작과 정확히 일치한다.
+ */
+export interface CutSweepRow {
+  cutoff: number;
+  answerable: GateBreakdown;
+  abstain: GateBreakdown;
+}
+
+export interface RagEvalOptions {
+  /**
+   * 생성 게이트를 측정할지 (기본 **true**).
+   * 끄면 문항당 LLM 호출이 사라지는 대신 컷 스윕에 생성 축이 비고, 리포트가 그 사실을 명시한다.
+   */
+  generation?: boolean;
+}
+
 export interface RagEvalReport {
   /** 검색 정책 — 이 값이 다르면 지표를 나란히 비교하지 않는다 */
   retrievalPolicyVersion: string;
@@ -109,6 +182,17 @@ export interface RagEvalReport {
   abstainFailures: AbstainFailure[];
   /** 답해야 하는데 기권된 문항 — 컷 상향의 대가를 문항 단위로 본다 */
   overAbstainFailures: OverAbstainFailure[];
+  /**
+   * 판정을 낸 생성 계약 (prompt-builder의 PROMPT_VERSION) — 프롬프트가 바뀌면 verdict도
+   * 바뀌므로, 정책 버전이 검색 지표에 하는 역할을 이 값이 생성 지표에 한다. 미측정이면 빈 문자열.
+   */
+  promptVersion: string;
+  /** 생성을 실제로 호출했는가 — false면 아래 두 필드의 생성 축은 「측정하지 않음」이다 */
+  generationMeasured: boolean;
+  /** 문항별 생성 판정 — 발화 문항 드릴다운과 컷 스윕의 원자료 */
+  generationVerdicts: GenerationVerdictRecord[];
+  /** 컷 0~10 스윕 — 「컷을 낮추면 생성 게이트가 얼마나 받아내는가」에 답하는 표 */
+  cutSweep: CutSweepRow[];
 }
 
 /**
@@ -171,6 +255,7 @@ export class RagEvalService {
     private readonly retrieval: RetrievalService,
     @Inject(RERANKER) private readonly reranker: Reranker,
     private readonly labelResolver: LabelResolver,
+    private readonly llmGateway: LlmGateway,
   ) {}
 
   /**
@@ -178,8 +263,12 @@ export class RagEvalService {
    *
    * 검색은 **K=30 한 번**으로 끝내고 Recall@5·MRR@5는 그 결과의 앞 5개로 계산한다 —
    * K를 달리해 두 번 조회하면 지표 사이에 코퍼스 변화가 끼어들 여지가 생긴다.
+   *
+   * 생성 게이트(§40)는 **컷과 무관하게 전 문항에** 잰다 — 컷은 라우팅에만 쓰이므로 한 번의
+   * 실행으로 컷 전 구간을 사후 재구성할 수 있다.
    */
-  async evaluate(items: EvalSetItem[]): Promise<RagEvalReport> {
+  async evaluate(items: EvalSetItem[], options: RagEvalOptions = {}): Promise<RagEvalReport> {
+    void options; // TODO(#348): 생성 게이트 측정 — 스텁
     const answerable = items.filter((item) => item.kind === 'answerable');
     const abstain = items.filter((item) => item.kind === 'abstain');
 
@@ -384,6 +473,11 @@ export class RagEvalService {
       failures,
       abstainFailures,
       overAbstainFailures,
+      // TODO(#348): 생성 게이트 측정 — 스텁
+      promptVersion: '',
+      generationMeasured: false,
+      generationVerdicts: [],
+      cutSweep: [],
     };
   }
 }
