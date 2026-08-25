@@ -236,8 +236,13 @@ describe('이슈 #352: 평가 경로 429 재시도', () => {
       ).toBe(true);
     });
 
-    it('기준 B3: LlmExhaustedError를 한도 초과로 판정한다', () => {
-      expect(isRateLimited(new LlmExhaustedError())).toBe(true);
+    it('기준 B3a: rateLimited가 참인 LlmExhaustedError를 한도 초과로 판정한다', () => {
+      expect(isRateLimited(new LlmExhaustedError(true))).toBe(true);
+    });
+
+    it('기준 B3b: rateLimited가 거짓인 LlmExhaustedError는 한도 초과가 아니다', () => {
+      expect(isRateLimited(new LlmExhaustedError(false))).toBe(false);
+      expect(isRateLimited(new LlmExhaustedError())).toBe(false);
     });
 
     it('기준 B4: options가 없거나 rateLimited가 아닌 일반 오류는 한도 초과가 아니다', () => {
