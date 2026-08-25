@@ -30,13 +30,22 @@ export const GENERATION_RETRY_DELAYS_MS: readonly number[] = [5_000, 20_000, 60_
 /**
  * 이 오류가 한도 초과인가.
  *
- * `LlmExhaustedError`를 포함하는 이유: 게이트웨이가 429를 프로바이더 차단으로 바꾸고
- * 소진으로 보고하므로, 평가에서 관측되는 429의 **주된 형태가 이것**이다. 프로바이더가
- * 하나뿐인 평가 환경에서 소진은 사실상 「차단 창 안에 있다」와 같은 뜻이다.
+ * `LlmExhaustedError`를 보되 **`rateLimited`가 참인 것만** 세는 이유: 게이트웨이가 429를
+ * 프로바이더 차단으로 바꾸고 소진으로 보고하므로 평가에서 관측되는 429의 주된 형태가
+ * 이것이지만, **429가 아닌 총실패(키 오류·서킷 open)도 같은 타입**이다. 둘을 묶으면 기다려도
+ * 풀리지 않는 실패에까지 백오프를 물어 229문항 실행이 몇 시간씩 늘어난다.
  */
-export function isRateLimited(_error: unknown): boolean {
-  // TODO(#352): 구현
-  return false;
+export function isRateLimited(error: unknown): boolean {
+  // 소진 자체가 아니라 **소진의 원인**을 본다 (TEST-DISPUTE 정정, 이슈 #352).
+  // 키 오류·서킷 open도 같은 타입으로 오는데, 그것들은 기다려도 풀리지 않는다 —
+  // 구분하지 않으면 모든 총실패가 한도 초과 백오프를 물어 실행이 몇 시간씩 늘어난다.
+  if (error instanceof LlmExhaustedError) return error.rateLimited;
+  if (!(error instanceof Error)) return false;
+  // RerankerError·LlmProviderError가 공유하는 형태다 — 클래스로 좁히지 않는 이유는
+  // 한도 초과를 이 모양으로 실어 나르는 타입이 앞으로 더 생겨도 그대로 잡히게 하기 위해서다.
+  // `retryable`은 보지 않는다: 5xx 등급은 각 프로바이더의 기존 재시도가 다루는 다른 축이다.
+  const options = (error as { options?: { rateLimited?: unknown } }).options;
+  return options?.rateLimited === true;
 }
 
 /** 테스트가 가짜 시계를 주입한다 — 실제 대기가 유닛 테스트를 분 단위로 늘리지 않게 */
@@ -49,12 +58,20 @@ export type Sleep = (ms: number) => Promise<void>;
  */
 export async function withRateLimitRetry<T>(
   attempt: () => Promise<T>,
-  _delaysMs: readonly number[],
-  _sleep?: Sleep,
+  delaysMs: readonly number[],
+  sleep: Sleep = defaultSleep,
 ): Promise<T> {
-  // TODO(#352): 구현 — 스텁은 재시도하지 않는다
-  return attempt();
+  // 지연 수만큼만 더 시도한다 — 지연 하나가 재시도 하나를 산다
+  for (let index = 0; ; index += 1) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (index >= delaysMs.length || !isRateLimited(error)) throw error;
+      await sleep(delaysMs[index]);
+    }
+  }
 }
 
-/** 스텁 컴파일 유지용 — 구현에서 isRateLimited가 소비한다 */
-void LlmExhaustedError;
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
