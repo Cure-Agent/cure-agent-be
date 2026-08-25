@@ -272,6 +272,14 @@ interface ItemRouting {
   top1Relevance: number | null;
   /** 생성을 측정한 경우에만 채워진다 */
   verdict: GenerationVerdictRecord | null;
+  /**
+   * 게이트 판정 **이전** 단계의 측정 실패 — 리랭크 재시도 소진 등 (이슈 #352).
+   *
+   * 게이트 갈래와 따로 두는 이유: 점수를 못 얻은 문항을 `top1Relevance: null`로 흘리면
+   * 컷 스윕에서 검색 게이트로 세어져 **「게이트가 잘랐다」로 위장**된다. 측정하지 못한 것과
+   * 게이트가 자른 것은 다른 사실이므로 다르게 세야 한다.
+   */
+  failureReason: string | null;
 }
 
 function messageOf(error: unknown): string {
@@ -468,6 +476,7 @@ export class RagEvalService {
         distanceAbstained: args.distanceAbstained,
         top1Relevance: args.top1Relevance,
         verdict: null,
+        failureReason: null, // TODO(#352): 리랭크 실패 전달
       };
       routings.push(routing);
       if (!generationEnabled) return;
