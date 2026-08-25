@@ -22,9 +22,16 @@ export interface LlmStreamOutcome {
   verdict?: LlmAnswerVerdict;
 }
 
-/** 게이트웨이 소진(전 프로바이더 불가) — 서비스에서 LLM_UNAVAILABLE로 매핑한다 */
+/**
+ * 게이트웨이 소진(전 프로바이더 불가) — 서비스에서 LLM_UNAVAILABLE로 매핑한다.
+ *
+ * `rateLimited`는 **소진의 원인이 한도 초과였는가**다 (이슈 #352). 요청 경로는 이 값을 읽지
+ * 않는다 — 사용자에게는 어느 쪽이든 같은 실패다. 읽는 곳은 오프라인 평가뿐이고, 거기서는
+ * 갈라야 한다: 429는 기다리면 풀리지만 키 오류·서킷 open은 기다려도 그대로라, 구분하지
+ * 않으면 모든 총실패가 한도 초과 백오프를 물어 실행이 몇 시간씩 늘어난다.
+ */
 export class LlmExhaustedError extends Error {
-  constructor() {
+  constructor(readonly rateLimited: boolean = false) {
     super('사용 가능한 LLM 프로바이더가 없습니다');
     this.name = 'LlmExhaustedError';
   }
@@ -55,13 +62,18 @@ export class LlmGateway {
     onDelta: (delta: string) => Promise<void> | void,
   ): Promise<LlmStreamOutcome> {
     const startedAt = Date.now();
+    // 소진 사유 추적 (docs/specs 없음 — 이슈 #352). 차단 스킵과 429 실패 둘 다 「기다리면
+    // 풀린다」는 같은 사실이므로 함께 센다
+    let rateLimited = false;
 
     for (const provider of this.providers) {
       const circuitOpen = this.circuitBreaker.isOpen(provider.name);
       // 쿨다운 만료로 닫히는 것도 이 시점에 드러나므로 매 시도마다 gauge를 맞춘다
       this.metrics.setLlmCircuitOpen(provider.name, circuitOpen);
 
-      if (this.rateLimitBlock.isBlocked(provider.name) || circuitOpen) {
+      const blocked = this.rateLimitBlock.isBlocked(provider.name);
+      if (blocked || circuitOpen) {
+        if (blocked) rateLimited = true;
         this.metrics.recordLlmOutcome(provider.name, 'skipped');
         continue;
       }
@@ -127,6 +139,7 @@ export class LlmGateway {
         this.metrics.recordLlmDuration(provider.name, (Date.now() - attemptStartedAt) / 1000);
 
         if (error instanceof LlmProviderError && error.options.rateLimited) {
+          rateLimited = true;
           this.rateLimitBlock.block(provider.name, error.options.retryAfterSec);
           this.metrics.recordLlmOutcome(provider.name, 'rate_limited');
         } else {
@@ -154,6 +167,6 @@ export class LlmGateway {
       title: 'LLM_EXHAUSTED',
       detail: '사용 가능한 LLM 프로바이더가 없습니다',
     });
-    throw new LlmExhaustedError();
+    throw new LlmExhaustedError(rateLimited);
   }
 }
