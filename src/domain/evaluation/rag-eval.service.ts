@@ -17,6 +17,11 @@ import {
   RetrievalService,
 } from '../../infrastructure/retrieval/retrieval.service';
 import { RERANKER, Reranker } from '../../infrastructure/retrieval/reranker.port';
+import {
+  GENERATION_RETRY_DELAYS_MS,
+  RERANK_RETRY_DELAYS_MS,
+  withRateLimitRetry,
+} from './eval-retry';
 import { EvalKind, EvalSetItem } from './evalset.types';
 import { LabelResolver } from './label-resolver';
 
@@ -272,11 +277,30 @@ interface ItemRouting {
   top1Relevance: number | null;
   /** 생성을 측정한 경우에만 채워진다 */
   verdict: GenerationVerdictRecord | null;
+  /**
+   * 게이트 판정 **이전** 단계의 측정 실패 — 리랭크 재시도 소진 등 (이슈 #352).
+   *
+   * 게이트 갈래와 따로 두는 이유: 점수를 못 얻은 문항을 `top1Relevance: null`로 흘리면
+   * 컷 스윕에서 검색 게이트로 세어져 **「게이트가 잘랐다」로 위장**된다. 측정하지 못한 것과
+   * 게이트가 자른 것은 다른 사실이므로 다르게 세야 한다.
+   */
+  failureReason: string | null;
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * 리랭크 시도의 결과 (이슈 #352).
+ *
+ * 던지지 않고 값으로 돌려주는 이유: 리랭크는 문항마다 실패할 수 있는데 예외로 올리면
+ * 호출부가 `evaluate()` 전체를 잃거나 매 호출을 try/catch로 감싸야 한다. 실패가 정상
+ * 경로의 일부이므로 타입에 싣는다.
+ */
+type RerankOutcome =
+  | { ok: true; orderedChunkIds: string[]; top1Relevance: number }
+  | { ok: false; reason: string };
 
 /**
  * 컷 c에서 문항 하나가 어느 갈래로 가는가 — **런타임 게이트와 같은 판정**이다.
@@ -294,6 +318,18 @@ function breakdownOf(routings: ItemRouting[], cutoff: number): GateBreakdown {
   };
 
   for (const routing of routings) {
+    /**
+     * **측정 실패가 게이트 판정보다 먼저다** (이슈 #352).
+     *
+     * 리랭크를 끝내 못 한 문항은 점수가 없어 컷에 따라 움직일 수 없다. 그런 문항을 게이트로
+     * 흘리면 `top1Relevance: null`이 곧 「점수 미달」로 읽혀 **검색 게이트가 잘랐다고 위장**된다.
+     * 측정하지 못한 것과 게이트가 자른 것은 다른 사실이므로 갈래를 먼저 가른다.
+     */
+    if (routing.failureReason !== null || routing.verdict?.status === 'failed') {
+      breakdown.generationFailed += 1;
+      continue;
+    }
+
     const scoreAbstained =
       routing.top1Relevance === null || routing.top1Relevance < cutoff;
     if (routing.distanceAbstained || scoreAbstained) {
@@ -305,10 +341,7 @@ function breakdownOf(routings: ItemRouting[], cutoff: number): GateBreakdown {
       case 'insufficient':
         breakdown.generationGate += 1;
         break;
-      case 'failed':
-        // 답변으로 세면 지표가 낙관 오염된다 — 판정을 못 받은 것과 답한 것은 다른 사실이다
-        breakdown.generationFailed += 1;
-        break;
+      // 'failed'는 위에서 이미 갈렸다 — 답변으로 세면 지표가 낙관 오염되기 때문이다
       default:
         // answerable · no_verdict(fail-open) · 미측정. 미방출은 프로덕션이 실제로 답하는 상태다
         breakdown.answered += 1;
@@ -318,13 +351,6 @@ function breakdownOf(routings: ItemRouting[], cutoff: number): GateBreakdown {
   return breakdown;
 }
 
-/**
- * 컷 0~10 전 구간 재구성.
- *
- * **한 번의 실행으로 전 구간을 재구성할 수 있는 이유**는 컷이 라우팅에만 쓰이고 생성 입력을
- * 바꾸지 않기 때문이다 — 리랭크 top-5는 컷과 무관하게 정해지므로, 컷 c를 통과한 문항이 받는
- * 근거는 이 평가가 실제로 보낸 것과 같다. 그래서 재구성이 컷 c의 운영 동작과 정확히 일치한다.
- */
 /**
  * 생성에 실을 근거 — 리랭크 순서의 상위 K개다.
  *
@@ -345,6 +371,13 @@ function topEvidenceOf(
   return ordered.length > 0 ? ordered : results.slice(0, RETRIEVAL_TOP_K);
 }
 
+/**
+ * 컷 0~10 전 구간 재구성.
+ *
+ * **한 번의 실행으로 전 구간을 재구성할 수 있는 이유**는 컷이 라우팅에만 쓰이고 생성 입력을
+ * 바꾸지 않기 때문이다 — 리랭크 top-5는 컷과 무관하게 정해지므로, 컷 c를 통과한 문항이 받는
+ * 근거는 이 평가가 실제로 보낸 것과 같다. 그래서 재구성이 컷 c의 운영 동작과 정확히 일치한다.
+ */
 function cutSweepOf(routings: ItemRouting[]): CutSweepRow[] {
   const answerable = routings.filter((routing) => routing.item.kind === 'answerable');
   const abstain = routings.filter((routing) => routing.item.kind === 'abstain');
@@ -431,19 +464,40 @@ export class RagEvalService {
       return rows.map((row, index) => ({ ...row, vectorRank: index + 1, keywordRank: null }));
     };
 
+    /**
+     * 한도 초과(429)면 백오프 후 재시도한다 (이슈 #352).
+     *
+     * 프로덕션은 리랭크 429를 코사인 폴백으로 흡수하지만 평가는 그럴 수 없다 — 점수가
+     * 없으면 컷 스윕의 라우팅 축 자체가 사라지기 때문이다. 대신 기다린다: 이 실행에는
+     * 기다릴 사람이 없고, 229문항 3시간을 429 하나에 잃는 것이 훨씬 비싸다.
+     */
     const rerankOf = async (
       question: string,
       results: HybridEvidence[],
-    ): Promise<{ orderedChunkIds: string[]; top1Relevance: number }> => {
-      const result = await this.reranker.rerank(
-        question,
-        results.map((row) => ({
-          chunkId: row.chunk.id,
-          content: row.chunk.content,
-          guidelineTitle: row.guideline.title,
-        })),
-      );
-      return { orderedChunkIds: result.order, top1Relevance: result.top1Relevance };
+    ): Promise<RerankOutcome> => {
+      try {
+        const result = await withRateLimitRetry(
+          () =>
+            this.reranker.rerank(
+              question,
+              results.map((row) => ({
+                chunkId: row.chunk.id,
+                content: row.chunk.content,
+                guidelineTitle: row.guideline.title,
+              })),
+            ),
+          RERANK_RETRY_DELAYS_MS,
+        );
+        return {
+          ok: true,
+          orderedChunkIds: result.order,
+          top1Relevance: result.top1Relevance,
+        };
+      } catch (error) {
+        // 재시도를 다 써도 실패하면 그 문항만 잃는다 — 실행 전체를 잃지 않는다.
+        // 점수·순위 지표는 건드리지 않는다: 모르는 값을 0으로 채우면 지표가 비관 오염된다
+        return { ok: false, reason: `리랭크 실패: ${messageOf(error)}` };
+      }
     };
 
     /**
@@ -461,16 +515,36 @@ export class RagEvalService {
         top1Relevance: number | null;
         results: HybridEvidence[];
         orderedChunkIds: string[] | null;
+        /** 게이트 이전 단계의 측정 실패 — 있으면 생성을 부르지 않는다 (이슈 #352) */
+        failureReason?: string;
       },
     ): Promise<void> => {
+      const failureReason = args.failureReason ?? null;
       const routing: ItemRouting = {
         item,
         distanceAbstained: args.distanceAbstained,
         top1Relevance: args.top1Relevance,
         verdict: null,
+        failureReason,
       };
       routings.push(routing);
       if (!generationEnabled) return;
+
+      // 리랭크를 못 했으면 생성에 실을 순서가 없다 — 부르면 측정하지 않은 구성을 재는 셈이다
+      if (failureReason !== null) {
+        routing.verdict = {
+          itemId: item.id,
+          kind: item.kind,
+          question: item.question,
+          status: 'failed',
+          cause: null,
+          missingAspects: [],
+          top1Relevance: args.top1Relevance,
+          distanceAbstained: args.distanceAbstained,
+          failureReason,
+        };
+        return;
+      }
 
       const base = {
         itemId: item.id,
@@ -552,8 +626,18 @@ export class RagEvalService {
         });
       }
 
-      if (results.length > 0) {
-        const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
+      const reranked = results.length > 0 ? await rerankOf(item.question, results) : null;
+      if (reranked !== null && !reranked.ok) {
+        // 점수를 못 얻었으므로 리랭크 지표·기권 판정 어디에도 넣지 않는다 (이슈 #352)
+        await routeOf(item, {
+          distanceAbstained,
+          top1Relevance: null,
+          results,
+          orderedChunkIds: null,
+          failureReason: reranked.reason,
+        });
+      } else if (reranked !== null) {
+        const { orderedChunkIds, top1Relevance } = reranked;
         answerableRelevances.push(top1Relevance);
         const scoreAbstained = top1Relevance < scoreCutoff;
         if (distanceAbstained || scoreAbstained) {
@@ -603,8 +687,17 @@ export class RagEvalService {
         vectorOrdered.length === 0 || vectorOrdered[0].distance > cutoff;
       if (distanceAbstained) abstainedAbstain += 1;
 
-      if (results.length > 0) {
-        const { orderedChunkIds, top1Relevance } = await rerankOf(item.question, results);
+      const reranked = results.length > 0 ? await rerankOf(item.question, results) : null;
+      if (reranked !== null && !reranked.ok) {
+        await routeOf(item, {
+          distanceAbstained,
+          top1Relevance: null,
+          results,
+          orderedChunkIds: null,
+          failureReason: reranked.reason,
+        });
+      } else if (reranked !== null) {
+        const { orderedChunkIds, top1Relevance } = reranked;
         abstainRelevances.push(top1Relevance);
         // abstain 문항도 생성을 탄다 — 「컷을 낮추면 생성 게이트가 무엇을 받아내는가」의 대상이
         // 바로 이들이다. 컷을 내려 검색 게이트를 통과한 기권 문항이 여기서 다시 걸릴 수 있다
@@ -699,7 +792,14 @@ export class RagEvalService {
       sectionPath: row.section.path,
     }));
 
-    const outcome = await this.llmGateway.stream({ question, evidence }, () => {});
+    /**
+     * 한도 초과 재시도 (이슈 #352). 게이트웨이는 429를 만나면 프로바이더를 차단하고
+     * 소진으로 보고하므로 **즉시 재시도는 무조건 실패한다** — 백오프가 차단 창을 넘겨야 한다.
+     */
+    const outcome = await withRateLimitRetry(
+      () => this.llmGateway.stream({ question, evidence }, () => {}),
+      GENERATION_RETRY_DELAYS_MS,
+    );
     return outcome.verdict;
   }
 }
