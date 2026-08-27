@@ -1,35 +1,114 @@
-# cure-agent-be
+# CureAgent Backend
 
-한의사용 임상 어시스턴트 CureAgent의 백엔드. 지침 근거 검색(RAG)·SSE 스트리밍 답변·환자 스냅샷 기반
-임상 가이던스·의료인 검토를 제공한다. **설계 단일 원본은 [docs/architecture.md](docs/architecture.md)**,
-스텝별 스펙은 [docs/specs/](docs/specs/)를 본다.
+English | [한국어](README.ko.md)
 
-## 스택
+> A production-oriented clinical RAG backend for evidence-grounded Korean medicine decision support.
 
-NestJS 11 · Drizzle ORM + PostgreSQL(pgvector, exact search) · Redis(denylist, fail-open) ·
-SSE 스트리밍(§8) · OpenAPI 계약 파이프라인(§1) · jest + Testcontainers e2e
+CureAgent turns 87 clinical-guideline PDFs into 7,154 searchable evidence chunks, retrieves and
+reranks the most relevant passages, and streams answers with source-linked citations. Its safety
+path is evaluated against 229 questions—including 44 deliberately unanswerable cases—and abstains
+when the available evidence cannot support an answer. The system also includes multi-provider LLM
+routing, production observability, and failure recovery.
 
-## 구동
+[Live Demo](https://cure.demo01.xyz/assistant) ·
+[Frontend](https://github.com/Cure-Agent/cure-agent-fe) ·
+[OpenAPI Contract](openapi/cure-agent.v1.json)
+
+## Key Features
+
+- **Hybrid retrieval** — runs pgvector cosine search and `pg_trgm` character n-gram search in
+  parallel, fuses both arms with Reciprocal Rank Fusion, and applies LLM reranking.
+- **Citation-grounded generation** — constrains answers to retrieved guideline evidence and maps
+  inline `[n]` markers to the source URL, section path, and supporting quote.
+- **Layered abstention and safety gates** — combines a vector-distance gate, reranker relevance
+  cutoff, and generation-stage answerability verdict instead of forcing an unsupported answer.
+- **229-question evaluation suite** — measures retrieval, reranking, abstention, and claim-level
+  groundedness across 185 answerable and 44 out-of-scope questions.
+- **Multi-provider LLM routing** — routes across OpenAI and Anthropic with retries, rate-limit
+  cooldowns, circuit breakers, and pre-stream fallback; deterministic fake providers support local
+  development and CI.
+- **SSE streaming** — exposes typed retrieval, answer-delta, completion, abstention, and error events
+  with sequence numbers and heartbeats.
+- **Observability and resilience** — provides Prometheus metrics for HTTP, retrieval, reranking, LLM,
+  and SSE stages, request trace IDs, and deduplicated Slack/Discord webhook alerts.
+
+## Architecture
+
+```text
+User → Hybrid Retrieval → LLM Reranking → Grounded LLM → Citation / Abstention → SSE
+```
+
+The backend is a domain-oriented NestJS modular monolith backed by PostgreSQL and Redis. See the
+[architecture document](docs/architecture.md) for the complete system design and
+[step specifications](docs/specs/) for implementation-level decisions. These documents remain the
+source of truth; the README intentionally stays at system-overview level.
+
+## Tech Stack
+
+NestJS 11 · TypeScript 5 · Drizzle ORM · PostgreSQL 17 (`pgvector` exact cosine search + `pg_trgm`) ·
+Redis 7 · SSE · OpenAPI · Prometheus · Jest + Testcontainers · Docker
+
+## Evaluation
+
+The offline evaluation uses a production-corpus snapshot rather than synthetic retrieval fixtures.
+
+| Scope                                  |                Size |
+| -------------------------------------- | ------------------: |
+| Clinical-guideline source documents    |             87 PDFs |
+| Indexed evidence corpus                | 7,154 active chunks |
+| Evaluation questions                   |           229 total |
+| Answerable / expected-abstention split |            185 / 44 |
+
+Representative results:
+
+| Metric                    | Result |
+| ------------------------- | -----: |
+| Hybrid candidate coverage | 100.0% |
+| Reranked Recall@5         |  97.3% |
+| Reranked MRR@5            |  0.925 |
+| Abstention recall         |  93.2% |
+| Over-abstention rate      |   0.0% |
+| Claim-level support rate  |  91.8% |
+
+Retrieval and abstention results come from the
+[2026-08-25 policy run](docs/rag-eval/2026-08-25-cut-sweep-run2.md); claim support comes from the
+[qa-v5 groundedness run](docs/rag-eval/2026-08-03-groundedness-qa-v5.md). The 229-question set also
+informed cutoff selection, so these are diagnostic policy metrics—not an independent held-out
+generalization benchmark. See [all evaluation reports](docs/rag-eval/) for prompts, failure cases,
+distribution sweeps, and limitations.
+
+## Getting Started
+
+Prerequisites: Node.js 22+, pnpm 10+, and Docker.
 
 ```bash
 pnpm install
-docker compose up -d          # pgvector + redis (.env.example의 DATABASE_URL과 일치)
-cp .env.example .env          # 키 값 채우기 (openssl rand -base64 32/48)
-pnpm db:migrate               # drizzle 마이그레이션
-pnpm start:dev                # http://localhost:3000/api/v1
-
-pnpm lint && pnpm test        # 유닛
-pnpm test:e2e                 # e2e (Docker 필요 — Testcontainers, 직렬 실행)
+cp .env.example .env          # Configure required secrets and at least one OAuth provider
+docker compose up -d          # PostgreSQL + pgvector and Redis
+pnpm db:migrate               # Apply Drizzle migrations
+pnpm start:dev                # API: http://localhost:3000/api/v1
+                              # Swagger: http://localhost:3000/api/docs
 ```
 
-LLM·임베딩 API 키(`OPENAI_API_KEY`·`ANTHROPIC_API_KEY`)가 없으면 결정적 fake 프로바이더로
-동작한다 — **키 없이 전 구간 구동·검증 가능**하다(로컬·CI 기본값, docs/specs/13·14).
+Run the verification suites:
 
-## 개발 방식 (SDD)
+```bash
+pnpm lint && pnpm test        # Lint and unit tests
+pnpm test:e2e                 # Testcontainers e2e; Docker required
+```
 
-스텝당 1페이지 스펙([docs/specs/](docs/specs/)) → 수용 기준 e2e를 **구현 전 작성·동결**(테스트는
-Codex가 스펙에서 독립 파생, Claude가 리뷰·동결·구현 — 심판과 선수를 같은 에이전트가 만들지 않는다)
-→ 동결 테스트를 통과시키는 구현 → dev PR부터 프로덕션 CD까지 자동 배포. "구현 중 테스트 수정 금지"는
-규율이 아니라 **훅(예방)과 사후 감사(탐지)로 기계적으로 강제**된다.
+`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are optional. Without them, deterministic fake LLM,
+embedding, reranking, and guidance providers keep local and CI flows testable. Authentication still
+requires at least one configured Google, Kakao, or Naver OAuth client ID; see
+[`.env.example`](.env.example) for every setting.
 
-전체 구조·강제 장치·실제 추적 사례는 **[docs/sdd.md](docs/sdd.md)**를 본다.
+## Specification-Driven Development
+
+Each increment starts with a one-page [specification](docs/specs/). Acceptance e2e tests are derived
+independently before implementation, reviewed, and frozen; implementation must satisfy them without
+changing the test oracle. Hooks prevent edits to frozen tests, while a commit-based diff audit catches
+bypass attempts. The delivery pipeline then automates the path from dev PR and CI through the
+production deployment PR and CD.
+
+See [Specification-Driven Development](docs/sdd.md) for the enforcement model, automation harness,
+and a traceable production example.
