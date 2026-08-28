@@ -1,95 +1,114 @@
-# SDD — 스펙 주도 개발과 자동화 하네스
+# SDD — Specification-Driven Development and the Automation Harness
 
-<img src="assets/sdd-harness-architecture.png" alt="2단계 하네스 아키텍처 — spec → freeze → implement → ship → pipeline 흐름과 각 단계의 담당 에이전트" width="640">
+English | [한국어](sdd.ko.md)
 
-이 레포는 1인 개발 + AI 에이전트(Claude Code 구현 / Codex 테스트 파생) 체제로 개발한다.
-속도는 AI가 내고, 품질은 사람의 주의력이 아니라 **기계적 장치**(훅·게이트·감사·CI)가 지킨다.
-이 문서는 그 구조의 안내서다 — 규칙 원문은 각 링크가 원천이고, 여기서는 구조와 검증 경로만 담는다.
+<img src="assets/sdd-harness-architecture.png" alt="Two-layer harness architecture showing the spec → freeze → implement → ship → pipeline flow and the agent responsible for each stage" width="640">
 
-## 루프: 스펙 → 동결 → 구현 → 배포
+This repository is developed by one person working with AI agents: Claude Code implements, while
+Codex independently derives acceptance tests. AI provides speed; quality is protected by
+**mechanical controls**—hooks, gates, audits, and CI—rather than relying on human attention. This
+document explains that system. The linked procedures remain the canonical rules; this page focuses
+on the structure and its verification path.
 
-1. **스펙** — 스텝당 1페이지([docs/specs/](specs/), 05번부터 — 1~4단계는
-   [architecture.md](architecture.md)가 직접 스펙이라 하네스 없이 구현했다). 수치는 추측이 아니라
-   **실측 조사로 확정**하고, 갈림길(처분·트레이드오프·범위)은 사용자와 확정해 결정과 근거를 본문에
-   남긴다. 진입점 [.claude/commands/spec.md](../.claude/commands/spec.md)
-2. **테스트 동결** — 수용 기준 e2e를 구현 전에 작성해 커밋으로 동결한다. 핵심 원칙은
-   **심판(테스트)과 선수(구현)를 같은 에이전트가 만들지 않는다** — 같은 에이전트가 둘 다 만들면
-   스펙 오독이 양쪽에 복제되어 서로를 통과시킨다. 테스트는 Codex가 스펙에서 독립 파생하고,
-   구현 하네스는 스텁 준비·리뷰·동결만 한다. 절차 원본 [automation/freeze.md](../automation/freeze.md)
-3. **구현** — 동결 테스트를 전부 통과시킬 때까지. 테스트 수정 금지(아래 「동결은 어떻게
-   강제되는가」). 진입점 [.claude/commands/implement.md](../.claude/commands/implement.md)
-4. **배포** — dev PR(squash) → CI → 배포 PR(merge) → 프로덕션 CD까지 자동. 절차 원본
-   [automation/pipeline.md](../automation/pipeline.md). 민감 파일은 커밋 게이트 스크립트 +
-   PreToolUse 훅의 이중 방어로 차단한다
+## The Loop: Spec → Freeze → Implement → Ship
 
-계획된 스텝이 아닌 **운영 중 문제**는 [/problem](../.claude/commands/problem.md)으로 진입한다 —
-라우팅(spec을 쓸 변경인가)은 사람이 미리 고르지 않고, 진단 후 영향 파일 패턴(계약·보안·새 도메인)으로
-기계 판정해 걸리면 그 자리에서 spec으로 승격한다. 기준은 [architecture.md](architecture.md) §15
-「5단계 이후 작업 규칙 (SDD)」.
+1. **Spec** — Each step starts with a one-page [specification](specs/), beginning at step 05. Steps
+   1–4 used [architecture.md](architecture.md) itself as their specification and predated the harness.
+   Numbers are established through **measurement, not conjecture**. Decision forks—policy, trade-offs,
+   and scope—are confirmed with the user, then recorded with their rationale. Entry point:
+   [.claude/commands/spec.md](../.claude/commands/spec.md).
+2. **Test freeze** — Acceptance e2e tests are written before implementation and pinned in a commit.
+   The core rule is that **the same agent must not create both the referee (tests) and the player
+   (implementation)**. Otherwise, a misreading of the spec can be copied into both sides and allow
+   them to validate each other. Codex derives tests independently from the spec; the implementation
+   harness only prepares stubs, reviews the result, and freezes it. Canonical procedure:
+   [automation/freeze.md](../automation/freeze.md).
+3. **Implementation** — Continue until every frozen test passes. The tests may not be changed; see
+   [How the Freeze Is Enforced](#how-the-freeze-is-enforced). Entry point:
+   [.claude/commands/implement.md](../.claude/commands/implement.md).
+4. **Ship** — The path from dev PR (squash) → CI → deployment PR (merge) → production CD is
+   automated. Canonical procedure: [automation/pipeline.md](../automation/pipeline.md). Sensitive
+   files are protected twice: by a commit-gate script and by a PreToolUse hook.
 
-## 동결은 어떻게 강제되는가
+**Production issues** outside planned steps enter through
+[/problem](../.claude/commands/problem.md). A human does not decide in advance whether the change
+needs a spec. After diagnosis, the harness compares affected file paths against mechanical rules for
+contracts, security, and new domains; a match promotes the work to a spec in place. The rule lives in
+[architecture.md](architecture.md) §15, "Rules for work after step 5 (SDD)."
 
-"구현 중 테스트 수정 금지"는 선언이 아니라 3중 장치다:
+## How the Freeze Is Enforced
 
-| 층 | 장치 | 잡는 것 |
-|---|---|---|
-| 게이트 | 동결 전 3계층 기계 검증 ([freeze.md](../automation/freeze.md) 절차 5) | Discovery(러너가 파일을 실제로 잡는가) · 빌드 GREEN · **테스트 단위 RED** — 스텁을 죽이지 못하는 테스트는 정의상 공허 테스트 |
-| 예방 | PreToolUse 훅 [freeze-test-files.sh](../.claude/hooks/freeze-test-files.sh) | 동결 목록에 있는 파일의 Edit/Write를 도구 호출 단계에서 거부 |
-| 감사 | 사후 diff 감사 ([freeze.md](../automation/freeze.md) 「사후 감사」) | 훅이 못 막는 Bash 우회 편집(`sed -i` 등) — 파일 목록을 변조 가능한 상태 파일이 아니라 **동결 커밋 자체에서 복원**해 `git diff`가 비어야 통과 |
+"Do not edit tests during implementation" is backed by three controls, not a declaration:
 
-구현이 동결 테스트를 통과시키지 못할 때 **기본 추정은 구현 결함**이다 — 입증 책임은 항상 구현
-쪽에 있다. 테스트가 틀렸다고 판단되면 고치는 게 아니라 스펙 결함 신호로 회귀한다(TEST-DISPUTE):
-스펙 수정 → Codex 재파생 → 재동결, 판단 사유는 커밋 메시지에 남는다.
+| Layer      | Control                                                                                         | What it catches                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Gate       | Three-part mechanical validation before freezing ([freeze.md](../automation/freeze.md), step 5) | Discovery—the runner actually collects the file; build GREEN; and **test-unit RED**. A test that cannot kill its stub is vacuous by definition.                                                  |
+| Prevention | PreToolUse hook [freeze-test-files.sh](../.claude/hooks/freeze-test-files.sh)                   | Rejects Edit/Write tool calls targeting files on the frozen list.                                                                                                                                |
+| Audit      | Post-implementation diff audit ([freeze.md](../automation/freeze.md), "Post-audit")             | Detects shell-based bypasses such as `sed -i`. The protected file list is reconstructed from the **freeze commit itself**, not a mutable state file, and the audit requires an empty `git diff`. |
 
-## 실패가 만든 규칙들
+When an implementation cannot pass the frozen tests, the **default hypothesis is an implementation
+defect**; the burden of proof stays with the implementation. If a test appears wrong, it is not
+patched in place. It becomes a specification-defect signal and enters TEST-DISPUTE: revise the spec
+→ let Codex derive the tests again → freeze again. The rationale is preserved in the commit message.
 
-규칙 대부분은 실제 사고의 사후 조치이고, 문서에 사고 번호가 그대로 남아 있다:
+## Rules Born from Failures
 
-- 복합 수용 기준(「A하고 B한다」)을 한 항목으로 넘기면 테스트 파생이 **앞 동작만 단언**한다 —
-  spec 23 기준 8이 그렇게 동결 게이트·CI를 전부 통과해 프로덕션까지 갔다
-  ([#120](https://github.com/Cure-Agent/cure-agent-be/issues/120)). 이후 스펙 작성 단계에서
-  기준을 동작 단위로 쪼개는 것이 규칙이 됐다
-- 커밋 제목의 `#N`에 스펙 번호를 쓰면 같은 번호의 무관한 이슈에 자동 링크된다 — 실제로 spec 18
-  구현이 이슈 #18 「배포」에 걸렸다. 이후 `#N`은 항상 이슈 번호다
-- 아직 쓰지 않은 스펙에 번호를 예약하면 앞에 스펙이 끼어들 때마다 전 문서의 참조를 고쳐야 한다 —
-  개정 감지 스케줄러가 §20 → §23으로 세 번 밀리며 매번 4~6곳을 수정했다. 이후 번호는 쓰는 시점에
-  받는다
+Most rules are corrective actions from real incidents, whose issue numbers remain in the record:
 
-## 실제 추적 사례 — spec 38 (구성원 강퇴)
+- Passing a compound acceptance criterion ("do A and B") as one item into test derivation can cause
+  the test to **assert only the first behavior**. Criterion 8 in spec 23 passed the freeze gate and CI
+  that way and reached production ([#120](https://github.com/Cure-Agent/cure-agent-be/issues/120)).
+  Acceptance criteria are now split into behavior-sized units during spec authoring.
+- Using a spec number as `#N` in a commit title makes GitHub link it to an unrelated issue with the
+  same number. The spec 18 implementation actually linked itself to issue #18, "Deployment." Since
+  then, `#N` always denotes an issue number.
+- Reserving numbers for unwritten specs forces every reference to change whenever another spec is
+  inserted ahead of them. The revision-detection scheduler moved from §20 to §23 across three
+  renumberings, each requiring edits in four to six places. Spec numbers are now assigned only when
+  the spec is written.
 
-이 문서의 주장을 검증하려면 아래 경로를 따라가면 된다:
+## Traceable Example — Spec 38 (Clinic Member Removal)
 
-1. 스펙: [specs/38-clinic-member-removal.md](specs/38-clinic-member-removal.md) —
-   [PR #315](https://github.com/Cure-Agent/cure-agent-be/pull/315)로 먼저 dev에 머지
-2. 구현 [PR #319](https://github.com/Cure-Agent/cure-agent-be/pull/319) — 커밋 탭에 3단계가
-   그대로 남아 있다: `[TEST/#318] 스텁 준비` → `[TEST/#318] … 수용 기준 테스트 동결 (작성: Codex)`
-   → `[FEAT/#318] 구성원 강퇴`
-3. PR 본문 — 수용 기준 39개 ↔ 테스트 매핑 표, 동결 커밋 SHA, 사후 감사 결과
-4. dev 히스토리 — squash 머지로 「한 줄 = 한 변경」: `[FEAT/#318] … (#319)`
+Follow this path to verify the claims in this document:
 
-같은 패턴이 이후 구현 PR마다 반복된다.
+1. Spec: [specs/38-clinic-member-removal.md](specs/38-clinic-member-removal.md), merged into dev first
+   through [PR #315](https://github.com/Cure-Agent/cure-agent-be/pull/315).
+2. Implementation: [PR #319](https://github.com/Cure-Agent/cure-agent-be/pull/319). Its commit tab
+   preserves all three stages: `[TEST/#318] 스텁 준비` (prepare stubs) →
+   `[TEST/#318] … 수용 기준 테스트 동결 (작성: Codex)` (freeze acceptance tests, authored by
+   Codex) → `[FEAT/#318] 구성원 강퇴` (remove clinic member).
+3. PR body: a mapping of 39 acceptance criteria to tests, the freeze commit SHA, and the post-audit
+   result.
+4. Dev history: squash merging preserves "one line = one change": `[FEAT/#318] … (#319)`.
 
-## 계약 파이프라인 (BE ↔ FE)
+The same pattern is repeated in every subsequent implementation PR.
 
-DTO·컨트롤러 변경 → `pnpm openapi:export`로 `openapi/cure-agent.v1.json` 재생성 후 커밋.
-CI가 「커밋본 = 재생성본」(contract)과 breaking 여부(oasdiff)를 검사하고, main 머지 시
-repository_dispatch로 cure-agent-fe에 타입 동기화 PR이 자동 생성된다. FE는 생성된 타입 위에서
-API를 호출하므로 계약 드리프트가 구조적으로 차단된다.
+## Contract Pipeline (BE ↔ FE)
 
-## 하네스 중립 설계
+A DTO or controller change triggers `pnpm openapi:export`, regenerating and committing
+`openapi/cure-agent.v1.json`. CI verifies that the committed contract equals the regenerated output
+and checks for breaking changes with oasdiff. When main is updated, a `repository_dispatch`
+automatically opens a type-synchronization PR in cure-agent-fe. The frontend calls the API through
+those generated types, structurally preventing contract drift.
 
-절차 원문은 [automation/](../automation/)(freeze·pipeline·ship·problem)에 **하네스 중립**으로
-두고, [.claude/commands/](../.claude/commands/)는 Claude Code 어댑터다 — 폴링 모드·Co-Author
-트레일러 등 하네스 특성만 주입한다. 다른 코딩 에이전트를 붙일 때 절차를 다시 쓰지 않기 위한
-분리다. CI/CD 대기도 즉석 루프가 아니라 [automation/bin/](../automation/bin/)의 폴링 스크립트
-(`pr-gate.sh`·`run-wait.sh`, 판정 로직은 fixture 스모크 테스트로 검증)로 수행한다.
+## Harness-Neutral Design
 
-## 사람은 어디에 개입하는가
+Canonical procedures live under [automation/](../automation/)—freeze, pipeline, ship, and problem—in
+**harness-neutral** form. [.claude/commands/](../.claude/commands/) is the Claude Code adapter and
+injects only harness-specific behavior such as polling mode and Co-Author trailers. This separation
+keeps the procedure portable to another coding agent. CI/CD waits also use polling scripts from
+[automation/bin/](../automation/bin/) rather than improvised loops: `pr-gate.sh` and `run-wait.sh`,
+whose decision logic is covered by fixture smoke tests.
 
-전 과정이 자동이지만, 판단 지점 세 곳은 사람이 잡는다:
+## Where Humans Intervene
 
-- **스펙의 갈림길** — 처분·트레이드오프·범위는 사용자와 확정하고 결정·근거를 spec 본문에 남긴다
-- **TEST-DISPUTE 승인** — 테스트/명세 결함 판정에 대한 사용자 확인이 곧 명세 확정 행위다
-- **배포 승인** — 구현 완료부터 프로덕션까지 유일한 개입 지점이다. PR은 게이트 통과 즉시 자동
-  머지되므로, 이 승인이 없으면 개입 지점이 하나도 없다 — 그래서 하네스가 이 지점을 건너뛰지
-  못하게 절차에 못 박아 놨다 ([implement.md](../.claude/commands/implement.md) Phase 4-5)
+The pipeline is automated, but humans retain three decision points:
+
+- **Spec forks** — Policy, trade-offs, and scope are confirmed with the user, then recorded with the
+  decision and its rationale in the spec.
+- **TEST-DISPUTE approval** — User confirmation of a test or specification defect is itself the act
+  that establishes the corrected specification.
+- **Deployment approval** — This is the only intervention point between completed implementation and
+  production. PRs auto-merge as soon as their gates pass; without this approval, there would be no
+  intervention point at all. The harness therefore forbids skipping it
+  ([implement.md](../.claude/commands/implement.md), phases 4–5).

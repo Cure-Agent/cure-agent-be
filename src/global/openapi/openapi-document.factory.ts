@@ -14,8 +14,8 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
     .setTitle('Cure Agent API')
     .setDescription(
       '한의 임상 지침 기반 어시스턴트 API. ' +
-        '일반 JSON 응답은 공통 봉투(success/code/message/data/page/timestamp/traceId)를 사용하며, ' +
-        'SSE 스트리밍에는 봉투를 적용하지 않는다. 인증은 HttpOnly 쿠키 기반이다.',
+        '일반 JSON 응답은 공통 응답 형식(success/code/message/data/page/timestamp/traceId)을 사용하며, ' +
+        'SSE 스트리밍은 별도의 이벤트 스키마를 따른다. 인증은 HttpOnly 쿠키 기반이다.',
     )
     .setVersion(OPENAPI_VERSION)
     .addCookieAuth(ACCESS_COOKIE)

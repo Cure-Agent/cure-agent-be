@@ -136,7 +136,7 @@ export class ConversationController {
 
   @Post(':conversationId/messages/stream')
   @ApiOperation({
-    summary: '질문 전송 + SSE 스트리밍 답변 (§8 — 봉투 미적용)',
+    summary: '질문 전송 + SSE 스트리밍 답변',
     description:
       'message.accepted → retrieval.started/completed → answer.delta(seq) → ' +
       'answer.completed | answer.abstained | error. 15초 heartbeat 주석 전송.',

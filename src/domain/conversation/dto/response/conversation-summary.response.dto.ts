@@ -9,6 +9,14 @@ export class ConversationSummaryResponseDto {
   @ApiProperty({ enum: CONVERSATION_TYPES })
   type!: (typeof CONVERSATION_TYPES)[number];
 
+  @ApiProperty({
+    required: false,
+    description:
+      'PATIENT_GUIDANCE 대화가 가리키는 환자 — GUIDELINE_QA에는 없다. ' +
+      '대화만 알고 들어온 화면이 환자 프로필을 되찾는 유일한 축이다',
+  })
+  patientId?: string;
+
   @ApiProperty()
   title!: string;
 

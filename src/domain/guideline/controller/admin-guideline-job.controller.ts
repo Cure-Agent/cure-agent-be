@@ -63,7 +63,7 @@ export class AdminGuidelineJobController {
 
   @Get(':jobId/stream')
   @ApiOperation({
-    summary: '잡 진행 SSE (§8 — 봉투 미적용)',
+    summary: '잡 진행 SSE',
     description:
       'job.snapshot → run.stage(단계마다) → job.completed. 모든 이벤트가 job 카운터를 함께 싣는다. ' +
       'GET이라 EventSource를 그대로 쓴다.',

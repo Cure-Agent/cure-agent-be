@@ -1,7 +1,7 @@
 {
   "name": "cure-agent-be",
   "version": "0.1.0",
-  "description": "Cure Agent 백엔드 (NestJS, PostgreSQL+pgvector, OpenAPI 계약 원본)",
+  "description": "Production-oriented clinical RAG backend built with NestJS, PostgreSQL, and pgvector",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.18.0",
