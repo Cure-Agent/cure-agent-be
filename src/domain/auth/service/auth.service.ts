@@ -20,6 +20,7 @@ import {
   ClinicInvitationService,
   ResolvedInvitation,
 } from '../../clinician/service/clinic-invitation.service';
+import { DemoPatientSeeder } from '../../patient/service/demo-patient-seeder.service';
 import { AuthSessionRepository } from '../repository/auth-session.repository';
 import { AuthSessionRow } from '../persistence/auth-session.schema';
 import { CompleteSignUpRequestDto } from '../dto/request/complete-sign-up.request.dto';
@@ -56,6 +57,8 @@ export class AuthService {
     private readonly ticketService: OAuthTicketService,
     private readonly invitationService: ClinicInvitationService,
     private readonly metrics: MetricsService,
+    // 클리닉 개설 분기의 시딩 (docs/specs/41) — 호출 배선은 구현에서
+    private readonly demoPatientSeeder: DemoPatientSeeder,
   ) {}
 
   /**
