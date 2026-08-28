@@ -14,6 +14,8 @@ export function toConversationSummary(
   return {
     id: row.id,
     type: row.type,
+    // GUIDELINE_QA는 null이라 필드 자체가 응답에서 빠진다 — 기존 소비자의 형태가 그대로 유지된다
+    patientId: row.patientId ?? undefined,
     title: row.title,
     status: row.status,
     lastMessagePreview: lastMessage ? truncate(lastMessage.content, PREVIEW_LIMIT) : undefined,

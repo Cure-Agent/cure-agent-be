@@ -197,6 +197,12 @@ export class AuthService {
       await this.clinicianRepository.insertClinic({ id: clinicId, name: clinicName });
       await attachClinician(clinicId);
       await this.clinicianRepository.updateClinicOwner(clinicId, clinicianId);
+      /**
+       * 데모 환자 시딩 (docs/specs/41) — **개설 분기에만** 둔다. 위의 합류 분기(초대)는 이미
+       * 환자가 있는 클리닉으로 들어가므로 거기서 넣으면 동료의 실제 목록을 오염시킨다.
+       * `DEMO_SEED_ENABLED`가 꺼져 있으면 아무것도 하지 않는다(기본값).
+       */
+      await this.demoPatientSeeder.seed(clinicId);
       return this.issueAuth(clinicianId);
     });
   }
