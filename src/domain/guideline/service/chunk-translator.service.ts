@@ -64,6 +64,27 @@ export class ChunkTranslatorService {
       this.repository.listChunksNeedingTranslation(options.target, prefixes),
     );
 
+    /**
+     * 지침 제목 번역은 **지침 단위로 한 번만** 부른다.
+     *
+     * 제목은 같은 지침의 모든 청크에서 동일한데, 청크마다 번역하면 데모 6주제 기준 제목 6개를
+     * 655번 번역하게 되어 호출·비용·시간이 두 배가 된다(실측: 655청크 → 1,310회). 번역 행에
+     * 제목을 비정규화해 저장하는 것과 별개 축이다 — 저장은 조인을 줄이려는 것이고, 여기서
+     * 줄이는 것은 **외부 호출**이다.
+     *
+     * 실패는 캐시하지 않는다 — 예외가 나면 항목이 비어 다음 청크가 다시 시도한다.
+     */
+    const titleCache = new Map<string, string>();
+    const translateTitle = async (title: string): Promise<string> => {
+      // 후행 탭이 붙은 제목이 있으므로(기준 20) 번역기에는 정규화한 문자열을 넘긴다
+      const key = title.replace(/^[\s\t\n\r]+|[\s\t\n\r]+$/g, '');
+      const cached = titleCache.get(key);
+      if (cached !== undefined) return cached;
+      const value = await this.translator.translate(key, options.target);
+      titleCache.set(key, value);
+      return value;
+    };
+
     let translated = 0;
     for (const candidate of candidates) {
       if (!candidate.stale) continue;
@@ -75,10 +96,7 @@ export class ChunkTranslatorService {
        */
       try {
         const content = await this.translator.translate(candidate.chunk.content, options.target);
-        const titleTranslated = await this.translator.translate(
-          candidate.guidelineTitle,
-          options.target,
-        );
+        const titleTranslated = await translateTitle(candidate.guidelineTitle);
         await this.txManager.run(() =>
           this.repository.upsertChunkTranslation({
             id: ulid(),
