@@ -3,6 +3,7 @@
  * provider-router가 이 배열(LLM_PROVIDERS)을 우선순위 순서로 소비한다.
  */
 import { ProviderErrorOptions } from '../http/provider-http';
+import { SupportedLang } from './translation/translator.port';
 
 export const LLM_PROVIDERS = Symbol('LLM_PROVIDERS');
 
@@ -34,6 +35,11 @@ export interface LlmTokenUsage {
 export interface LlmStreamRequest {
   question: string;
   evidence: LlmEvidenceContext[];
+  /**
+   * 답변을 쓸 언어 (docs/specs/42). 미지정은 `ko`이며 그 경로는 오늘과 동일하다(기준 3·4).
+   * 프롬프트 빌더가 규칙 5를 이 값으로 가르므로 프로바이더까지 내려와야 한다.
+   */
+  responseLang?: SupportedLang;
   signal?: AbortSignal;
   /**
    * 프로바이더가 usage를 보고할 때 1회 호출된다(선택 — fake·테스트 프로바이더는 미호출).

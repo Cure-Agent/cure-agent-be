@@ -32,6 +32,8 @@ import { GuidelineParseService } from './service/guideline-parse.service';
 import { GuidelineListProvider } from './service/guideline-list.provider';
 import { GuidelineJobEventBus } from './sse/guideline-job-event.bus';
 import { GuidelineService } from './service/guideline.service';
+import { ChunkTranslatorService } from './service/chunk-translator.service';
+import { LlmModule } from '../../infrastructure/llm/llm.module';
 
 @Module({
   // ClinicianModule은 AdminGuard의 역할 조회를 위해 필요하다 (docs/specs/21)
@@ -39,6 +41,9 @@ import { GuidelineService } from './service/guideline.service';
     EmbeddingModule,
     GuidelineSourceModule,
     ClinicianModule,
+    // 청크 번역 잡이 TRANSLATOR를 쓴다 (docs/specs/42). 컨트롤러가 없는 모듈이라
+    // OpenAPI path 순서에 영향이 없다 (§41 판단표의 AuthModule 사례와 다르다)
+    LlmModule,
     // 개정 감지 스캔 설정 (docs/specs/26)
     ConfigModule.forFeature(guidelineScanConfig),
   ],
@@ -75,6 +80,8 @@ import { GuidelineService } from './service/guideline.service';
     PipelineRunRepository,
     PdfTextExtractor,
     AdminGuard,
+    // 청크 번역 멱등 잡 (docs/specs/42) — CLI가 소비한다
+    ChunkTranslatorService,
   ],
   exports: [
     GuidelineIngestService,
@@ -82,6 +89,8 @@ import { GuidelineService } from './service/guideline.service';
     GuidelineParseService,
     // 크론 트리거가 부른다 (docs/specs/26)
     GuidelineRevisionScanService,
+    // pnpm translate:chunks가 부른다 (docs/specs/42)
+    ChunkTranslatorService,
   ],
 })
 export class GuidelineModule {}

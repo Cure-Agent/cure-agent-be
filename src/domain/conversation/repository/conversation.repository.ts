@@ -14,14 +14,18 @@ import {
 } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import {
+  EvidenceChunkRow,
+  EvidenceChunkTranslationRow,
   GuidelineRow,
   GuidelineSectionRow,
   GuidelineVersionRow,
+  evidenceChunkTranslations,
   evidenceChunks,
   guidelineSections,
   guidelineVersions,
   guidelines,
 } from '../../guideline/persistence/guideline.schema';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import {
   ConversationRow,
   MessageCitationRow,
@@ -49,6 +53,12 @@ export interface CitationDetailRow {
   section: GuidelineSectionRow;
   version: GuidelineVersionRow;
   guideline: GuidelineRow;
+  /**
+   * 인용 번역 판정에 필요한 둘 (docs/specs/42). `chunk.contentHash`가 stale 판정 축이라
+   * 청크 없이는 번역을 실을 수 없다 — 판정 불가는 「번역 없음」으로 닫힌다(mapper).
+   */
+  chunk?: EvidenceChunkRow;
+  translation?: EvidenceChunkTranslationRow | null;
 }
 
 /**
@@ -223,8 +233,17 @@ export class ConversationRepository {
   async insertMessage(
     row: Pick<
       MessageRow,
-      'id' | 'conversationId' | 'role' | 'content' | 'status' | 'answerKind' | 'clientRequestId'
-    >,
+      | 'id'
+      | 'conversationId'
+      | 'role'
+      | 'content'
+      | 'status'
+      | 'answerKind'
+      | 'clientRequestId'
+    > &
+      // 생성 언어 (docs/specs/42 기준 10) — 컬럼 기본값이 'ko'라 선택 항목이다.
+      // USER 메시지처럼 답변이 아닌 행은 넘기지 않고 기본값을 그대로 쓴다
+      Partial<Pick<MessageRow, 'responseLang'>>,
   ): Promise<void> {
     await this.txManager.conn.insert(messages).values(row);
   }
@@ -315,7 +334,15 @@ export class ConversationRepository {
     await this.txManager.conn.insert(messageCitations).values(rows);
   }
 
-  async listCitationDetails(messageIds: string[]): Promise<CitationDetailRow[]> {
+  /**
+   * @param lang 인용 번역을 함께 실을 언어 (docs/specs/42). 청크는 stale 판정(content_hash
+   *   대조)에 필요해 항상 싣고, 번역은 **left join**이라 없으면 null로 온다 — 번역이 없는
+   *   근거가 인용에서 빠지면 답변과 근거가 어긋난다.
+   */
+  async listCitationDetails(
+    messageIds: string[],
+    lang: SupportedLang = 'ko',
+  ): Promise<CitationDetailRow[]> {
     if (messageIds.length === 0) return [];
     return this.txManager.conn
       .select({
@@ -323,14 +350,45 @@ export class ConversationRepository {
         section: guidelineSections,
         version: guidelineVersions,
         guideline: guidelines,
+        chunk: evidenceChunks,
+        translation: evidenceChunkTranslations,
       })
       .from(messageCitations)
       .innerJoin(evidenceChunks, eq(messageCitations.evidenceChunkId, evidenceChunks.id))
       .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
       .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
       .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
+      .leftJoin(
+        evidenceChunkTranslations,
+        and(
+          eq(evidenceChunkTranslations.chunkId, evidenceChunks.id),
+          eq(evidenceChunkTranslations.lang, lang),
+        ),
+      )
       .where(inArray(messageCitations.messageId, messageIds))
       .orderBy(asc(messageCitations.marker));
+  }
+
+  /**
+   * 검색 결과 청크들의 번역을 한 번에 읽는다 (docs/specs/42 기준 12b).
+   * `retrieval.completed`가 근거 상세를 싣기 전에 붙일 재료이며, 없으면 빈 Map이다 —
+   * 번역이 없는 근거도 그대로 실려야 답변과 근거가 어긋나지 않는다.
+   */
+  async mapChunkTranslations(
+    chunkIds: string[],
+    lang: SupportedLang,
+  ): Promise<Map<string, EvidenceChunkTranslationRow>> {
+    if (chunkIds.length === 0) return new Map();
+    const rows = await this.txManager.conn
+      .select()
+      .from(evidenceChunkTranslations)
+      .where(
+        and(
+          inArray(evidenceChunkTranslations.chunkId, chunkIds),
+          eq(evidenceChunkTranslations.lang, lang),
+        ),
+      );
+    return new Map(rows.map((row) => [row.chunkId, row]));
   }
 
   async insertGenerationRun(row: typeof generationRuns.$inferInsert): Promise<void> {

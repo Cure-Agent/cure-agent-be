@@ -20,6 +20,13 @@ coverage/
 # 로컬 IDE MCP 연결 (개인 환경 전용 — 팀 공유 MCP 서버가 생기면 해제하고 커밋)
 .mcp.json
 
+# Codex 하네스 (loopin-be 선례와 같은 화이트리스트)
+# config.toml·hooks.json에 절대경로가 박혀 있어 다른 체크아웃에서 그대로 못 쓰고,
+# hooks/*.sh는 이미 커밋된 .claude/hooks/ 사본이라 공유할 새 내용이 없다.
+# 프로젝트 스코프 스킬만 리포로 공유한다 (아직 없지만 생기면 자동으로 커밋 대상).
+.codex/*
+!.codex/skills/
+
 # 테스트 동결 하네스 스크래치 (automation/freeze.md — /implement·/problem 공용)
 .cure-implement/
 

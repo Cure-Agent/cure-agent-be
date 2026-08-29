@@ -3,6 +3,8 @@
  * 근거를 [n] 마커와 함께 제시하고 인용 표기를 지시한다 — 마커가 등장한 근거만 인용으로 영속화된다.
  */
 import { LlmStreamRequest } from './llm-provider.port';
+import { renderTermbase } from './terminology';
+import { SupportedLang } from './translation/translator.port';
 
 /**
  * GenerationRun.promptVersion 기록값.
@@ -25,14 +27,24 @@ import { LlmStreamRequest } from './llm-provider.port';
  */
 export const PROMPT_VERSION = 'qa-v6';
 
+/**
+ * 답변 언어별 기록값 (docs/specs/42).
+ *
+ * **버전을 가르는 이유는 측정 대상이 갈리기 때문이다** — 영문 경로는 규칙 5가 다르고 용어집이
+ * 함께 실리므로, 같은 이름으로 기록하면 groundedness 실측과 과잉 기권 분포가 두 프롬프트를
+ * 섞어 잰다. 한국어 경로는 `qa-v6` 그대로라 229문항 기준선이 유효하게 남는다(기준 4).
+ */
+export function promptVersionFor(responseLang: SupportedLang = 'ko'): string {
+  return responseLang === 'en' ? `${PROMPT_VERSION}-en` : PROMPT_VERSION;
+}
+
 export interface LlmPrompt {
   system: string;
   user: string;
 }
 
-const SYSTEM_PROMPT = [
-  '너는 한의사의 임상 의사결정을 돕는 진료지침 어시스턴트다. 아래 규칙을 반드시 지킨다.',
-  '',
+/** 규칙 1~4·6은 언어와 무관하다 — 근거 계약이지 표현 규약이 아니다 */
+const SHARED_RULES = [
   '1. 제공된 근거만 사용해 답한다. 근거에 없는 내용은 추측하거나 지어내지 않는다.',
   '   처방명·혈자리·용량·기간·횟수 같은 구체 임상 항목은 그 항목이',
   '   실제로 적힌 근거가 있을 때만 쓴다. 근거에 없는 항목을',
@@ -59,10 +71,41 @@ const SYSTEM_PROMPT = [
   '   여러 축을 묻는 질문에서 한 축의 근거가 없어도 근거가 있는 축은 답하고,',
   '   없는 축만 없다고 밝힌다 — 한 축이 비었다고 전체를 기권하지 않는다.',
   '4. 최종 판단과 책임은 의료인에게 있다 — 확정적 처방 지시가 아니라 참고 정보로 서술한다.',
-  '5. 한국어로 간결하게 답한다.',
+];
+
+const MARKDOWN_RULE = [
   '6. 마크다운을 쓰지 않는다 — 굵게(**), 제목(#), 목록(-) 기호 없이 평문으로만 답한다.',
   '   화면이 평문 그대로 렌더링하므로 기호가 사용자에게 그대로 노출된다.',
-].join('\n');
+];
+
+/**
+ * 규칙 5만 언어로 갈린다 (docs/specs/42).
+ *
+ * **답변을 만든 뒤 번역하지 않고 여기서 그 언어로 쓰게 한다** — 후처리 번역은 스트리밍을 버리고,
+ * 규칙 2의 [n] 마커를 번역기가 흘리면 인용이 영속화되지 않으며, 저장물과 화면이 갈라진다.
+ * 영문 규칙에 용어집을 함께 싣는 이유는 인용 번역 배치가 같은 목록을 읽기 때문이다 — 답변과
+ * 근거가 같은 용어를 써야 독자가 대조할 수 있다.
+ */
+const LANGUAGE_RULE: Record<SupportedLang, string[]> = {
+  ko: ['5. 한국어로 간결하게 답한다.'],
+  en: [
+    '5. 근거는 한국어지만 **답변은 영어(English)로** 간결하게 쓴다.',
+    '   Write the answer in English even though the evidence is in Korean.',
+    '   근거에 없는 내용을 영어 일반 지식으로 보충하지 않는다 — 규칙 1이 그대로 적용된다.',
+    '   아래 용어는 반드시 이 대응으로 옮긴다 (인용 근거 번역이 같은 목록을 쓴다):',
+    `   ${renderTermbase()}`,
+  ],
+};
+
+function systemPromptFor(responseLang: SupportedLang): string {
+  return [
+    '너는 한의사의 임상 의사결정을 돕는 진료지침 어시스턴트다. 아래 규칙을 반드시 지킨다.',
+    '',
+    ...SHARED_RULES,
+    ...LANGUAGE_RULE[responseLang],
+    ...MARKDOWN_RULE,
+  ].join('\n');
+}
 
 export function buildPrompt(request: LlmStreamRequest): LlmPrompt {
   const evidence = request.evidence
@@ -74,5 +117,5 @@ export function buildPrompt(request: LlmStreamRequest): LlmPrompt {
 
   const user = ['## 근거', evidence, '', '## 질문', request.question].join('\n');
 
-  return { system: SYSTEM_PROMPT, user };
+  return { system: systemPromptFor(request.responseLang ?? 'ko'), user };
 }
