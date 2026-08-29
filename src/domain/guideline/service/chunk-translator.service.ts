@@ -4,11 +4,16 @@
  * **번역이 없거나 stale한 ACTIVE 청크를 채우는 멱등 잡이다** — 최초 1회도, 신규 적재도, 개정도
  * 같은 코드가 처리한다. 개정이 들어오면 새 버전의 청크가 새 `content_hash`로 생기므로 자동으로
  * 미번역 상태가 되고 다음 실행이 주워간다. §26 개정 스케줄러에 훅을 걸 필요가 없다.
- *
- * **스텁** — 구현은 docs/specs/42 수용 기준을 통과시키며 채운다.
  */
-import { Injectable } from '@nestjs/common';
-import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ulid } from 'ulid';
+import { TransactionManager } from '../../../global/database/transaction-manager';
+import {
+  SupportedLang,
+  TRANSLATOR,
+  Translator,
+} from '../../../infrastructure/llm/translation/translator.port';
+import { GuidelineRepository } from '../repository/guideline.repository';
 
 /**
  * 1차 번역 대상 6주제 (docs/specs/42 실측표) — ACTIVE 7,154청크 중 655청크(9.2%)다.
@@ -43,7 +48,58 @@ export interface ChunkTranslationJobOptions {
 
 @Injectable()
 export class ChunkTranslatorService {
-  translatePending(_options: ChunkTranslationJobOptions): Promise<ChunkTranslationJobResult> {
-    throw new Error('not implemented');
+  private readonly logger = new Logger(ChunkTranslatorService.name);
+
+  constructor(
+    private readonly repository: GuidelineRepository,
+    private readonly txManager: TransactionManager,
+    @Inject(TRANSLATOR) private readonly translator: Translator,
+  ) {}
+
+  async translatePending(
+    options: ChunkTranslationJobOptions,
+  ): Promise<ChunkTranslationJobResult> {
+    const prefixes = options.scope === 'demo' ? DEMO_TRANSLATION_TARGETS : null;
+    const candidates = await this.txManager.run(() =>
+      this.repository.listChunksNeedingTranslation(options.target, prefixes),
+    );
+
+    let translated = 0;
+    for (const candidate of candidates) {
+      if (!candidate.stale) continue;
+
+      /**
+       * 청크마다 순차로 부른다 — 배치라 지연이 사용자에게 보이지 않고, 동시 호출은 429를
+       * 부른다(spec 31 프로브에서 워커 8이 rate limit 폭탄이었다). 한 건이 실패하면 잡 전체를
+       * 세우지 않고 다음으로 넘어간다: 부분 성공이 저장돼 재실행이 나머지만 집어 든다.
+       */
+      try {
+        const content = await this.translator.translate(candidate.chunk.content, options.target);
+        const titleTranslated = await this.translator.translate(
+          candidate.guidelineTitle,
+          options.target,
+        );
+        await this.txManager.run(() =>
+          this.repository.upsertChunkTranslation({
+            id: ulid(),
+            chunkId: candidate.chunk.id,
+            lang: options.target,
+            content,
+            titleTranslated,
+            sourceContentHash: candidate.chunk.contentHash,
+            translatorModel: this.translator.model,
+          }),
+        );
+        translated += 1;
+      } catch (error) {
+        this.logger.warn(`청크 ${candidate.chunk.id} 번역 실패 — 건너뜀: ${String(error)}`);
+      }
+    }
+
+    return {
+      targeted: candidates.length,
+      translated,
+      skipped: candidates.length - translated,
+    };
   }
 }

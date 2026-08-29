@@ -30,7 +30,13 @@ import {
   GuidanceStructurer,
 } from '../../../infrastructure/llm/guidance/guidance-structurer.port';
 import { structureWithTimeout } from '../../../infrastructure/llm/guidance/structure-runner';
-import { PROMPT_VERSION } from '../../../infrastructure/llm/prompt-builder';
+import { promptVersionFor } from '../../../infrastructure/llm/prompt-builder';
+import { detectQueryLanguage } from '../../../infrastructure/llm/query-language';
+import {
+  TRANSLATOR,
+  SupportedLang,
+  Translator,
+} from '../../../infrastructure/llm/translation/translator.port';
 import {
   RETRIEVAL_TOP_K,
   RetrievalService,
@@ -94,12 +100,28 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
  * FE가 reason을 그대로 표시하므로, 「코퍼스에 근거가 없다」와 「질문이 코퍼스 범위 밖으로
  * 보인다」가 사용자에게 다르게 읽혀야 재질의를 유도할 수 있다.
  */
-const ABSTAIN_REASON_MESSAGE: Record<AbstainReason, string> = {
-  no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
-  beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
-  // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
-  // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
-  insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
+const ABSTAIN_REASON_MESSAGE: Record<SupportedLang, Record<AbstainReason, string>> = {
+  ko: {
+    no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
+    beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
+    // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
+    // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
+    insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
+  },
+  /**
+   * 영문판 (docs/specs/42). **BE가 문구를 계속 소유한다** — 지원 언어가 둘이고 문구가 3개뿐이라
+   * `reasonCode`를 노출해 FE로 옮기는 비용이 이득보다 크다(스펙 판단표). 언어가 셋째로 늘거나
+   * 문구 톤을 자주 고치게 되면 그때 옮긴다.
+   *
+   * 사유별로 **다르게 읽혀야** 재질의를 유도한다는 §28 기준 5의 원칙이 영어에서도 그대로다 —
+   * 세 문장을 하나로 합치지 않는다.
+   */
+  en: {
+    no_candidates: 'No guideline evidence matched the selected search filters.',
+    beyond_cutoff: 'No guideline evidence was closely enough related to this question.',
+    insufficient_evidence:
+      'The guideline evidence found is not sufficient to answer this question.',
+  },
 };
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
@@ -127,6 +149,8 @@ export class ConversationStreamService {
     private readonly patientSnapshotService: PatientSnapshotService,
     private readonly guidanceComposer: ClinicalGuidanceComposer,
     @Inject(GUIDANCE_STRUCTURER) private readonly guidanceStructurer: GuidanceStructurer,
+    // 질의 번역 (docs/specs/42) — 답변 생성용 LlmGateway와 별도 포트다(§29·§33 선례)
+    @Inject(TRANSLATOR) private readonly translator: Translator,
     private readonly metrics: MetricsService,
   ) {}
 
@@ -147,6 +171,9 @@ export class ConversationStreamService {
     if (await this.repository.existsByClientRequestId(dto.clientRequestId)) {
       throw new ServiceException('DUPLICATE_CLIENT_REQUEST');
     }
+
+    /** 답변을 쓸 언어 (docs/specs/42). 미지정은 ko이며 그 경로는 오늘과 동일하다(기준 3) */
+    const responseLang: SupportedLang = dto.responseLang ?? 'ko';
 
     // 시간순 계약(id asc = 생성순, §5.7): 같은 ms 내 순서 보장을 위해 monotonic ULID 사용
     const userMessageId = monotonicUlid();
@@ -171,6 +198,8 @@ export class ConversationStreamService {
           answerKind:
             conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
           clientRequestId: null,
+          // 재조회가 요청 없이 언어를 아는 유일한 축 (docs/specs/42 기준 10·11)
+          responseLang,
         });
         // 목록 최근 대화순의 기준점 — 답변 실패로 끝나도 "대화한" 사실은 남으므로 수락 시점에 올린다
         await this.repository.touchLastMessageAt(conversationId);
@@ -224,6 +253,30 @@ export class ConversationStreamService {
       });
 
       sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
+
+      /**
+       * 검색 입력을 한국어로 정규화한다 (docs/specs/42).
+       *
+       * **검색은 언제나 한국어로 돈다** — 키워드 arm이 pg_trgm 문자 n-gram이라(§31) 영문 질의는
+       * 두 arm 중 하나가 통째로 죽고, 기권률 56%인 검색이 영문에서 더 나빠진다.
+       *
+       * 번역 여부는 `responseLang`이 아니라 **입력 언어**가 정한다: 영문 UI에서 예시 질의문
+       * (한국어 원문)을 눌러도 그 문자열은 이미 한국어라 번역할 이유가 없고, 그래야 §41 기준 27의
+       * 「표시 문장 = 전송 문장」과 어긋나지 않는다. 한국어 입력이면 이 분기가 통째로 no-op이라
+       * 검색에 넘어가는 문자열이 오늘과 바이트 단위로 같다(기준 1·2).
+       *
+       * SSE가 열린 뒤에 번역하는 이유는 실패를 **error 이벤트**로 내야 하기 때문이다(기준 7a) —
+       * 여기서 던지면 handleStreamFailure가 LlmProviderError를 LLM_UNAVAILABLE로 분류한다.
+       */
+      let searchQuestion = dto.content;
+      if (detectQueryLanguage(dto.content) !== 'ko') {
+        try {
+          searchQuestion = await this.translator.translate(dto.content, 'ko');
+        } catch (error) {
+          // 폴백이 없다 — 원문으로 검색하면 arm 하나를 잃은 채 조용히 나쁜 답을 낸다 (기준 7b)
+          throw new LlmProviderError(`질의 번역 실패: ${String(error)}`, { retryable: true });
+        }
+      }
       /**
        * 하이브리드가 켜져 있으면 두 arm의 합집합을 후보로 연다 (docs/specs/31) —
        * 임베딩이 후보에조차 못 넣던 문항을 자구 일치가 데려온다. 꺼져 있으면 §29 그대로다.
@@ -232,14 +285,14 @@ export class ConversationStreamService {
       const hybridActive = this.retrievalService.hybridEnabled;
       const rerankActive = this.retrievalService.rerankEnabled;
       const retrieved = hybridActive
-        ? await this.retrievalService.searchHybrid(dto.content, dto.filters)
+        ? await this.retrievalService.searchHybrid(searchQuestion, dto.filters)
         : rerankActive
           ? await this.retrievalService.search(
-              dto.content,
+              searchQuestion,
               dto.filters,
               this.retrievalService.rerankCandidates,
             )
-          : await this.retrievalService.search(dto.content, dto.filters);
+          : await this.retrievalService.search(searchQuestion, dto.filters);
 
       /**
        * 게이트 ① 거리 (docs/specs/28) — **후보 최소 거리만 본다.** 통과하면 나머지에 컷 밖
@@ -305,9 +358,28 @@ export class ConversationStreamService {
         }
       }
 
+      /**
+       * 근거 상세에 번역을 붙인다 (docs/specs/42 기준 12b). 한국어 경로는 조회 자체를 건너뛰어
+       * 오늘과 같은 질의 수를 유지한다 — 번역 기능이 한국어 사용자의 지연을 늘리지 않는다.
+       */
+      const chunkTranslations =
+        abstainReason || responseLang === 'ko'
+          ? new Map()
+          : await this.repository.mapChunkTranslations(
+              evidenceRows.map((row) => row.chunk.id),
+              responseLang,
+            );
+
       sse.send({
         eventType: 'retrieval.completed',
-        evidence: abstainReason ? [] : evidenceRows.map((row) => toEvidenceDetail(row)),
+        evidence: abstainReason
+          ? []
+          : evidenceRows.map((row) =>
+              toEvidenceDetail(
+                { ...row, translation: chunkTranslations.get(row.chunk.id) ?? null },
+                responseLang,
+              ),
+            ),
       });
 
       if (abstainReason) {
@@ -321,7 +393,7 @@ export class ConversationStreamService {
         sse.send({
           eventType: 'answer.abstained',
           message,
-          reason: ABSTAIN_REASON_MESSAGE[abstainReason],
+          reason: ABSTAIN_REASON_MESSAGE[responseLang][abstainReason],
           missingInformation: [],
         });
         return;
@@ -356,6 +428,9 @@ export class ConversationStreamService {
         clientSignal,
         traceId,
         guidanceContext,
+        responseLang,
+        originalQuestion: dto.content,
+        searchQuestion,
       });
     } catch (error) {
       sseOutcome = clientSignal.aborted ? 'aborted' : 'failed';
@@ -381,6 +456,12 @@ export class ConversationStreamService {
     clientSignal: AbortSignal;
     traceId: string;
     guidanceContext: GuidanceContext | null;
+    /** 답변을 쓸 언어 (docs/specs/42) — 프롬프트 규칙 5와 promptVersion을 가른다 */
+    responseLang: SupportedLang;
+    /** 사용자가 보낸 원문 질의 — 번역 경로에서 searchQuestion과 갈린다 (기준 6a) */
+    originalQuestion: string;
+    /** 실제로 검색에 넣은 문자열 — 언제나 한국어다 (기준 6b) */
+    searchQuestion: string;
     /** 답변으로 끝났는지 생성 게이트로 기권했는지 — 호출자가 rag_answers_total에 반영한다 */
   }): Promise<'answered' | 'abstained'> {
     const { sse, retrieved, question, assistantMessageId, clientSignal, traceId } = args;
@@ -398,7 +479,7 @@ export class ConversationStreamService {
     let outcome;
     try {
       outcome = await this.llmGateway.stream(
-        { question, evidence: evidenceContext, signal },
+        { question, evidence: evidenceContext, signal, responseLang: args.responseLang },
         (delta) => {
           sse.send({ eventType: 'answer.delta', messageId: assistantMessageId, seq, delta });
           seq += 1;
@@ -429,6 +510,9 @@ export class ConversationStreamService {
         outcome,
         retrievalPolicyVersion: args.retrievalPolicyVersion,
         traceId,
+        responseLang: args.responseLang,
+        originalQuestion: args.originalQuestion,
+        searchQuestion: args.searchQuestion,
       });
       return 'abstained';
     }
@@ -473,7 +557,9 @@ export class ConversationStreamService {
         messageId: assistantMessageId,
         provider: outcome.provider,
         model: outcome.model ?? MODEL_LABEL,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: promptVersionFor(args.responseLang),
+        originalQuestion: args.originalQuestion,
+        searchQuestion: args.searchQuestion,
         retrievalPolicyVersion: args.retrievalPolicyVersion,
         latencyMs: outcome.latencyMs,
         tokenUsage: {
@@ -485,14 +571,17 @@ export class ConversationStreamService {
 
       // 가이던스 행은 답변 영속화와 같은 tx에서 생성 — 부분 커밋으로 답변만 남는 상태를 막는다
       if (args.guidanceContext) {
-        const citationDetails = await this.repository.listCitationDetails([assistantMessageId]);
+        const citationDetails = await this.repository.listCitationDetails(
+          [assistantMessageId],
+          args.responseLang,
+        );
         const composed = await this.guidanceComposer.compose({
           messageId: assistantMessageId,
           patientId: args.guidanceContext.patientId,
           patientSnapshotId: args.guidanceContext.snapshotId,
           clinicId: args.principal.clinicId,
           answerText: outcome.text,
-          citations: citationDetails.map(toCitationDto),
+          citations: citationDetails.map((row) => toCitationDto(row, args.responseLang)),
           profile: args.guidanceContext.profile,
           structured: structuring?.structured ?? null,
         });
@@ -531,6 +620,9 @@ export class ConversationStreamService {
    * 불변식이 생긴다.
    */
   private async abstainOnGeneration(args: {
+    responseLang: SupportedLang;
+    originalQuestion: string;
+    searchQuestion: string;
     sse: SseStream;
     principal: ClinicianPrincipal;
     assistantMessageId: string;
@@ -558,7 +650,9 @@ export class ConversationStreamService {
         messageId: assistantMessageId,
         provider: outcome.provider,
         model: outcome.model ?? MODEL_LABEL,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: promptVersionFor(args.responseLang),
+        originalQuestion: args.originalQuestion,
+        searchQuestion: args.searchQuestion,
         retrievalPolicyVersion: args.retrievalPolicyVersion,
         latencyMs: outcome.latencyMs,
         // 출력 토큰은 판정뿐이다 — 본문은 생성되지 않았거나 게이트웨이가 닫았다
@@ -571,7 +665,7 @@ export class ConversationStreamService {
     args.sse.send({
       eventType: 'answer.abstained',
       message,
-      reason: ABSTAIN_REASON_MESSAGE.insufficient_evidence,
+      reason: ABSTAIN_REASON_MESSAGE[args.responseLang].insufficient_evidence,
       // missingAspects는 내부 관측 축이다 — 계약에 실으면 렌더 여부를 이 스펙 밖에서 정하게
       // 되고, missingInformation은 §7이 환자 프로필 필드명으로 못박은 다른 어휘다
       missingInformation: [],
@@ -662,8 +756,13 @@ export class ConversationStreamService {
       messageId,
     );
     if (!found) throw new ServiceException('INTERNAL_ERROR');
-    const citations = await this.repository.listCitationDetails([messageId]);
-    return toMessageDto(found.message as MessageRow, citations.map(toCitationDto));
+    // 재조회의 언어는 요청이 아니라 **그 메시지가 생성될 때의 언어**다 (docs/specs/42 기준 11)
+    const lang = ((found.message as MessageRow).responseLang ?? 'ko') as SupportedLang;
+    const citations = await this.repository.listCitationDetails([messageId], lang);
+    return toMessageDto(
+      found.message as MessageRow,
+      citations.map((row) => toCitationDto(row, lang)),
+    );
   }
 }
 

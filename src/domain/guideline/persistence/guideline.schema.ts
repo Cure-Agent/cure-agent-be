@@ -136,6 +136,12 @@ export const evidenceChunkTranslations = pgTable(
     /** 'ko' | 'en' — 제3언어는 spec 42 Out of scope지만 컬럼이 확장을 막지는 않는다 */
     lang: text('lang').notNull(),
     content: text('content').notNull(),
+    /**
+     * 지침 제목의 번역 (docs/specs/42 — AnswerCitationResponseDto.titleTranslated의 원천).
+     * 같은 지침의 청크마다 같은 값이 반복되는 비정규화지만, 별도 테이블을 만들면 스펙 §Entity의
+     * 「신규 테이블 1」을 벗어나고 조인이 하나 늘어난다. 6주제 655행 규모에서 대가가 없다.
+     */
+    titleTranslated: text('title_translated'),
     /** 번역 시점 원문 해시 — evidence_chunks.content_hash와 대조해 stale을 가른다 */
     sourceContentHash: text('source_content_hash').notNull(),
     /** provenance (기준 22) — 어느 모델이 만든 번역인지 행마다 기록한다 */

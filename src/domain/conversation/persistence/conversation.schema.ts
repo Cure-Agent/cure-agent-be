@@ -136,6 +136,16 @@ export const generationRuns = pgTable('generation_runs', {
   provider: text('provider').notNull(),
   model: text('model').notNull(),
   promptVersion: text('prompt_version').notNull(),
+  /**
+   * 재현성 축의 언어 확장 (docs/specs/42 기준 6).
+   *
+   * `retrievalPolicyVersion`이 「어떤 정책으로 검색했나」를 기록하듯, 영문 경로는 **무엇으로
+   * 검색했나**가 사용자가 보낸 문자열과 다르다. 둘 다 남기지 않으면 그 실행을 재현할 수 없다 —
+   * 원문만 있으면 검색 입력을 복원할 수 없고, 번역문만 있으면 사용자가 무엇을 물었는지 잃는다.
+   * 한국어 경로는 두 값이 같다. 기존 행 때문에 nullable이다.
+   */
+  originalQuestion: text('original_question'),
+  searchQuestion: text('search_question'),
   retrievalPolicyVersion: text('retrieval_policy_version').notNull(),
   latencyMs: integer('latency_ms').notNull(),
   tokenUsage: jsonb('token_usage').$type<{ inputTokens: number; outputTokens: number }>(),
