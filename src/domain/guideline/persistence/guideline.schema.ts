@@ -112,7 +112,45 @@ export const evidenceChunks = pgTable(
   ],
 );
 
+/**
+ * 청크 번역 (docs/specs/42) — embedding과 같은 규율의 파생물이다.
+ *
+ * **임베딩 컬럼을 두지 않는다**(기준 24). 검색 질의를 한국어로 통일했으므로 영문 벡터가 쓰일
+ * 자리가 없고, 만들면 §14의 「같은 모델로 만들어진 청크만 검색 대상」에 언어 축이 하나 더 붙어
+ * `policyVersion`이 언어까지 표현해야 하며 229문항 기준선이 무효화된다.
+ *
+ * `sourceContentHash`가 낡음의 유일한 판정 축이다 — `evidence_chunks.content_hash`와 다르면
+ * 원문이 개정된 것이므로 그 번역은 싣지 않는다(기준 15·21). §18이 「벡터는 evidence_chunks에만」
+ * 이라 한 것과 같은 이유로, 파생물은 자신이 무엇에서 파생됐는지를 들고 있어야 한다.
+ *
+ * `evidence_chunks`의 컬럼이 아니라 별도 테이블인 이유는 스펙 판단표에 있다 — 언어 추가에 스키마
+ * 변경이 없고, 검색이 매 요청 읽는 hot row를 무겁게 하지 않는다.
+ */
+export const evidenceChunkTranslations = pgTable(
+  'evidence_chunk_translations',
+  {
+    id: text('id').primaryKey(),
+    chunkId: text('chunk_id')
+      .notNull()
+      .references(() => evidenceChunks.id),
+    /** 'ko' | 'en' — 제3언어는 spec 42 Out of scope지만 컬럼이 확장을 막지는 않는다 */
+    lang: text('lang').notNull(),
+    content: text('content').notNull(),
+    /** 번역 시점 원문 해시 — evidence_chunks.content_hash와 대조해 stale을 가른다 */
+    sourceContentHash: text('source_content_hash').notNull(),
+    /** provenance (기준 22) — 어느 모델이 만든 번역인지 행마다 기록한다 */
+    translatorModel: text('translator_model').notNull(),
+    translatedAt: timestamp('translated_at', { withTimezone: true }).notNull().defaultNow(),
+    ...baseColumns,
+  },
+  (table) => [
+    // 잡 멱등성 (기준 18) — 같은 청크·같은 언어는 한 행뿐이다
+    uniqueIndex('uq_evidence_chunk_translations_chunk_lang').on(table.chunkId, table.lang),
+  ],
+);
+
 export type GuidelineRow = typeof guidelines.$inferSelect;
 export type GuidelineVersionRow = typeof guidelineVersions.$inferSelect;
 export type GuidelineSectionRow = typeof guidelineSections.$inferSelect;
 export type EvidenceChunkRow = typeof evidenceChunks.$inferSelect;
+export type EvidenceChunkTranslationRow = typeof evidenceChunkTranslations.$inferSelect;

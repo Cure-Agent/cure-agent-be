@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
 
 export class GuidelineSearchFilterDto {
   @ApiProperty({ required: false, type: [String] })
@@ -38,4 +38,13 @@ export class SendMessageRequestDto {
   @IsString()
   @Length(1, 100)
   clientRequestId!: string;
+
+  /**
+   * 답변을 쓸 언어 (docs/specs/42). **FE가 입력 언어에서 유도해 실어 보낸다** — UI 언어가
+   * 아니다. 미지정이면 `ko`로 처리해 기존 클라이언트의 형태를 유지한다(기준 3).
+   */
+  @ApiProperty({ required: false, enum: ['ko', 'en'], default: 'ko' })
+  @IsOptional()
+  @IsIn(['ko', 'en'])
+  responseLang?: 'ko' | 'en';
 }
