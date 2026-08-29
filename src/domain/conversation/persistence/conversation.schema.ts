@@ -94,6 +94,15 @@ export const messages = pgTable(
     answerKind: answerKind('answer_kind'),
     // 네트워크 재시도 중복 생성 방지 (§6 SendMessageRequestDto) — unique는 NULL 다중 허용
     clientRequestId: text('client_request_id'),
+    /**
+     * 이 메시지가 생성된 언어 (docs/specs/42).
+     *
+     * **재조회가 요청 없이 언어를 알기 위한 유일한 축이다** — `GET /conversations/{id}/messages`
+     * 에는 질의도 `responseLang`도 실리지 않는데 답변은 이미 영어로 저장돼 있다. 기록하지 않으면
+     * 대화 목록에 갔다 돌아오는 순간 인용 번역이 사라진다(기준 10·11).
+     * 기본 `'ko'`는 기존 행 백필값이자 `responseLang` 미지정 요청의 처리값이다(기준 3).
+     */
+    responseLang: text('response_lang').notNull().default('ko'),
     ...baseColumns,
   },
   (table) => [
@@ -127,6 +136,16 @@ export const generationRuns = pgTable('generation_runs', {
   provider: text('provider').notNull(),
   model: text('model').notNull(),
   promptVersion: text('prompt_version').notNull(),
+  /**
+   * 재현성 축의 언어 확장 (docs/specs/42 기준 6).
+   *
+   * `retrievalPolicyVersion`이 「어떤 정책으로 검색했나」를 기록하듯, 영문 경로는 **무엇으로
+   * 검색했나**가 사용자가 보낸 문자열과 다르다. 둘 다 남기지 않으면 그 실행을 재현할 수 없다 —
+   * 원문만 있으면 검색 입력을 복원할 수 없고, 번역문만 있으면 사용자가 무엇을 물었는지 잃는다.
+   * 한국어 경로는 두 값이 같다. 기존 행 때문에 nullable이다.
+   */
+  originalQuestion: text('original_question'),
+  searchQuestion: text('search_question'),
   retrievalPolicyVersion: text('retrieval_policy_version').notNull(),
   latencyMs: integer('latency_ms').notNull(),
   tokenUsage: jsonb('token_usage').$type<{ inputTokens: number; outputTokens: number }>(),

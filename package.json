@@ -25,6 +25,7 @@
     "eval:groundedness": "ts-node -T scripts/eval-groundedness.ts",
     "eval:guidance": "ts-node -T scripts/eval-guidance.ts",
     "evalset:generate": "ts-node -T scripts/generate-rag-evalset.ts",
+    "translate:chunks": "ts-node -T scripts/translate-chunks.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

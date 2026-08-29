@@ -1,9 +1,23 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, getTableColumns, gt, ilike, inArray, lt, ne, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  ilike,
+  inArray,
+  lt,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { messageCitations } from '../../conversation/persistence/conversation.schema';
 import {
   EvidenceChunkRow,
+  evidenceChunkTranslations,
   GuidelineRow,
   GuidelineSectionRow,
   GuidelineVersionRow,
@@ -342,5 +356,66 @@ export class GuidelineRepository {
       .where(eq(evidenceChunks.id, evidenceId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  // ── 청크 번역 (docs/specs/42) ──────────────────────────
+
+  /**
+   * 번역이 필요한 ACTIVE 청크 — 없거나 stale한 것만 (기준 18·21).
+   *
+   * **제목 비교는 `btrim(title, E' \t\n\r')`이다.** ACTIVE 63건 중 2건의 제목에 후행 탭이
+   * 있고 그중 하나가 데모 6주제의 ADHD인데, PostgreSQL `trim()`은 공백만 지우고 탭을 남긴다 —
+   * `trim()`으로 비교하면 그 지침이 대상에서 조용히 빠진다(기준 20).
+   */
+  async listChunksNeedingTranslation(
+    lang: string,
+    titlePrefixes: readonly string[] | null,
+  ): Promise<{ chunk: EvidenceChunkRow; guidelineTitle: string; stale: boolean }[]> {
+    const normalizedTitle = sql`btrim(${guidelines.title}, E' \t\n\r')`;
+    const scoped = titlePrefixes
+      ? or(...titlePrefixes.map((prefix) => sql`${normalizedTitle} LIKE ${`${prefix}%`}`))
+      : undefined;
+
+    const rows = await this.txManager.conn
+      .select({
+        chunk: evidenceChunks,
+        guidelineTitle: guidelines.title,
+        translationHash: evidenceChunkTranslations.sourceContentHash,
+      })
+      .from(evidenceChunks)
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
+      .leftJoin(
+        evidenceChunkTranslations,
+        and(
+          eq(evidenceChunkTranslations.chunkId, evidenceChunks.id),
+          eq(evidenceChunkTranslations.lang, lang),
+        ),
+      )
+      .where(and(eq(guidelineVersions.status, 'ACTIVE'), scoped));
+
+    return rows.map((row) => ({
+      chunk: row.chunk,
+      guidelineTitle: row.guidelineTitle,
+      // 번역이 없거나(null) 원문이 개정돼 해시가 갈린 것 — 둘 다 「다시 써야 한다」다
+      stale: row.translationHash !== row.chunk.contentHash,
+    }));
+  }
+
+  /** 같은 (chunk, lang)은 한 행뿐이다 — 재실행이 행을 늘리지 않는다 (기준 18) */
+  async upsertChunkTranslation(row: typeof evidenceChunkTranslations.$inferInsert): Promise<void> {
+    await this.txManager.conn
+      .insert(evidenceChunkTranslations)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [evidenceChunkTranslations.chunkId, evidenceChunkTranslations.lang],
+        set: {
+          content: row.content,
+          titleTranslated: row.titleTranslated ?? null,
+          sourceContentHash: row.sourceContentHash,
+          translatorModel: row.translatorModel,
+          translatedAt: new Date(),
+        },
+      });
   }
 }

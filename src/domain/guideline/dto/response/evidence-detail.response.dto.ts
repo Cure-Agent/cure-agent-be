@@ -44,4 +44,17 @@ export class EvidenceDetailResponseDto {
 
   @ApiProperty()
   sourceUrl!: string;
+
+  /**
+   * `excerpt`의 번역 (docs/specs/42). 답변 언어가 근거 원문 언어와 다를 때만 실린다.
+   * 번역이 없거나 원문 개정으로 낡았으면 **키 자체가 빠진다** — 빈 문자열을 싣지 않는다(기준 14·15).
+   */
+  @ApiProperty({ required: false, description: '본문 발췌 전문의 번역 (기계 번역)' })
+  excerptTranslated?: string;
+
+  @ApiProperty({ required: false, description: '지침 제목의 번역 (기계 번역)' })
+  titleTranslated?: string;
+
+  @ApiProperty({ required: false, description: '번역을 만든 모델 — provenance' })
+  translationModel?: string;
 }

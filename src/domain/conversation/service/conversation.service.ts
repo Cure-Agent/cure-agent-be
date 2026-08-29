@@ -20,6 +20,7 @@ import {
   toMessageDto,
 } from '../mapper/conversation.mapper';
 import { ConversationRepository } from '../repository/conversation.repository';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { ClinicalGuidanceRepository } from '../../clinical-guidance/repository/clinical-guidance.repository';
 
 const DEFAULT_SIZE = 20;
@@ -159,11 +160,28 @@ export class ConversationService {
     const hasNext = rows.length > size;
     const page = rows.slice(0, size);
 
-    const citationRows = await this.repository.listCitationDetails(page.map((m) => m.id));
+    /**
+     * 재조회의 인용 언어는 **각 메시지가 생성될 때의 언어**다 (docs/specs/42 기준 11) —
+     * 이 요청에는 질의도 `responseLang`도 실리지 않는다. 한 페이지에 한국어 답변과 영문 답변이
+     * 섞일 수 있으므로 언어별로 묶어 조회한다(대개 1개 그룹이라 질의 수가 늘지 않는다).
+     */
+    const langByMessage = new Map<string, SupportedLang>(
+      page.map((m) => [m.id, (m.responseLang ?? 'ko') as SupportedLang]),
+    );
+    const idsByLang = new Map<SupportedLang, string[]>();
+    for (const [id, lang] of langByMessage) {
+      idsByLang.set(lang, [...(idsByLang.get(lang) ?? []), id]);
+    }
+    const citationRows = (
+      await Promise.all(
+        [...idsByLang].map(([lang, ids]) => this.repository.listCitationDetails(ids, lang)),
+      )
+    ).flat();
+
     const citationsByMessage = new Map<string, AnswerCitationResponseDto[]>();
     for (const row of citationRows) {
       const list = citationsByMessage.get(row.citation.messageId) ?? [];
-      list.push(toCitationDto(row));
+      list.push(toCitationDto(row, langByMessage.get(row.citation.messageId) ?? 'ko'));
       citationsByMessage.set(row.citation.messageId, list);
     }
 

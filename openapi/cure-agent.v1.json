@@ -2667,6 +2667,18 @@
           },
           "sourceUrl": {
             "type": "string"
+          },
+          "excerptTranslated": {
+            "type": "string",
+            "description": "본문 발췌 전문의 번역 (기계 번역)"
+          },
+          "titleTranslated": {
+            "type": "string",
+            "description": "지침 제목의 번역 (기계 번역)"
+          },
+          "translationModel": {
+            "type": "string",
+            "description": "번역을 만든 모델 — provenance"
           }
         },
         "required": [
@@ -3419,6 +3431,14 @@
           },
           "sourceUrl": {
             "type": "string"
+          },
+          "quoteTranslated": {
+            "type": "string",
+            "description": "인용 발췌의 번역 (기계 번역)"
+          },
+          "titleTranslated": {
+            "type": "string",
+            "description": "지침 제목의 번역 (기계 번역)"
           }
         },
         "required": [
@@ -3526,6 +3546,14 @@
           "clientRequestId": {
             "type": "string",
             "description": "중복 생성 방지 키 — 재시도 시 같은 값 사용 (§8 복구 계약)"
+          },
+          "responseLang": {
+            "type": "string",
+            "enum": [
+              "ko",
+              "en"
+            ],
+            "default": "ko"
           }
         },
         "required": [
