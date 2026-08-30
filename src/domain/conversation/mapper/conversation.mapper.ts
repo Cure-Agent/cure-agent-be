@@ -5,9 +5,36 @@ import { MessageResponseDto } from '../dto/response/message.response.dto';
 import { ConversationRow, MessageRow } from '../persistence/conversation.schema';
 import { CitationDetailRow } from '../repository/conversation.repository';
 import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
+import { AbstainReason } from '../../../global/observability/metrics/metrics.service';
 import { usableTranslation } from '../../guideline/mapper/translation.util';
 
 const PREVIEW_LIMIT = 80;
+
+/**
+ * 기권 사유별 사용자 문구 (docs/specs/28 기준 5 · docs/specs/42 기준 26·27).
+ *
+ * **매퍼가 소유한다** (docs/specs/43) — 사유는 코드로 저장되고 문장은 직렬화 시점에 만들어지므로,
+ * 문구표는 그 렌더가 일어나는 곳에 있어야 한다. SSE `answer.abstained`의 `reason`도 같은 표를
+ * 읽어 스트림과 재조회의 문장이 갈릴 수 없다.
+ *
+ * 사유가 다르면 **다르게 읽혀야** 재질의를 유도한다 — 세 문장을 하나로 합치지 않는다.
+ * `reasonCode`를 노출해 FE로 옮기는 안은 §42 판단표가 미뤘고 §43이 그 결정을 유지한다.
+ */
+export const ABSTAIN_REASON_MESSAGE: Record<SupportedLang, Record<AbstainReason, string>> = {
+  ko: {
+    no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
+    beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
+    // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
+    // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
+    insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
+  },
+  en: {
+    no_candidates: 'No guideline evidence matched the selected search filters.',
+    beyond_cutoff: 'No guideline evidence was closely enough related to this question.',
+    insufficient_evidence:
+      'The guideline evidence found is not sufficient to answer this question.',
+  },
+};
 
 export function toConversationSummary(
   row: ConversationRow,
