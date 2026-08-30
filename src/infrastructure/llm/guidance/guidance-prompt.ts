@@ -8,6 +8,7 @@
  * 어휘가 갈라지면 폴백률이 즉시 튀어 관측에 잡힌다.
  */
 import { GuidanceStructureInput } from './guidance-structurer.port';
+import { SupportedLang } from '../translation/translator.port';
 
 /**
  * ClinicalGuidance.composerVersion 기록값 (구조화 경로).
@@ -16,6 +17,24 @@ import { GuidanceStructureInput } from './guidance-structurer.port';
  * 필드를 인용하는 「빈 다리」 패턴(6건). 둘 다 검증기가 못 잡는 축이라 프롬프트가 막아야 한다.
  */
 export const GUIDANCE_PROMPT_VERSION = 'guidance-v2';
+
+/**
+ * 참고안 언어별 기록값 (docs/specs/44) — `promptVersionFor`(답변)와 같은 모양이다.
+ *
+ * **버전을 가르는 이유는 측정 대상이 갈리기 때문이다**: 영문 경로는 규칙 7이 다르고 용어집이
+ * 함께 실리므로, 같은 이름으로 기록하면 폴백률 실측이 두 프롬프트를 섞어 잰다. 한국어 경로는
+ * `guidance-v2` 그대로라 기존 관측이 유효하게 남는다(기준 2).
+ */
+export function guidancePromptVersionFor(responseLang: SupportedLang): string {
+  void responseLang; // 스텁 — 언어 분기는 구현 단계에서
+  return GUIDANCE_PROMPT_VERSION;
+}
+
+/** 언어별 시스템 프롬프트 (docs/specs/44) — 규칙 7이 갈리고 영문에는 용어집이 실린다 */
+export function guidanceSystemPromptFor(responseLang: SupportedLang): string {
+  void responseLang; // 스텁 — 언어 분기는 구현 단계에서
+  return GUIDANCE_SYSTEM_PROMPT;
+}
 
 export const GUIDANCE_SYSTEM_PROMPT = [
   '너는 한의사가 이미 받은 근거 기반 답변을 눈앞의 환자에게 대응시키는 것을 돕는다.',

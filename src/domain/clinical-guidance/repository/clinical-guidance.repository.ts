@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, exists, inArray, isNull } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { conversations, messages } from '../../conversation/persistence/conversation.schema';
 import {
   ClinicalGuidanceRow,
@@ -12,6 +13,15 @@ import {
 export interface GuidanceScope {
   clinicId: string;
 }
+
+/**
+ * 참고안 행 + 그것이 매인 메시지의 응답 언어 (docs/specs/44).
+ *
+ * `GET /clinical-guidance/{id}`에는 언어가 실리지 않는다 — 참고안은 한 대화의 산물이라
+ * **저장된 언어가 있고**, 그것이 `messages.response_lang`이다. 새 컬럼을 두지 않고 조인으로
+ * 읽는 이유는 한 사실을 두 곳에 적으면 갈리기 때문이다.
+ */
+export type GuidanceWithLangRow = ClinicalGuidanceRow & { responseLang: SupportedLang };
 
 @Injectable()
 export class ClinicalGuidanceRepository {
@@ -27,7 +37,7 @@ export class ClinicalGuidanceRepository {
    * 환자 삭제는 그 환자의 대화까지 연쇄 예약하므로, 이 조인 하나가 두 경로를 모두 덮는다.
    * 검토 기록(`POST .../reviews`)도 같은 메서드를 지나므로 함께 닫힌다.
    */
-  async findById(scope: GuidanceScope, id: string): Promise<ClinicalGuidanceRow | null> {
+  async findById(scope: GuidanceScope, id: string): Promise<GuidanceWithLangRow | null> {
     const rows = await this.txManager.conn
       .select()
       .from(clinicalGuidances)
@@ -50,7 +60,8 @@ export class ClinicalGuidanceRepository {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+    // 스텁 — messages.response_lang 조인은 구현 단계에서 붙인다
+    return rows[0] ? { ...rows[0], responseLang: 'ko' } : null;
   }
 
   /** 메시지 목록에 guidanceId를 실어주기 위한 일괄 조회 — messageId → guidanceId */
@@ -73,7 +84,7 @@ export class ClinicalGuidanceRepository {
     scope: GuidanceScope,
     id: string,
     status: ClinicalGuidanceRow['reviewStatus'],
-  ): Promise<ClinicalGuidanceRow | null> {
+  ): Promise<GuidanceWithLangRow | null> {
     const rows = await this.txManager.conn
       .update(clinicalGuidances)
       .set({ reviewStatus: status })
@@ -85,7 +96,8 @@ export class ClinicalGuidanceRepository {
         ),
       )
       .returning();
-    return rows[0] ?? null;
+    // 스텁 — messages.response_lang 조회는 구현 단계에서 붙인다
+    return rows[0] ? { ...rows[0], responseLang: 'ko' } : null;
   }
 
   async insertReview(row: typeof guidanceReviews.$inferInsert): Promise<void> {

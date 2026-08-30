@@ -46,6 +46,22 @@ export interface ChunkTranslationJobOptions {
   target: SupportedLang;
 }
 
+/**
+ * 섹션 경로를 원소별로 번역한다 (docs/specs/44 기준 9).
+ *
+ * **원문과 같은 길이의 배열을 낸다** — 원소 대응이 깨지면 헤더의 경로가 뒤섞여 다른 섹션을
+ * 가리킨다. 한 원소라도 번역하지 못하면 배열 전체를 `null`로 두고 키 부재로 닫는다: 절반만
+ * 영어인 경로는 원문보다 나쁘다.
+ */
+export async function translateSectionPath(
+  path: readonly string[],
+  translate: (segment: string) => Promise<string>,
+): Promise<string[] | null> {
+  void path;
+  void translate;
+  throw new Error('translateSectionPath: 미구현 스텁 (docs/specs/44)');
+}
+
 @Injectable()
 export class ChunkTranslatorService {
   private readonly logger = new Logger(ChunkTranslatorService.name);

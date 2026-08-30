@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { GuidanceStructureResult } from '../../../infrastructure/llm/guidance/guidance-structurer.port';
-import { GUIDANCE_PROMPT_VERSION } from '../../../infrastructure/llm/guidance/guidance-prompt';
+import { guidancePromptVersionFor } from '../../../infrastructure/llm/guidance/guidance-prompt';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { PatientSnapshotPayload } from '../../patient/service/patient-snapshot.service';
 import { AnswerCitationResponseDto } from '../../conversation/dto/response/answer-citation.response.dto';
 import { ClinicalGuidanceResponseDto } from '../dto/response/clinical-guidance.response.dto';
@@ -32,6 +33,11 @@ export interface ComposeGuidanceArgs {
   profile: PatientSnapshotPayload;
   /** null이면 구조화 미시도·실패 — 결정적 조립으로 간다 (docs/specs/33) */
   structured: GuidanceStructureResult | null;
+  /**
+   * 이 참고안을 쓸 언어 (docs/specs/44). `considerations`는 구조화·폴백 **둘 다 생성 시점에
+   * 굳고**, 안전 경고만 행에 알레르기명을 남겨 직렬화 시점에 문장이 된다.
+   */
+  responseLang: SupportedLang;
 }
 
 export interface ComposeGuidanceResult {
@@ -62,7 +68,7 @@ export class ClinicalGuidanceComposer {
       : [];
     const structuredAdopted = validated.length > 0;
     const composerVersion = structuredAdopted
-      ? GUIDANCE_PROMPT_VERSION
+      ? guidancePromptVersionFor(args.responseLang)
       : DETERMINISTIC_COMPOSER_VERSION;
 
     const row = await this.repository.insert({
@@ -74,12 +80,12 @@ export class ClinicalGuidanceComposer {
       summary: buildSummary(args.answerText),
       considerations: structuredAdopted
         ? validated
-        : buildConsiderations(args.answerText, args.citations),
+        : buildConsiderations(args.answerText, args.citations, args.responseLang),
       safetyAlerts: buildSafetyAlerts(args.profile),
       missingInformation: missingGuidanceProfileFields(args.profile),
       composerVersion,
     });
-    return { guidance: toClinicalGuidanceDto(row), composerVersion };
+    return { guidance: toClinicalGuidanceDto(row, args.responseLang), composerVersion };
   }
 }
 
@@ -91,7 +97,9 @@ function buildSummary(answerText: string): string {
 function buildConsiderations(
   answerText: string,
   citations: AnswerCitationResponseDto[],
+  responseLang: SupportedLang,
 ): GuidanceConsiderationJson[] {
+  void responseLang; // 스텁 — 언어별 문구·번역 인용 채용은 구현 단계에서
   if (citations.length === 0) {
     // 인용 없는 완료 답변도 검토 항목 1건은 보장한다 (§7 considerations ≥ 1)
     return [{ title: '근거 요약', rationale: buildSummary(answerText), citations: [] }];

@@ -22,7 +22,7 @@ import {
   LlmEvidenceContext,
   LlmProviderError,
 } from '../../../infrastructure/llm/llm-provider.port';
-import { GUIDANCE_PROMPT_VERSION } from '../../../infrastructure/llm/guidance/guidance-prompt';
+import { guidancePromptVersionFor } from '../../../infrastructure/llm/guidance/guidance-prompt';
 import {
   GUIDANCE_STRUCTURER,
   GuidanceEvidenceContext,
@@ -521,6 +521,7 @@ export class ConversationStreamService {
           answerText: outcome.text,
           clientSignal,
           traceId,
+          responseLang: args.responseLang,
         })
       : null;
 
@@ -564,6 +565,7 @@ export class ConversationStreamService {
           citations: citationDetails.map((row) => toCitationDto(row, args.responseLang)),
           profile: args.guidanceContext.profile,
           structured: structuring?.structured ?? null,
+          responseLang: args.responseLang,
         });
         guidance = composed.guidance;
         composerVersion = composed.composerVersion;
@@ -574,7 +576,9 @@ export class ConversationStreamService {
     if (structuring) {
       this.metrics.recordGuidanceCompose(
         structuring.skipped ??
-          (composerVersion === GUIDANCE_PROMPT_VERSION ? 'structured' : 'fallback'),
+          (composerVersion === guidancePromptVersionFor(args.responseLang)
+            ? 'structured'
+            : 'fallback'),
         structuring.durationSec,
       );
     }
@@ -668,6 +672,7 @@ export class ConversationStreamService {
     answerText: string;
     clientSignal: AbortSignal;
     traceId: string;
+    responseLang: SupportedLang;
   }): Promise<{
     structured: GuidanceStructureResult | null;
     /** 구조화기를 부르지 않은 사유 — 실제로 호출했으면 null */
@@ -700,6 +705,7 @@ export class ConversationStreamService {
         answerText: args.answerText,
         evidence,
         profileFields: presentGuidanceProfileFields(args.guidanceContext.profile),
+        lang: args.responseLang,
       },
       { signal: args.clientSignal },
     );

@@ -15,9 +15,11 @@ import {
   sql,
 } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { messageCitations } from '../../conversation/persistence/conversation.schema';
 import {
   EvidenceChunkRow,
+  EvidenceChunkTranslationRow,
   evidenceChunkTranslations,
   GuidelineRow,
   GuidelineSectionRow,
@@ -337,12 +339,22 @@ export class GuidelineRepository {
     await this.txManager.conn.delete(guidelines).where(eq(guidelines.id, guidelineId));
   }
 
-  async findEvidenceDetail(evidenceId: string): Promise<{
+  /**
+   * @param lang 근거 번역을 함께 실을 언어 (docs/specs/44). `listCitationDetails`의 조인과 같은
+   *   모양이다 — 번역은 **left join**이라 없으면 null로 오고, 조인이 없으면 이 경로는 인자를
+   *   받든 말든 구조적으로 영원히 한국어다(스펙 관측).
+   */
+  async findEvidenceDetail(
+    evidenceId: string,
+    lang: SupportedLang,
+  ): Promise<{
     chunk: EvidenceChunkRow;
     section: GuidelineSectionRow;
     version: GuidelineVersionRow;
     guideline: GuidelineRow;
+    translation?: EvidenceChunkTranslationRow | null;
   } | null> {
+    void lang; // 스텁 — 번역 조인은 구현 단계에서 붙인다
     const rows = await this.txManager.conn
       .select({
         chunk: evidenceChunks,
@@ -357,6 +369,21 @@ export class GuidelineRepository {
       .where(eq(evidenceChunks.id, evidenceId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * 이 페이지의 지침들에 대한 제목 번역 (docs/specs/44 기준 8) — guidelineId → 번역.
+   *
+   * `mapExistingTitleTranslations`와 원천은 같지만 그쪽은 잡의 표기 고정용이라 **전 코퍼스**를
+   * 훑는다. 목록 조회가 매 요청 655행을 groupBy하지 않도록 페이지의 지침만 좁혀 읽는다.
+   */
+  async mapTitleTranslations(
+    guidelineIds: string[],
+    lang: SupportedLang,
+  ): Promise<Map<string, string>> {
+    void guidelineIds;
+    void lang;
+    throw new Error('mapTitleTranslations: 미구현 스텁 (docs/specs/44)');
   }
 
   // ── 청크 번역 (docs/specs/42) ──────────────────────────

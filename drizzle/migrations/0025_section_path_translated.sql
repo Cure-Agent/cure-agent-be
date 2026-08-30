@@ -1,0 +1,1 @@
+ALTER TABLE "evidence_chunk_translations" ADD COLUMN "section_path_translated" text[];

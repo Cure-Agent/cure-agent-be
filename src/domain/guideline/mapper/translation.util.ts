@@ -11,6 +11,8 @@ import { EvidenceChunkTranslationRow } from '../persistence/guideline.schema';
 export interface UsableTranslation {
   content: string;
   titleTranslated?: string;
+  /** 원문 경로와 같은 길이의 배열. 잡이 아직 채우지 않았으면 없다 (docs/specs/44) */
+  sectionPathTranslated?: string[];
   translatorModel: string;
 }
 

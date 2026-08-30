@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ServiceException } from '../../../global/common/exception/service.exception';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { decodeCursor, encodeCursor } from '../../../global/common/cursor/cursor.util';
 import { PageResult } from '../../../global/common/response/page-result';
 import { ListEvidenceQueryDto } from '../dto/request/list-evidence.query.dto';
@@ -95,9 +96,12 @@ export class GuidelineService {
     );
   }
 
-  async evidenceDetail(evidenceId: string): Promise<EvidenceDetailResponseDto> {
-    const row = await this.repository.findEvidenceDetail(evidenceId);
+  async evidenceDetail(
+    evidenceId: string,
+    lang: SupportedLang = 'ko',
+  ): Promise<EvidenceDetailResponseDto> {
+    const row = await this.repository.findEvidenceDetail(evidenceId, lang);
     if (!row) throw new ServiceException('NOT_FOUND');
-    return toEvidenceDetail(row);
+    return toEvidenceDetail(row, lang);
   }
 }

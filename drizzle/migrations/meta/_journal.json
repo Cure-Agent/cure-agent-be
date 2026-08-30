@@ -176,6 +176,13 @@
       "when": 1788088039937,
       "tag": "0024_message_abstain_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788129664188,
+      "tag": "0025_section_path_translated",
+      "breakpoints": true
     }
   ]
 }

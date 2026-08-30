@@ -19,7 +19,10 @@ const EXCERPT_LIMIT = 200;
 export function toGuidelineSummary(
   guideline: GuidelineRow,
   latestVersion: GuidelineVersionRow,
+  /** 청크 번역에서 온 제목 번역 (docs/specs/44) — 없으면 키 부재로 닫혀 원문이 표시된다 */
+  titleTranslated?: string,
 ): GuidelineSummaryResponseDto {
+  void titleTranslated; // 스텁 — 탑재는 구현 단계에서
   return {
     id: guideline.id,
     title: guideline.title,
@@ -63,7 +66,11 @@ export function toEvidenceDetail(
     /** 적재된 번역 (docs/specs/42) — 없거나 낡았으면 번역 키가 응답에서 빠진다 */
     translation?: EvidenceChunkTranslationRow | null;
   },
-  responseLang: SupportedLang = 'ko',
+  /**
+   * **선택이 아니라 필수다** (docs/specs/44) — 안 넘기면 조용히 한국어가 되는 것이 이 결함의
+   * 구조적 원인이었다(`GET /evidence/{id}`가 기본 `'ko'`로 즉시 닫혀 영원히 한국어였다).
+   */
+  responseLang: SupportedLang,
 ): EvidenceDetailResponseDto {
   const { chunk, section, version, guideline } = row;
   const translation = usableTranslation(row.translation, chunk.contentHash, responseLang);

@@ -6,6 +6,8 @@
  * 외부 유료 API라 fake 치환 없이는 e2e 동결이 성립하지 않는다 (architecture.md §3 포트 기준).
  */
 
+import { SupportedLang } from '../translation/translator.port';
+
 export const GUIDANCE_STRUCTURER = Symbol('GUIDANCE_STRUCTURER');
 
 /** 구조화가 딛을 수 있는 **환자 다리** — 값이 채워진 스냅샷 임상 필드만 실린다 (§4.5) */
@@ -27,6 +29,13 @@ export interface GuidanceStructureInput {
   answerText: string;
   evidence: GuidanceEvidenceContext[];
   profileFields: GuidanceProfileField[];
+  /**
+   * 검토 항목을 **쓸** 언어 (docs/specs/44) — 구조화 입력(청크 원문·프로필 라벨)은 한국어로
+   * 두고 LLM이 그 언어로 쓰게 한다. 답변을 번역하지 않는 §42의 판단과 같은 모양이고,
+   * 참고안에는 이유가 더 있다: 번역 왕복이 20s 상한을 밀어 폴백률을 올리는데 **영문에서
+   * 폴백은 곧 한국어 결정적 조립**이다 — 번역을 붙일수록 한국어로 떨어질 확률이 커진다.
+   */
+  lang: SupportedLang;
 }
 
 export type GuidanceStructureRequest = GuidanceStructureInput & { signal?: AbortSignal };
