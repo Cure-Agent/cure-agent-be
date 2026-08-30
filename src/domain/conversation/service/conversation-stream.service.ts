@@ -53,7 +53,11 @@ import {
   PatientSnapshotService,
 } from '../../patient/service/patient-snapshot.service';
 import { SendMessageRequestDto } from '../dto/request/send-message.request.dto';
-import { toCitationDto, toMessageDto } from '../mapper/conversation.mapper';
+import {
+  ABSTAIN_REASON_MESSAGE,
+  toCitationDto,
+  toMessageDto,
+} from '../mapper/conversation.mapper';
 import { MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
 import { SseStream } from '../../../global/common/sse/sse-stream';
@@ -94,35 +98,6 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
   // 나머지(DB·영속화·예상 못한 결함)는 우리 쪽 문제다
   return 'INTERNAL_ERROR';
 }
-
-/**
- * 기권 사유별 사용자 문구 (docs/specs/28 기준 5).
- * FE가 reason을 그대로 표시하므로, 「코퍼스에 근거가 없다」와 「질문이 코퍼스 범위 밖으로
- * 보인다」가 사용자에게 다르게 읽혀야 재질의를 유도할 수 있다.
- */
-const ABSTAIN_REASON_MESSAGE: Record<SupportedLang, Record<AbstainReason, string>> = {
-  ko: {
-    no_candidates: '검색 조건에 해당하는 지침 근거를 찾지 못했습니다.',
-    beyond_cutoff: '질문과 충분히 관련된 지침 근거를 찾지 못했습니다.',
-    // 생성 게이트 (docs/specs/40) — 위 둘과 달리 「근거는 찾았으나 그것으로 답할 수 없다」다.
-    // 재질의 방향이 다르므로(질문을 좁히는 쪽) 문구를 합치지 않는다.
-    insufficient_evidence: '찾은 지침 근거만으로는 이 질문에 답하기 어렵습니다.',
-  },
-  /**
-   * 영문판 (docs/specs/42). **BE가 문구를 계속 소유한다** — 지원 언어가 둘이고 문구가 3개뿐이라
-   * `reasonCode`를 노출해 FE로 옮기는 비용이 이득보다 크다(스펙 판단표). 언어가 셋째로 늘거나
-   * 문구 톤을 자주 고치게 되면 그때 옮긴다.
-   *
-   * 사유별로 **다르게 읽혀야** 재질의를 유도한다는 §28 기준 5의 원칙이 영어에서도 그대로다 —
-   * 세 문장을 하나로 합치지 않는다.
-   */
-  en: {
-    no_candidates: 'No guideline evidence matched the selected search filters.',
-    beyond_cutoff: 'No guideline evidence was closely enough related to this question.',
-    insufficient_evidence:
-      'The guideline evidence found is not sufficient to answer this question.',
-  },
-};
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
 interface GuidanceContext {
@@ -388,7 +363,12 @@ export class ConversationStreamService {
         await this.repository.updateMessage(assistantMessageId, {
           status: 'ABSTAINED',
           content: '',
+          // 사유를 코드로 남긴다 (docs/specs/43) — 이걸 빼면 재조회가 세 사유를 구분할 수
+          // 없어 화면이 한 문장으로 뭉뚱그린다. 문장으로의 렌더는 매퍼가 한다
+          abstainReason,
         });
+        // 저장 뒤에 읽으므로 이 DTO에는 이미 abstainReason이 실려 있다 — 아래 이벤트의
+        // message와 재조회 응답이 같은 매퍼를 타 문장이 갈릴 수 없다 (docs/specs/43 기준 10)
         const message = await this.loadMessageDto(assistantMessageId, principal);
         sse.send({
           eventType: 'answer.abstained',
@@ -644,6 +624,10 @@ export class ConversationStreamService {
       await this.repository.updateMessage(assistantMessageId, {
         content: '',
         status: 'ABSTAINED',
+        // **검색 게이트와 별개의 저장 지점이다** (docs/specs/43 기준 3). 여기는
+        // `recordAbstain`을 직접 부르지 않고 `recordGenerationGate`가 안에서 대신 올리므로,
+        // 집계 축은 멀쩡한 채 이 행만 조용히 null로 남을 수 있다 — 메트릭으로는 안 드러난다
+        abstainReason: 'insufficient_evidence',
       });
       await this.repository.insertGenerationRun({
         id: ulid(),

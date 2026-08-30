@@ -33,6 +33,13 @@ export class MessageResponseDto {
   })
   guidanceId?: string;
 
+  @ApiProperty({
+    required: false,
+    description:
+      '기권 사유 안내 문장 — ABSTAINED 메시지에만 실린다. 사유가 기록되지 않은 과거 메시지는 이 키가 빠진다',
+  })
+  abstainReason?: string;
+
   @ApiProperty({ type: [AnswerCitationResponseDto] })
   citations!: AnswerCitationResponseDto[];
 

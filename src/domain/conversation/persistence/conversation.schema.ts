@@ -29,6 +29,15 @@ export const messageStatus = pgEnum('message_status', [
   'CANCELLED',
 ]);
 export const answerKind = pgEnum('answer_kind', ['GUIDELINE_ANSWER', 'CLINICAL_GUIDANCE']);
+/**
+ * 기권 사유 (docs/specs/43). 값 집합의 원본은 `AbstainReason`
+ * (`global/observability/metrics/metrics.service.ts`)이며 여기는 그 DB 표현이다.
+ */
+export const abstainReason = pgEnum('abstain_reason', [
+  'no_candidates',
+  'beyond_cutoff',
+  'insufficient_evidence',
+]);
 export const feedbackRating = pgEnum('feedback_rating', ['HELPFUL', 'NOT_HELPFUL']);
 
 export const conversations = pgTable(
@@ -103,6 +112,17 @@ export const messages = pgTable(
      * 기본 `'ko'`는 기존 행 백필값이자 `responseLang` 미지정 요청의 처리값이다(기준 3).
      */
     responseLang: text('response_lang').notNull().default('ko'),
+    /**
+     * 이 메시지가 기권한 사유 (docs/specs/43). ABSTAINED가 아니면 NULL이다.
+     *
+     * **문장이 아니라 코드를 저장한다** — 문구 오타를 고쳐도 과거 메시지가 옛 문장으로 남지 않고,
+     * 사용자가 언어를 바꿔도 그 행이 저장 시점 언어에 묶이지 않으며, 표현이 데이터에 굳지 않는다.
+     * 문장으로의 렌더는 `conversation.mapper.ts`가 `response_lang`과 함께 읽어 직렬화 시점에 한다.
+     *
+     * **백필하지 않는다** — 사유가 기록된 적이 없어 복원할 소스가 없다. NULL은 「기록되기 전에
+     * 만들어진 행」이라는 사실 그대로이고, 그런 행은 DTO에서 키 자체가 빠진다(기준 8).
+     */
+    abstainReason: abstainReason('abstain_reason'),
     ...baseColumns,
   },
   (table) => [
