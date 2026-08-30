@@ -8,6 +8,7 @@
  * 어휘가 갈라지면 폴백률이 즉시 튀어 관측에 잡힌다.
  */
 import { GuidanceStructureInput } from './guidance-structurer.port';
+import { renderTermbase } from '../terminology';
 import { SupportedLang } from '../translation/translator.port';
 
 /**
@@ -26,17 +27,35 @@ export const GUIDANCE_PROMPT_VERSION = 'guidance-v2';
  * `guidance-v2` 그대로라 기존 관측이 유효하게 남는다(기준 2).
  */
 export function guidancePromptVersionFor(responseLang: SupportedLang): string {
-  void responseLang; // 스텁 — 언어 분기는 구현 단계에서
-  return GUIDANCE_PROMPT_VERSION;
+  return responseLang === 'en' ? `${GUIDANCE_PROMPT_VERSION}-en` : GUIDANCE_PROMPT_VERSION;
 }
 
-/** 언어별 시스템 프롬프트 (docs/specs/44) — 규칙 7이 갈리고 영문에는 용어집이 실린다 */
-export function guidanceSystemPromptFor(responseLang: SupportedLang): string {
-  void responseLang; // 스텁 — 언어 분기는 구현 단계에서
-  return GUIDANCE_SYSTEM_PROMPT;
-}
+/**
+ * 규칙 7만 언어로 갈린다 (docs/specs/44) — 나머지는 근거 계약이지 표현 규약이 아니다.
+ *
+ * **검토 항목을 만든 뒤 번역하지 않고 여기서 그 언어로 쓰게 한다.** 구조화는 이미 20s 상한에
+ * 걸려 폴백률을 재는 중인데, 번역 왕복이 상한 초과를 늘리고 **영문에서 폴백은 곧 한국어
+ * 결정적 조립**이다 — 번역을 붙일수록 한국어로 떨어질 확률이 커지는 역설이다. 번역기가
+ * `applicability`·`markers`·`patientFactors`를 흘리면 검증기가 그 항목을 통째로 폐기한다.
+ *
+ * 용어집을 함께 싣는 이유는 답변 생성(`prompt-builder.ts`)이 같은 목록을 읽기 때문이다 —
+ * 답변이 `pharmacopuncture`라 쓰고 참고안이 다른 말을 쓰면 **같은 카드 안에서** 어휘가 갈린다.
+ */
+const LANGUAGE_RULE: Record<SupportedLang, string[]> = {
+  ko: ['7. 한국어 평문으로 간결하게 쓴다 — 굵게(**), 제목(#), 목록(-) 기호를 쓰지 않는다.'],
+  en: [
+    '7. 근거와 프로필은 한국어지만 title·rationale은 **영어 평문(plain English)으로** 간결하게 쓴다.',
+    '   Write title and rationale in plain English even though the evidence and profile are in Korean.',
+    '   굵게(**), 제목(#), 목록(-) 기호를 쓰지 않는다.',
+    '   markers는 숫자, patientFactors와 applicability는 **주어진 한국어 값을 그대로** 쓴다 —',
+    '   이 셋을 영어로 옮기면 검증기가 그 항목을 통째로 버린다.',
+    '   아래 용어는 반드시 이 대응으로 옮긴다 (답변 생성이 같은 목록을 쓴다):',
+    `   ${renderTermbase()}`,
+  ],
+};
 
-export const GUIDANCE_SYSTEM_PROMPT = [
+/** 규칙 1~6은 언어와 무관하다 — 근거·프로필 계약이지 표현 규약이 아니다 (docs/specs/44) */
+const GUIDANCE_RULES_HEAD = [
   '너는 한의사가 이미 받은 근거 기반 답변을 눈앞의 환자에게 대응시키는 것을 돕는다.',
   '아래 규칙을 반드시 지킨다.',
   '',
@@ -54,13 +73,25 @@ export const GUIDANCE_SYSTEM_PROMPT = [
   '   근거의 수치 조건 원문을 그대로 옮기고, 충족 여부 확인은 의료인에게 남긴다.',
   '   (예: 출생연도로 나이를 계산해 「연령 조건을 충족한다」고 쓰지 않는다.)',
   '6. 근거의 조건·금기가 프로필의 어느 값과 만나는지만 서술하고, 선택은 의료인의 판단으로 남긴다.',
-  '7. 한국어 평문으로 간결하게 쓴다 — 굵게(**), 제목(#), 목록(-) 기호를 쓰지 않는다.',
+];
+
+const GUIDANCE_RULES_TAIL = [
   '8. 대응시킬 것이 없으면 considerations를 빈 배열로 둔다 — 억지로 채우지 않는다.',
   '',
   'JSON만 출력한다:',
   '{"considerations":[{"title":"짧은 제목","rationale":"근거와 프로필이 만나는 지점",',
   '"applicability":"APPLICABLE|CAUTION|NOT_APPLICABLE","markers":[1],"patientFactors":["진단명"]}]}',
-].join('\n');
+];
+
+/** 언어별 시스템 프롬프트 (docs/specs/44) — 규칙 7이 갈리고 영문에는 용어집이 실린다 */
+export function guidanceSystemPromptFor(responseLang: SupportedLang): string {
+  return [...GUIDANCE_RULES_HEAD, ...LANGUAGE_RULE[responseLang], ...GUIDANCE_RULES_TAIL].join(
+    '\n',
+  );
+}
+
+/** 한국어 프롬프트 — `guidance-v2`의 기록 대상이며 오늘의 자구 그대로다 (docs/specs/33) */
+export const GUIDANCE_SYSTEM_PROMPT = guidanceSystemPromptFor('ko');
 
 export function buildGuidanceUserPrompt(input: GuidanceStructureInput): string {
   const evidence = input.evidence

@@ -163,6 +163,14 @@ export class ConversationStreamService {
           status: 'COMPLETED',
           answerKind: null,
           clientRequestId: dto.clientRequestId,
+          /**
+           * 질문 행도 그 교환의 언어를 말한다 (docs/specs/44 기준 23).
+           *
+           * §42는 인용 번역에만 이 축이 필요해 답변 행에만 남겼는데, 이제 이 컬럼이 **화면
+           * 표시 언어의 원천**이고 「각 블록이 자기 언어로 선다」가 계약이다. 영어로 물은
+           * 질문 행이 기본값 `ko`로 남으면 그 교환에 대해 사실이 아닌 값을 말하게 된다.
+           */
+          responseLang,
         });
         await this.repository.insertMessage({
           id: assistantMessageId,

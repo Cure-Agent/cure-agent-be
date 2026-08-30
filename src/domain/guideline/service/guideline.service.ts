@@ -43,10 +43,23 @@ export class GuidelineService {
     const page = rows.slice(0, size);
 
     const latestVersions = await this.repository.findLatestVersions(page.map((g) => g.id));
+    /**
+     * 제목 번역은 이 페이지의 지침에 대해서만 읽는다 (docs/specs/44 기준 8).
+     * 한국어 목록에는 붙일 이유가 없으므로 질의 자체를 하지 않는다 — 오늘의 형태 그대로다.
+     */
+    const lang: SupportedLang = query.lang ?? 'ko';
+    const titleTranslations =
+      lang === 'ko'
+        ? new Map<string, string>()
+        : await this.repository.mapTitleTranslations(
+            page.map((g) => g.id),
+            lang,
+          );
+
     const items = page.map((guideline) => {
       const version = latestVersions.get(guideline.id);
       if (!version) throw new ServiceException('INTERNAL_ERROR', { reason: 'VERSION_MISSING' });
-      return toGuidelineSummary(guideline, version);
+      return toGuidelineSummary(guideline, version, titleTranslations.get(guideline.id));
     });
 
     return PageResult.of(items, {

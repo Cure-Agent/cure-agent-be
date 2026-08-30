@@ -6,7 +6,7 @@ import { SupportedLang } from '../../../infrastructure/llm/translation/translato
 import { PatientSnapshotPayload } from '../../patient/service/patient-snapshot.service';
 import { AnswerCitationResponseDto } from '../../conversation/dto/response/answer-citation.response.dto';
 import { ClinicalGuidanceResponseDto } from '../dto/response/clinical-guidance.response.dto';
-import { toClinicalGuidanceDto } from '../mapper/clinical-guidance.mapper';
+import { renderSafetyAlert, toClinicalGuidanceDto } from '../mapper/clinical-guidance.mapper';
 import {
   GuidanceConsiderationJson,
   SafetyAlertJson,
@@ -81,7 +81,7 @@ export class ClinicalGuidanceComposer {
       considerations: structuredAdopted
         ? validated
         : buildConsiderations(args.answerText, args.citations, args.responseLang),
-      safetyAlerts: buildSafetyAlerts(args.profile),
+      safetyAlerts: buildSafetyAlerts(args.profile, args.responseLang),
       missingInformation: missingGuidanceProfileFields(args.profile),
       composerVersion,
     });
@@ -94,31 +94,64 @@ function buildSummary(answerText: string): string {
   return text.length <= SUMMARY_LIMIT ? text : `${text.slice(0, SUMMARY_LIMIT)}…`;
 }
 
+/**
+ * 인용 0건 폴백 항목의 제목 (docs/specs/44 기준 17).
+ *
+ * BE가 소유하는 것은 **자유 문장뿐**이다 — 필드 라벨(`patientFactors`·`missingInformation`)은
+ * 닫힌 어휘라 FE가 i18n 키로 옮기고, BE가 렌더하면 이중이 된다(스펙 판단표).
+ */
+const FALLBACK_CONSIDERATION_TITLE: Record<SupportedLang, string> = {
+  ko: '근거 요약',
+  en: 'Evidence summary',
+};
+
+/**
+ * 폴백 조립은 **생성 시점에 굳는다** (docs/specs/44) — 인용이 이미 들고 있는 번역을 그대로
+ * 쓴다. 영문 경로에서 구조화가 상한을 넘기면 검토 항목이 통째로 한국어가 되는데, 관측되지
+ * 않는 경로라 더 조용히 깨진다(영문 참고안 3건 전부 구조화 경로여서 폴백 표본이 0이다).
+ */
 function buildConsiderations(
   answerText: string,
   citations: AnswerCitationResponseDto[],
   responseLang: SupportedLang,
 ): GuidanceConsiderationJson[] {
-  void responseLang; // 스텁 — 언어별 문구·번역 인용 채용은 구현 단계에서
   if (citations.length === 0) {
     // 인용 없는 완료 답변도 검토 항목 1건은 보장한다 (§7 considerations ≥ 1)
-    return [{ title: '근거 요약', rationale: buildSummary(answerText), citations: [] }];
+    return [
+      {
+        title: FALLBACK_CONSIDERATION_TITLE[responseLang],
+        rationale: buildSummary(answerText),
+        citations: [],
+      },
+    ];
   }
-  return citations.map((citation) => ({
-    title:
-      citation.sectionPath.length > 0
-        ? `${citation.guidelineTitle} — ${citation.sectionPath.join(' > ')}`
-        : citation.guidelineTitle,
-    rationale: citation.quote,
-    citations: [citation],
-  }));
+  return citations.map((citation) => {
+    const title = citation.titleTranslated ?? citation.guidelineTitle;
+    const path = citation.sectionPathTranslated ?? citation.sectionPath;
+    return {
+      title: path.length > 0 ? `${title} — ${path.join(' > ')}` : title,
+      rationale: citation.quoteTranslated ?? citation.quote,
+      citations: [citation],
+    };
+  });
 }
 
-/** 알레르기 결정적 규칙 — 스냅샷에 고정된 알레르기명을 경고 본문에 그대로 노출한다 */
-function buildSafetyAlerts(profile: PatientSnapshotPayload): SafetyAlertJson[] {
+/**
+ * 알레르기 결정적 규칙 — 스냅샷에 고정된 알레르기명을 경고 본문에 그대로 노출한다.
+ *
+ * **문장과 함께 알레르기명을 행에 남긴다** (docs/specs/44). 문장은 `description`에 그대로
+ * 들어가 jsonb를 직접 읽는 쪽도 읽을 수 있게 하되, 렌더는 매퍼가 `messages.response_lang`으로
+ * 다시 만든다 — 같은 사실을 두 곳에 적는 것이 아니라, 저장은 **사유**(알레르기명)이고
+ * 문장은 그 사유의 직렬화다(§43이 기권 사유에 딛고 선 자리와 같다).
+ */
+function buildSafetyAlerts(
+  profile: PatientSnapshotPayload,
+  responseLang: SupportedLang,
+): SafetyAlertJson[] {
   return profile.allergies.map((allergy) => ({
     severity: 'WARNING' as const,
-    description: `환자에게 ${allergy} 알레르기 병력이 있습니다. 관련 계열 약물 권고 적용 전 교차 반응 여부를 확인하세요.`,
+    description: renderSafetyAlert(allergy, responseLang),
     citations: [],
+    allergen: allergy,
   }));
 }

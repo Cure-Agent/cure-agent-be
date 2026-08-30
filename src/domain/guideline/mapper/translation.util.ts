@@ -31,6 +31,10 @@ export function usableTranslation(
   return {
     content: translation.content,
     ...(translation.titleTranslated ? { titleTranslated: translation.titleTranslated } : {}),
+    // 잡이 아직 채우지 않은 경로는 키 자체가 없다 — 고장이 아니라 범위다 (docs/specs/44 기준 11)
+    ...(translation.sectionPathTranslated
+      ? { sectionPathTranslated: translation.sectionPathTranslated }
+      : {}),
     translatorModel: translation.translatorModel,
   };
 }

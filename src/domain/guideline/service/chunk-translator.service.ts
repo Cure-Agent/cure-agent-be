@@ -57,9 +57,16 @@ export async function translateSectionPath(
   path: readonly string[],
   translate: (segment: string) => Promise<string>,
 ): Promise<string[] | null> {
-  void path;
-  void translate;
-  throw new Error('translateSectionPath: 미구현 스텁 (docs/specs/44)');
+  const translated: string[] = [];
+  for (const segment of path) {
+    try {
+      translated.push(await translate(segment));
+    } catch {
+      // 한 원소라도 못 옮기면 배열 전체를 버린다 — 부분 번역은 원문보다 나쁘다
+      return null;
+    }
+  }
+  return translated;
 }
 
 @Injectable()
@@ -120,6 +127,12 @@ export class ChunkTranslatorService {
       try {
         const content = await this.translator.translate(candidate.chunk.content, options.target);
         const titleTranslated = await translateTitle(candidate.guidelineTitle);
+        // 섹션 경로도 제목과 같은 캐시를 쓴다 — 67섹션이 655청크에 반복되므로 원소마다 부르면
+        // 같은 문자열을 열 번씩 번역한다(제목에서 실측된 것과 같은 낭비다)
+        const sectionPathTranslated = await translateSectionPath(
+          candidate.sectionPath,
+          (segment) => translateTitle(segment),
+        );
         await this.txManager.run(() =>
           this.repository.upsertChunkTranslation({
             id: ulid(),
@@ -127,6 +140,7 @@ export class ChunkTranslatorService {
             lang: options.target,
             content,
             titleTranslated,
+            sectionPathTranslated,
             sourceContentHash: candidate.chunk.contentHash,
             translatorModel: this.translator.model,
           }),

@@ -22,7 +22,6 @@ export function toGuidelineSummary(
   /** 청크 번역에서 온 제목 번역 (docs/specs/44) — 없으면 키 부재로 닫혀 원문이 표시된다 */
   titleTranslated?: string,
 ): GuidelineSummaryResponseDto {
-  void titleTranslated; // 스텁 — 탑재는 구현 단계에서
   return {
     id: guideline.id,
     title: guideline.title,
@@ -30,6 +29,7 @@ export function toGuidelineSummary(
     currentVersion: latestVersion.version,
     publishedAt: latestVersion.publishedAt.toISOString(),
     status: guideline.status,
+    ...(titleTranslated ? { titleTranslated } : {}),
   };
 }
 
@@ -79,8 +79,16 @@ export function toEvidenceDetail(
       ? {
           excerptTranslated: translation.content,
           translationModel: translation.translatorModel,
+          // 권고 청크에서는 권고문 원문이 곧 청크 본문이라 번역도 같은 문자열이다
+          // (docs/specs/44 기준 5) — 원문이 안 실리는 비권고 청크에는 번역도 싣지 않는다
+          ...(chunk.recommendationNumber
+            ? { recommendationTextTranslated: translation.content }
+            : {}),
           ...(translation.titleTranslated
             ? { titleTranslated: translation.titleTranslated }
+            : {}),
+          ...(translation.sectionPathTranslated
+            ? { sectionPathTranslated: translation.sectionPathTranslated }
             : {}),
         }
       : {}),
