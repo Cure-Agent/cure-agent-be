@@ -312,7 +312,7 @@ export class ConversationRepository {
 
   async updateMessage(
     id: string,
-    patch: Partial<Pick<MessageRow, 'content' | 'status'>>,
+    patch: Partial<Pick<MessageRow, 'content' | 'status' | 'abstainReason'>>,
   ): Promise<void> {
     await this.txManager.conn.update(messages).set(patch).where(eq(messages.id, id));
   }
