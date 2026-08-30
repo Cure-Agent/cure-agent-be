@@ -8,6 +8,7 @@ import {
   gt,
   ilike,
   inArray,
+  isNotNull,
   lt,
   ne,
   or,
@@ -417,5 +418,47 @@ export class GuidelineRepository {
           translatedAt: new Date(),
         },
       });
+  }
+
+  /**
+   * 이미 적재된 지침 제목 번역 (docs/specs/42) — **실행 간 표기를 고정하는 씨앗**이다.
+   *
+   * 잡의 제목 캐시가 실행 단위라, 재실행이 빈 캐시로 시작하면 같은 제목을 다시 번역하고 LLM이
+   * 다른 표기를 낸다(실측: 편두통이 「Migraine Korean Medicine…」 125건 대 「…for Migraine」
+   * 5건으로 갈렸다). 개정 실행은 그 지침의 **일부 청크만** 건드리므로, 고치지 않으면 한 지침이
+   * 두 영문 제목으로 불리고 같은 답변의 인용 카드끼리 어긋난다.
+   *
+   * **키가 지침 id가 아니라 제목 문자열인 이유**: id로 잡으면 제목이 개정으로 바뀌어도 옛 번역을
+   * 재사용한다. 문자열로 잡으면 제목이 바뀐 순간 캐시 미스가 나 자동으로 다시 번역된다 —
+   * `source_content_hash`가 본문에 대해 하는 일과 같은 원리다.
+   *
+   * 변이가 이미 남아 있어도 확정적이도록 **다수결**로 하나를 고른다.
+   */
+  async mapExistingTitleTranslations(lang: string): Promise<Map<string, string>> {
+    const normalizedTitle = sql<string>`btrim(${guidelines.title}, E' \t\n\r')`;
+    const rows = await this.txManager.conn
+      .select({
+        title: normalizedTitle,
+        translated: evidenceChunkTranslations.titleTranslated,
+      })
+      .from(evidenceChunkTranslations)
+      .innerJoin(evidenceChunks, eq(evidenceChunkTranslations.chunkId, evidenceChunks.id))
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
+      .where(
+        and(
+          eq(evidenceChunkTranslations.lang, lang),
+          isNotNull(evidenceChunkTranslations.titleTranslated),
+        ),
+      )
+      .groupBy(normalizedTitle, evidenceChunkTranslations.titleTranslated)
+      .orderBy(normalizedTitle, desc(sql`count(*)`));
+
+    // orderBy가 제목별로 다수 표기를 앞에 두므로, 처음 본 것만 담으면 다수결이 된다
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.translated !== null && !map.has(row.title)) map.set(row.title, row.translated);
+    }
+    return map;
   }
 }
