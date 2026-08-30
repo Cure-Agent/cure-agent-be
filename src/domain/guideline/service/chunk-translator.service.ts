@@ -73,8 +73,15 @@ export class ChunkTranslatorService {
      * 줄이는 것은 **외부 호출**이다.
      *
      * 실패는 캐시하지 않는다 — 예외가 나면 항목이 비어 다음 청크가 다시 시도한다.
+     *
+     * **캐시를 DB에서 씨딩한다.** 실행 단위 캐시만 두면 재실행이 빈 Map으로 시작해 같은 제목을
+     * 다시 번역하고, LLM이 다른 표기를 내 한 지침이 두 영문 제목으로 불린다(실측: 편두통이
+     * 125건 대 5건으로 갈렸다). 개정 실행은 그 지침의 **일부 청크만** 건드리므로 같은 답변의
+     * 인용 카드끼리 어긋난다 — 조용히 누적되는 종류라 씨딩으로 구조적으로 막는다.
      */
-    const titleCache = new Map<string, string>();
+    const titleCache = await this.txManager.run(() =>
+      this.repository.mapExistingTitleTranslations(options.target),
+    );
     const translateTitle = async (title: string): Promise<string> => {
       // 후행 탭이 붙은 제목이 있으므로(기준 20) 번역기에는 정규화한 문자열을 넘긴다
       const key = title.replace(/^[\s\t\n\r]+|[\s\t\n\r]+$/g, '');
