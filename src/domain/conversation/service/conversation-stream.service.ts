@@ -363,7 +363,12 @@ export class ConversationStreamService {
         await this.repository.updateMessage(assistantMessageId, {
           status: 'ABSTAINED',
           content: '',
+          // 사유를 코드로 남긴다 (docs/specs/43) — 이걸 빼면 재조회가 세 사유를 구분할 수
+          // 없어 화면이 한 문장으로 뭉뚱그린다. 문장으로의 렌더는 매퍼가 한다
+          abstainReason,
         });
+        // 저장 뒤에 읽으므로 이 DTO에는 이미 abstainReason이 실려 있다 — 아래 이벤트의
+        // message와 재조회 응답이 같은 매퍼를 타 문장이 갈릴 수 없다 (docs/specs/43 기준 10)
         const message = await this.loadMessageDto(assistantMessageId, principal);
         sse.send({
           eventType: 'answer.abstained',
@@ -619,6 +624,10 @@ export class ConversationStreamService {
       await this.repository.updateMessage(assistantMessageId, {
         content: '',
         status: 'ABSTAINED',
+        // **검색 게이트와 별개의 저장 지점이다** (docs/specs/43 기준 3). 여기는
+        // `recordAbstain`을 직접 부르지 않고 `recordGenerationGate`가 안에서 대신 올리므로,
+        // 집계 축은 멀쩡한 채 이 행만 조용히 null로 남을 수 있다 — 메트릭으로는 안 드러난다
+        abstainReason: 'insufficient_evidence',
       });
       await this.repository.insertGenerationRun({
         id: ulid(),

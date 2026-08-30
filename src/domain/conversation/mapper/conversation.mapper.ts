@@ -111,6 +111,19 @@ export function toMessageDto(
     status: row.status,
     answerKind: row.answerKind ?? undefined,
     guidanceId,
+    // 기권 사유는 코드로 저장되고 문장은 **여기서** 만들어진다 (docs/specs/43).
+    // 읽는 시점의 언어는 요청이 아니라 그 메시지가 생성될 때의 언어다(§42 `response_lang`) —
+    // 재조회에는 언어가 실리지 않으므로 이 컬럼이 유일한 축이다.
+    // 사유가 없으면(기록되기 전에 만들어진 과거 행) **키 자체를 싣지 않는다** — 빈 문자열을
+    // 실으면 화면이 빈 안내를 그린다. §42가 stale 번역에 쓴 규율과 같다.
+    ...(row.abstainReason
+      ? {
+          abstainReason:
+            ABSTAIN_REASON_MESSAGE[(row.responseLang ?? 'ko') as SupportedLang][
+              row.abstainReason
+            ],
+        }
+      : {}),
     citations,
     createdAt: row.createdAt.toISOString(),
   };
