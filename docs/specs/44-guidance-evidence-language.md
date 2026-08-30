@@ -96,7 +96,7 @@ UI 토글 = 한국어, 사용자가 영어로 질의
 | 재조회가 메시지 언어를 어떻게 아는가 | **`MessageResponseDto.responseLang`을 노출한다.** 지금은 실리지 않아 대화 목록에 갔다 돌아오면 FE가 그 메시지의 언어를 알 방법이 없다 — §43이 `abstainReason`을 실을 때 언어는 함께 싣지 않았다. 컬럼(`messages.response_lang`)이 이미 있으므로 매퍼가 값을 한 칸 더 옮기면 된다. **이것 없이는 위 판단이 스트림 직후에만 성립하고 재조회에서 무너진다** |
 | 검토 항목 본문을 번역하는가 | **아니다 — 생성 단계에서 그 언어로 쓴다.** §42가 답변에 내린 판단과 같은 모양이고, 참고안에는 이유가 셋 더 있다: ⑴ 구조화는 이미 20s 상한(`GUIDANCE_STRUCTURE_TIMEOUT_MS`)에 걸려 폴백률을 재는 중이라 번역 왕복이 상한 초과를 늘리는데, **영문에서 폴백은 곧 한국어 결정적 조립**이다 — 번역을 붙일수록 한국어로 떨어질 확률이 커지는 역설 ⑵ 번역기가 `applicability`·`markers`·`patientFactors`를 흘리면 검증기가 그 항목을 **통째로 폐기**한다(§42가 `[n]` 마커에 한 걱정과 같다) ⑶ 용어집이 답변 생성에 물려 있어 참고안만 다른 어휘를 쓰면 **같은 카드 안에서** 갈린다 |
 | 구조화 입력은 번역하는가 | **하지 않는다.** 청크 원문·프로필 라벨을 한국어로 두고 LLM이 영어로 쓰게 한다 — 정본을 읽히는 쪽이 정확하고, 입력 번역은 왕복 손실만 더한다 |
-| 생성 시점 언어와 렌더 시점 언어가 한 DTO에 공존한다 | **그렇다 — 렌더 언어를 저장된 `response_lang`으로 고정해 둘을 항상 일치시킨다.** `title`·`rationale`은 생성 시점에 굳고 `safetyAlerts`·폴백 `title`은 렌더 시점에 정해지는데, 후자를 UI 언어로 잡으면 **한 카드 안에서 언어가 갈린다**(한국어로 전환 시 안내 문구만 한국어, 본문은 영어). 이 계약을 명시하지 않으면 「왜 절반만 바뀌냐」가 버그로 올라온다 |
+| 생성 시점 언어와 렌더 시점 언어가 한 DTO에 공존한다 | **그렇다 — 렌더 언어를 저장된 `response_lang`으로 고정해 둘을 항상 일치시킨다.** `considerations`는 구조화·폴백 **둘 다 생성 시점에 굳고**(Out of scope의 「저장된 참고안의 사후 번역」), `safetyAlerts`만 렌더 시점에 정해진다 — 알레르기명은 스냅샷의 **환자 데이터**이고 그것을 감싸는 문장은 우리가 소유한 정형구라, §43이 기권 사유에 한 것처럼 행에 사유(=알레르기명)를 남기고 직렬화 시점에 문장을 만든다. 후자를 UI 언어로 잡으면 **한 카드 안에서 언어가 갈린다**(한국어로 전환 시 안내 문구만 한국어, 본문은 영어). 이 계약을 명시하지 않으면 「왜 절반만 바뀌냐」가 버그로 올라온다 |
 | 권고등급·근거수준 라벨 | **FE가 번역한다 — 필드 라벨과 같은 규율.** 인용 근거 탭이 `B (중등도 권고)`를 그리는데(`evidence-inspector.tsx:155`) `RatingResponseDto.label`이 한국어다. 프로덕션 전량이 **6종뿐인 닫힌 어휘**(중등도 권고 1242 · 약한 권고 1017 · 전문가 합의 권고 132 · 강한 권고 99 · 권고하지 않음 12 · 권고 보류 6)라 문구표로 닫힌다. BE가 렌더하지 않는 이유는 이것이 **코퍼스에서 파싱된 값**이기 때문이다 — BE가 다시 해석하면 §18의 「추출된 사실은 원문 그대로 둔다」와 어긋난다. DTO 주석대로 체계가 문서마다 달라 새 코드가 올 수 있으므로 **모르는 값은 원문으로 남긴다**(`profileFieldLabel`과 같은 폴백). `code`(`B`)가 그대로 보이므로 대조는 깨지지 않는다 |
 | 필드 라벨을 BE가 번역하는가 | **하지 않는다 — FE가 이미 한다.** `patientFactors`·`missingInformation`은 닫힌 어휘 9개이고 FE가 i18n 키로 매핑한다(관측). BE가 렌더하면 이중이 되고, **검증기가 대조하는 어휘**(`presentGuidanceProfileFields`)를 건드리면 구조화 항목이 전멸한다. BE가 소유하는 것은 자유 문장뿐이다 — 안전 경고와 폴백 `'근거 요약'` |
 | 섹션 경로 번역을 어디에 두는가 | **`evidence_chunk_translations.section_path_translated` — 신규 테이블 없음.** §42가 `title_translated`에 내린 비정규화 판단을 그대로 따른다(「같은 값이 반복되지만 655행 규모에서 대가가 없고 조인이 늘지 않는다」). 섹션은 67개라 번역 비용이 청크의 1/10이다 |
@@ -138,9 +138,9 @@ DTO로 온다 — 스트림 근거는 `EvidenceDetail`(`evidence-inspector.tsx:1
 | `guideline.mapper.ts` | `recommendationTextTranslated`(= `excerptTranslated`와 같은 원천) · `sectionPathTranslated` · `toGuidelineSummary`의 `titleTranslated` |
 | `guidance-prompt.ts` | 규칙 7을 언어 분기. `GUIDANCE_PROMPT_VERSION`이 `guidance-v2` / `guidance-v2-en`. 용어집(`renderTermbase()`)을 프롬프트에 싣는다 |
 | `guidance-structurer.port.ts` 외 2 | `GuidanceStructureInput`에 `lang`. openai·fake 구현 반영 |
-| `clinical-guidance-composer.service.ts` | 안전 경고·`'근거 요약'` 문구표. 폴백이 `titleTranslated`·`quoteTranslated`를 읽는다 |
-| `clinical-guidance.mapper.ts` · `.service.ts` · `.repository.ts` | 렌더 시점 언어 관통 — `messages.response_lang` 조인 |
-| `clinical-guidance.schema.ts` | `GuidanceCitationJson`에 번역 필드 선언 |
+| `clinical-guidance-composer.service.ts` | `'근거 요약'` 문구표. 폴백이 `titleTranslated`·`quoteTranslated`를 읽는다. 안전 경고는 문장 대신 **알레르기명을 행에 남긴다** |
+| `clinical-guidance.mapper.ts` · `.service.ts` · `.repository.ts` | 렌더 시점 언어 관통 — `messages.response_lang` 조인. 매퍼가 안전 경고 문구표를 읽어 문장을 만든다(알레르기명이 없는 과거 행은 저장된 `description` 그대로) |
+| `clinical-guidance.schema.ts` | `GuidanceCitationJson`에 번역 필드 선언. `SafetyAlertJson`에 `allergen?` — 문장이 아니라 렌더의 재료다(마이그레이션 없음, jsonb 페이로드) |
 | `conversation.mapper.ts` | `toMessageDto`가 `responseLang`을 싣는다(`MessageRow`가 이미 들고 있어 시그니처 불변 — §43과 같은 자리). `toCitationDto`에 `sectionPathTranslated` |
 | `conversation-stream.service.ts` | 구조화·조립에 `responseLang` 전달 |
 | `chunk-translator.service.ts` · `scripts/translate-chunks.ts` | `section_path_translated` 산출 |
