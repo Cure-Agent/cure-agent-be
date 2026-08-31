@@ -15,9 +15,11 @@ import {
   sql,
 } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { messageCitations } from '../../conversation/persistence/conversation.schema';
 import {
   EvidenceChunkRow,
+  EvidenceChunkTranslationRow,
   evidenceChunkTranslations,
   GuidelineRow,
   GuidelineSectionRow,
@@ -337,11 +339,20 @@ export class GuidelineRepository {
     await this.txManager.conn.delete(guidelines).where(eq(guidelines.id, guidelineId));
   }
 
-  async findEvidenceDetail(evidenceId: string): Promise<{
+  /**
+   * @param lang 근거 번역을 함께 실을 언어 (docs/specs/44). `listCitationDetails`의 조인과 같은
+   *   모양이다 — 번역은 **left join**이라 없으면 null로 오고, 조인이 없으면 이 경로는 인자를
+   *   받든 말든 구조적으로 영원히 한국어다(스펙 관측).
+   */
+  async findEvidenceDetail(
+    evidenceId: string,
+    lang: SupportedLang,
+  ): Promise<{
     chunk: EvidenceChunkRow;
     section: GuidelineSectionRow;
     version: GuidelineVersionRow;
     guideline: GuidelineRow;
+    translation?: EvidenceChunkTranslationRow | null;
   } | null> {
     const rows = await this.txManager.conn
       .select({
@@ -349,14 +360,64 @@ export class GuidelineRepository {
         section: guidelineSections,
         version: guidelineVersions,
         guideline: guidelines,
+        translation: evidenceChunkTranslations,
       })
       .from(evidenceChunks)
       .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
       .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
       .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
+      .leftJoin(
+        evidenceChunkTranslations,
+        and(
+          eq(evidenceChunkTranslations.chunkId, evidenceChunks.id),
+          eq(evidenceChunkTranslations.lang, lang),
+        ),
+      )
       .where(eq(evidenceChunks.id, evidenceId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * 이 페이지의 지침들에 대한 제목 번역 (docs/specs/44 기준 8) — guidelineId → 번역.
+   *
+   * `mapExistingTitleTranslations`와 원천은 같지만 그쪽은 잡의 표기 고정용이라 **전 코퍼스**를
+   * 훑는다. 목록 조회가 매 요청 655행을 groupBy하지 않도록 페이지의 지침만 좁혀 읽는다.
+   */
+  async mapTitleTranslations(
+    guidelineIds: string[],
+    lang: SupportedLang,
+  ): Promise<Map<string, string>> {
+    if (guidelineIds.length === 0) return new Map();
+
+    const rows = await this.txManager.conn
+      .select({
+        guidelineId: guidelines.id,
+        translated: evidenceChunkTranslations.titleTranslated,
+        // 변이가 남아 있어도 확정적이도록 다수 표기를 앞에 둔다 (mapExistingTitleTranslations와 같은 규율)
+        weight: sql<number>`count(*)::int`,
+      })
+      .from(evidenceChunkTranslations)
+      .innerJoin(evidenceChunks, eq(evidenceChunkTranslations.chunkId, evidenceChunks.id))
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
+      .where(
+        and(
+          inArray(guidelines.id, guidelineIds),
+          eq(evidenceChunkTranslations.lang, lang),
+          isNotNull(evidenceChunkTranslations.titleTranslated),
+        ),
+      )
+      .groupBy(guidelines.id, evidenceChunkTranslations.titleTranslated)
+      .orderBy(guidelines.id, desc(sql`count(*)`));
+
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.translated !== null && !map.has(row.guidelineId)) {
+        map.set(row.guidelineId, row.translated);
+      }
+    }
+    return map;
   }
 
   // ── 청크 번역 (docs/specs/42) ──────────────────────────
@@ -371,7 +432,14 @@ export class GuidelineRepository {
   async listChunksNeedingTranslation(
     lang: string,
     titlePrefixes: readonly string[] | null,
-  ): Promise<{ chunk: EvidenceChunkRow; guidelineTitle: string; stale: boolean }[]> {
+  ): Promise<
+    {
+      chunk: EvidenceChunkRow;
+      guidelineTitle: string;
+      sectionPath: string[];
+      stale: boolean;
+    }[]
+  > {
     const normalizedTitle = sql`btrim(${guidelines.title}, E' \t\n\r')`;
     const scoped = titlePrefixes
       ? or(...titlePrefixes.map((prefix) => sql`${normalizedTitle} LIKE ${`${prefix}%`}`))
@@ -381,9 +449,12 @@ export class GuidelineRepository {
       .select({
         chunk: evidenceChunks,
         guidelineTitle: guidelines.title,
+        sectionPath: guidelineSections.path,
         translationHash: evidenceChunkTranslations.sourceContentHash,
+        translatedPath: evidenceChunkTranslations.sectionPathTranslated,
       })
       .from(evidenceChunks)
+      .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
       .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
       .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
       .leftJoin(
@@ -398,8 +469,15 @@ export class GuidelineRepository {
     return rows.map((row) => ({
       chunk: row.chunk,
       guidelineTitle: row.guidelineTitle,
-      // 번역이 없거나(null) 원문이 개정돼 해시가 갈린 것 — 둘 다 「다시 써야 한다」다
-      stale: row.translationHash !== row.chunk.contentHash,
+      sectionPath: row.sectionPath,
+      /**
+       * 번역이 없거나(null) 원문이 개정돼 해시가 갈린 것 — 둘 다 「다시 써야 한다」다.
+       *
+       * **섹션 경로 번역이 비어 있는 것도 stale이다** (docs/specs/44). 해시만 보면 §42가
+       * 이미 채운 655행이 영원히 건너뛰어져 새 컬럼이 채워지지 않는다 — 스펙 위험 ⑵의
+       * 「배치 재실행으로 채워진다」가 성립하려면 이 축이 판정에 들어와야 한다.
+       */
+      stale: row.translationHash !== row.chunk.contentHash || row.translatedPath === null,
     }));
   }
 
@@ -413,6 +491,7 @@ export class GuidelineRepository {
         set: {
           content: row.content,
           titleTranslated: row.titleTranslated ?? null,
+          sectionPathTranslated: row.sectionPathTranslated ?? null,
           sourceContentHash: row.sourceContentHash,
           translatorModel: row.translatorModel,
           translatedAt: new Date(),

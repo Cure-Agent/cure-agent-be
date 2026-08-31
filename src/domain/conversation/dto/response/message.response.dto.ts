@@ -40,6 +40,16 @@ export class MessageResponseDto {
   })
   abstainReason?: string;
 
+  /**
+   * 이 메시지가 실제로 답한 언어 (docs/specs/44) — **화면 표시 언어의 원천이다.**
+   *
+   * 재조회에는 질의도 요청 언어도 실리지 않으므로, 이것 없이는 대화 목록에 갔다 돌아온 화면이
+   * 그 메시지의 언어를 알 방법이 없다. 컬럼(`messages.response_lang`)이 이미 있고 기본값이
+   * `'ko'`라, 언어를 보내지 않고 만든 과거 메시지는 `ko`로 읽힌다(§42 기준 3 계승).
+   */
+  @ApiProperty({ enum: ['ko', 'en'], required: false, description: '이 메시지가 답한 언어' })
+  responseLang?: 'ko' | 'en';
+
   @ApiProperty({ type: [AnswerCitationResponseDto] })
   citations!: AnswerCitationResponseDto[];
 

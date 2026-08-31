@@ -25,6 +25,14 @@ export interface GuidanceCitationJson {
   sectionPath: string[];
   quote: string;
   sourceUrl: string;
+  /**
+   * 인용 번역 (docs/specs/44) — `toCitationDto`가 만든 값이 그대로 굳는다. 영문 참고안에는
+   * 이미 런타임에 저장돼 왔고(관측 6/6), 여기 선언이 그것을 계약에 드러낸다. 한국어 참고안과
+   * 과거 행에는 없으며 **키 부재로 닫힌다** — 빈 문자열을 싣지 않는다(§42 규율).
+   */
+  quoteTranslated?: string;
+  titleTranslated?: string;
+  sectionPathTranslated?: string[];
 }
 
 export interface GuidanceConsiderationJson {
@@ -44,6 +52,15 @@ export interface SafetyAlertJson {
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   description: string;
   citations: GuidanceCitationJson[];
+  /**
+   * 경고가 딛고 선 알레르기명 (docs/specs/44) — **문장이 아니라 렌더의 재료다.**
+   *
+   * 알레르기명은 스냅샷의 환자 데이터이고 그것을 감싸는 문장은 우리가 소유한 정형구라,
+   * §43이 기권 사유에 한 것처럼 행에 사유를 남기고 직렬화 시점에 문장을 만든다. 그래야
+   * 참고안의 렌더 언어(`messages.response_lang`)를 따라 안내 문구가 본문과 같은 언어로 선다.
+   * 이 키가 없는 과거 행은 저장된 `description`이 그대로 나간다.
+   */
+  allergen?: string;
 }
 
 /** 임상 가이던스 — 확정 처방이 아닌 검토 대상 참고안 (§5.6). 검토 상태만 가변 */

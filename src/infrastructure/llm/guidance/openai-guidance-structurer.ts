@@ -5,7 +5,7 @@
  * 호출측이 즉시 결정적 조립으로 폴백하는 편이 재시도보다 싸고 빠르다.
  */
 import { ProviderErrorOptions, fetchStream, parseJson, toProviderError } from '../../http/provider-http';
-import { GUIDANCE_SYSTEM_PROMPT, buildGuidanceUserPrompt } from './guidance-prompt';
+import { buildGuidanceUserPrompt, guidanceSystemPromptFor } from './guidance-prompt';
 import {
   GuidanceStructureRequest,
   GuidanceStructureResult,
@@ -63,7 +63,7 @@ export class OpenAiGuidanceStructurer implements GuidanceStructurer {
           model: this.config.model,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: GUIDANCE_SYSTEM_PROMPT },
+            { role: 'system', content: guidanceSystemPromptFor(request.lang) },
             { role: 'user', content: buildGuidanceUserPrompt(request) },
           ],
         }),

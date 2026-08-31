@@ -21,7 +21,7 @@ export class ClinicalGuidanceService {
   ): Promise<ClinicalGuidanceResponseDto> {
     const row = await this.repository.findById({ clinicId: principal.clinicId }, guidanceId);
     if (!row) throw new ServiceException('NOT_FOUND');
-    return toClinicalGuidanceDto(row);
+    return toClinicalGuidanceDto(row, row.responseLang);
   }
 
   async review(
@@ -46,7 +46,7 @@ export class ClinicalGuidanceService {
         decision: dto.decision,
         note: dto.note ?? null,
       });
-      return toClinicalGuidanceDto(updated);
+      return toClinicalGuidanceDto(updated, updated.responseLang);
     });
   }
 }

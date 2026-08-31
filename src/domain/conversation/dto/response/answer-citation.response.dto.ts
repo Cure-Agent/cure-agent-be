@@ -34,4 +34,12 @@ export class AnswerCitationResponseDto {
 
   @ApiProperty({ required: false, description: '지침 제목의 번역 (기계 번역)' })
   titleTranslated?: string;
+
+  /**
+   * `sectionPath`의 번역 (docs/specs/44) — 원문과 **같은 길이의 배열**이다.
+   * 저장된 인용도 펼침 헤더를 그리므로, 세 경로(`EvidenceDetail`·여기·`GuidanceCitationJson`)
+   * 가운데 하나라도 비면 그 화면만 한국어로 남는다.
+   */
+  @ApiProperty({ required: false, type: [String], description: '섹션 경로의 번역 (기계 번역)' })
+  sectionPathTranslated?: string[];
 }
