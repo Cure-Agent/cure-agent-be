@@ -34,9 +34,16 @@ export const DEMO_TRANSLATION_TARGETS: readonly string[] = [
 export interface ChunkTranslationJobResult {
   /** 대상으로 잡힌 ACTIVE 청크 수 */
   targeted: number;
-  /** 이번 실행이 새로 쓴 번역 행 수 */
+  /** 이번 실행이 **본문까지** 새로 쓴 번역 행 수 */
   translated: number;
-  /** 이미 최신 번역이 있어 건너뛴 수 — 멱등 실행에서는 targeted와 같아진다 (기준 18) */
+  /**
+   * 본문은 그대로 두고 **섹션 경로만** 채운 행 수 (#394).
+   *
+   * `translated`와 나눠 세는 이유는 관측이다 — 재실행이 싼 길로 갔는지(경로만) 비싼 길로
+   * 갔는지(본문 재번역)를 출력 한 줄에서 구분할 수 없으면, 낭비가 조용히 누적된다.
+   */
+  pathFilled: number;
+  /** 이미 최신 번역이 있어 건너뛴 수 — 멱등 실행에서는 targeted와 같아진다 (docs/specs/42 기준 18) */
   skipped: number;
 }
 
@@ -116,8 +123,9 @@ export class ChunkTranslatorService {
     };
 
     let translated = 0;
+    const pathFilled = 0; // 스텁 — 경로 전용 경로는 구현 단계에서
     for (const candidate of candidates) {
-      if (!candidate.stale) continue;
+      if (!candidate.bodyStale && !candidate.pathMissing) continue;
 
       /**
        * 청크마다 순차로 부른다 — 배치라 지연이 사용자에게 보이지 않고, 동시 호출은 429를
@@ -154,7 +162,8 @@ export class ChunkTranslatorService {
     return {
       targeted: candidates.length,
       translated,
-      skipped: candidates.length - translated,
+      pathFilled,
+      skipped: candidates.length - translated - pathFilled,
     };
   }
 }

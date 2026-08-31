@@ -23,7 +23,7 @@ async function main(): Promise<void> {
       target: 'en',
     });
     console.log(
-      `대상 ${result.targeted} · 번역 ${result.translated} · 건너뜀 ${result.skipped} (scope=${scope})`,
+      `대상 ${result.targeted} · 번역 ${result.translated} · 경로만 ${result.pathFilled} · 건너뜀 ${result.skipped} (scope=${scope})`,
     );
   } finally {
     await app.close();

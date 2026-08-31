@@ -437,7 +437,10 @@ export class GuidelineRepository {
       chunk: EvidenceChunkRow;
       guidelineTitle: string;
       sectionPath: string[];
-      stale: boolean;
+      /** 번역이 없거나 원문이 개정됐다 — 본문을 다시 써야 한다 */
+      bodyStale: boolean;
+      /** 본문은 최신인데 섹션 경로만 비었다 — 경로만 채우면 된다 */
+      pathMissing: boolean;
     }[]
   > {
     const normalizedTitle = sql`btrim(${guidelines.title}, E' \t\n\r')`;
@@ -466,19 +469,42 @@ export class GuidelineRepository {
       )
       .where(and(eq(guidelineVersions.status, 'ACTIVE'), scoped));
 
-    return rows.map((row) => ({
-      chunk: row.chunk,
-      guidelineTitle: row.guidelineTitle,
-      sectionPath: row.sectionPath,
+    return rows.map((row) => {
       /**
-       * 번역이 없거나(null) 원문이 개정돼 해시가 갈린 것 — 둘 다 「다시 써야 한다」다.
+       * **두 축을 분리해 낸다** — 하나로 뭉치면 소비 쪽이 구분할 수 없다.
        *
-       * **섹션 경로 번역이 비어 있는 것도 stale이다** (docs/specs/44). 해시만 보면 §42가
-       * 이미 채운 655행이 영원히 건너뛰어져 새 컬럼이 채워지지 않는다 — 스펙 위험 ⑵의
-       * 「배치 재실행으로 채워진다」가 성립하려면 이 축이 판정에 들어와야 한다.
+       * 번역이 없거나(null) 원문이 개정돼 해시가 갈린 것은 「본문을 다시 써야 한다」이고,
+       * 섹션 경로만 비어 있는 것은 「경로만 채우면 된다」다(docs/specs/44가 새 컬럼을 넣으며
+       * 생긴 상태). 뭉쳐 놓으면 경로 하나 때문에 청크 전문이 외부 호출을 타고, 경로 번역이
+       * 계속 실패하는 청크는 **매 실행마다 본문을 재번역**하는 고리에 갇힌다.
        */
-      stale: row.translationHash !== row.chunk.contentHash || row.translatedPath === null,
-    }));
+      const bodyStale = row.translationHash !== row.chunk.contentHash;
+      return {
+        chunk: row.chunk,
+        guidelineTitle: row.guidelineTitle,
+        sectionPath: row.sectionPath,
+        bodyStale,
+        pathMissing: !bodyStale && row.translatedPath === null,
+      };
+    });
+  }
+
+  /**
+   * 섹션 경로 번역만 갱신한다 — 본문 provenance를 건드리지 않는다.
+   *
+   * `upsertChunkTranslation`을 재사용할 수 없다: 그쪽 `set`은 `content`·`translator_model`·
+   * `source_content_hash`·`translated_at`을 함께 덮으므로, 경로를 더하려다 그 행의 **본문이
+   * 어느 모델로 언제 만들어졌는지**를 지우게 된다.
+   */
+  async updateSectionPathTranslation(
+    chunkId: string,
+    lang: SupportedLang,
+    sectionPathTranslated: string[],
+  ): Promise<void> {
+    void chunkId;
+    void lang;
+    void sectionPathTranslated;
+    throw new Error('updateSectionPathTranslation: 미구현 스텁 (#394)');
   }
 
   /** 같은 (chunk, lang)은 한 행뿐이다 — 재실행이 행을 늘리지 않는다 (기준 18) */
