@@ -555,6 +555,19 @@
               "default": 20,
               "type": "number"
             }
+          },
+          {
+            "name": "lang",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "ko",
+              "type": "string",
+              "enum": [
+                "ko",
+                "en"
+              ]
+            }
           }
         ],
         "responses": {
@@ -711,6 +724,19 @@
             "in": "path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "lang",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "ko",
+              "type": "string",
+              "enum": [
+                "ko",
+                "en"
+              ]
             }
           }
         ],
@@ -2502,6 +2528,10 @@
               "ACTIVE",
               "SUPERSEDED"
             ]
+          },
+          "titleTranslated": {
+            "type": "string",
+            "description": "지침 제목의 번역 (기계 번역)"
           }
         },
         "required": [
@@ -2541,6 +2571,10 @@
               "ACTIVE",
               "SUPERSEDED"
             ]
+          },
+          "titleTranslated": {
+            "type": "string",
+            "description": "지침 제목의 번역 (기계 번역)"
           },
           "sourceUrl": {
             "type": "string",
@@ -2675,6 +2709,17 @@
           "titleTranslated": {
             "type": "string",
             "description": "지침 제목의 번역 (기계 번역)"
+          },
+          "recommendationTextTranslated": {
+            "type": "string",
+            "description": "권고문 원문의 번역 (기계 번역)"
+          },
+          "sectionPathTranslated": {
+            "description": "섹션 경로의 번역 (기계 번역)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "translationModel": {
             "type": "string",
@@ -3439,6 +3484,13 @@
           "titleTranslated": {
             "type": "string",
             "description": "지침 제목의 번역 (기계 번역)"
+          },
+          "sectionPathTranslated": {
+            "description": "섹션 경로의 번역 (기계 번역)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3491,6 +3543,14 @@
           "abstainReason": {
             "type": "string",
             "description": "기권 사유 안내 문장 — ABSTAINED 메시지에만 실린다. 사유가 기록되지 않은 과거 메시지는 이 키가 빠진다"
+          },
+          "responseLang": {
+            "type": "string",
+            "enum": [
+              "ko",
+              "en"
+            ],
+            "description": "이 메시지가 답한 언어"
           },
           "citations": {
             "type": "array",

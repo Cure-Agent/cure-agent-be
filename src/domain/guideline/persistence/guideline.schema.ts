@@ -142,6 +142,13 @@ export const evidenceChunkTranslations = pgTable(
      * 「신규 테이블 1」을 벗어나고 조인이 하나 늘어난다. 6주제 655행 규모에서 대가가 없다.
      */
     titleTranslated: text('title_translated'),
+    /**
+     * 섹션 경로의 번역 (docs/specs/44) — 원문 `guideline_sections.path`와 **같은 길이**의 배열이다.
+     * 펼침 헤더가 `guidelineTitle · v… · sectionPath`라 앞 둘만 영어가 되면 한 줄 안에서 언어가
+     * 갈린다. `title_translated`와 같은 비정규화 판단을 따르며(섹션은 청크의 1/10이라 대가가 없다),
+     * `null`이면 키 부재로 닫혀 화면이 원문으로 폴백한다 — 고장이 아니라 범위다.
+     */
+    sectionPathTranslated: text('section_path_translated').array(),
     /** 번역 시점 원문 해시 — evidence_chunks.content_hash와 대조해 stale을 가른다 */
     sourceContentHash: text('source_content_hash').notNull(),
     /** provenance (기준 22) — 어느 모델이 만든 번역인지 행마다 기록한다 */

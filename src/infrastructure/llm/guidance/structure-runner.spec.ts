@@ -21,6 +21,8 @@ const input: GuidanceStructureInput = {
     },
   ],
   profileFields: [{ field: '진단명', value: '만성 요통' }],
+  // docs/specs/44가 입력에 언어를 추가했다 — 이 스위트는 상한·폴백만 재므로 값은 무관하다
+  lang: 'ko',
 };
 
 const structuredResult: GuidanceStructureResult = {

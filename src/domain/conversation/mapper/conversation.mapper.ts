@@ -93,6 +93,11 @@ export function toCitationDto(
           ...(translation.titleTranslated
             ? { titleTranslated: translation.titleTranslated }
             : {}),
+          // 저장된 인용도 펼침 헤더를 그린다 (docs/specs/44 기준 12) — 세 경로 가운데
+          // 하나라도 비면 그 화면만 한국어 경로가 남는다
+          ...(translation.sectionPathTranslated
+            ? { sectionPathTranslated: translation.sectionPathTranslated }
+            : {}),
         }
       : {}),
     sourceUrl: row.version.sourceUrl,
@@ -111,6 +116,10 @@ export function toMessageDto(
     status: row.status,
     answerKind: row.answerKind ?? undefined,
     guidanceId,
+    // 화면 표시 언어의 원천 (docs/specs/44 기준 23·24) — 재조회에는 질의도 요청 언어도
+    // 실리지 않으므로 이 값 없이는 대화 목록에 갔다 온 화면이 메시지의 언어를 알 수 없다.
+    // 컬럼 기본값이 'ko'라 언어를 보내지 않고 만든 과거 행도 스스로를 말한다(§42 기준 3 계승).
+    responseLang: (row.responseLang ?? 'ko') as SupportedLang,
     // 기권 사유는 코드로 저장되고 문장은 **여기서** 만들어진다 (docs/specs/43).
     // 읽는 시점의 언어는 요청이 아니라 그 메시지가 생성될 때의 언어다(§42 `response_lang`) —
     // 재조회에는 언어가 실리지 않으므로 이 컬럼이 유일한 축이다.

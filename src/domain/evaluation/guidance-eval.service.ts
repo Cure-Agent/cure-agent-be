@@ -211,6 +211,9 @@ export class GuidanceEvalService {
         sectionPath: row.section.path,
       })),
       profileFields,
+      // 평가셋이 한국어라 기준선도 한국어 프롬프트로 잰다 (docs/specs/44 — 언어를 섞으면
+      // 폴백률 실측이 두 프롬프트를 한 수치로 뭉갠다)
+      lang: 'ko',
     });
     const durationSec = (Date.now() - startedAt) / 1000;
 

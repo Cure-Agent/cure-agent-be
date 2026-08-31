@@ -46,6 +46,29 @@ export interface ChunkTranslationJobOptions {
   target: SupportedLang;
 }
 
+/**
+ * 섹션 경로를 원소별로 번역한다 (docs/specs/44 기준 9).
+ *
+ * **원문과 같은 길이의 배열을 낸다** — 원소 대응이 깨지면 헤더의 경로가 뒤섞여 다른 섹션을
+ * 가리킨다. 한 원소라도 번역하지 못하면 배열 전체를 `null`로 두고 키 부재로 닫는다: 절반만
+ * 영어인 경로는 원문보다 나쁘다.
+ */
+export async function translateSectionPath(
+  path: readonly string[],
+  translate: (segment: string) => Promise<string>,
+): Promise<string[] | null> {
+  const translated: string[] = [];
+  for (const segment of path) {
+    try {
+      translated.push(await translate(segment));
+    } catch {
+      // 한 원소라도 못 옮기면 배열 전체를 버린다 — 부분 번역은 원문보다 나쁘다
+      return null;
+    }
+  }
+  return translated;
+}
+
 @Injectable()
 export class ChunkTranslatorService {
   private readonly logger = new Logger(ChunkTranslatorService.name);
@@ -104,6 +127,12 @@ export class ChunkTranslatorService {
       try {
         const content = await this.translator.translate(candidate.chunk.content, options.target);
         const titleTranslated = await translateTitle(candidate.guidelineTitle);
+        // 섹션 경로도 제목과 같은 캐시를 쓴다 — 67섹션이 655청크에 반복되므로 원소마다 부르면
+        // 같은 문자열을 열 번씩 번역한다(제목에서 실측된 것과 같은 낭비다)
+        const sectionPathTranslated = await translateSectionPath(
+          candidate.sectionPath,
+          (segment) => translateTitle(segment),
+        );
         await this.txManager.run(() =>
           this.repository.upsertChunkTranslation({
             id: ulid(),
@@ -111,6 +140,7 @@ export class ChunkTranslatorService {
             lang: options.target,
             content,
             titleTranslated,
+            sectionPathTranslated,
             sourceContentHash: candidate.chunk.contentHash,
             translatorModel: this.translator.model,
           }),
