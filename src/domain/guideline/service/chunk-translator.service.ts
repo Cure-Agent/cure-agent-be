@@ -122,38 +122,60 @@ export class ChunkTranslatorService {
       return value;
     };
 
-    let translated = 0;
-    const pathFilled = 0; // 스텁 — 경로 전용 경로는 구현 단계에서
-    for (const candidate of candidates) {
-      if (!candidate.bodyStale && !candidate.pathMissing) continue;
+    // 섹션 경로도 제목과 같은 캐시를 쓴다 — 67섹션이 655청크에 반복되므로 원소마다 부르면
+    // 같은 문자열을 열 번씩 번역한다(제목에서 실측된 것과 같은 낭비다)
+    const translatePath = (path: readonly string[]): Promise<string[] | null> =>
+      translateSectionPath(path, (segment) => translateTitle(segment));
 
+    let translated = 0;
+    let pathFilled = 0;
+    for (const candidate of candidates) {
       /**
        * 청크마다 순차로 부른다 — 배치라 지연이 사용자에게 보이지 않고, 동시 호출은 429를
        * 부른다(spec 31 프로브에서 워커 8이 rate limit 폭탄이었다). 한 건이 실패하면 잡 전체를
        * 세우지 않고 다음으로 넘어간다: 부분 성공이 저장돼 재실행이 나머지만 집어 든다.
        */
       try {
-        const content = await this.translator.translate(candidate.chunk.content, options.target);
-        const titleTranslated = await translateTitle(candidate.guidelineTitle);
-        // 섹션 경로도 제목과 같은 캐시를 쓴다 — 67섹션이 655청크에 반복되므로 원소마다 부르면
-        // 같은 문자열을 열 번씩 번역한다(제목에서 실측된 것과 같은 낭비다)
-        const sectionPathTranslated = await translateSectionPath(
-          candidate.sectionPath,
-          (segment) => translateTitle(segment),
-        );
+        if (candidate.bodyStale) {
+          const content = await this.translator.translate(candidate.chunk.content, options.target);
+          const titleTranslated = await translateTitle(candidate.guidelineTitle);
+          const sectionPathTranslated = await translatePath(candidate.sectionPath);
+          await this.txManager.run(() =>
+            this.repository.upsertChunkTranslation({
+              id: ulid(),
+              chunkId: candidate.chunk.id,
+              lang: options.target,
+              content,
+              titleTranslated,
+              sectionPathTranslated,
+              sourceContentHash: candidate.chunk.contentHash,
+              translatorModel: this.translator.model,
+            }),
+          );
+          translated += 1;
+          continue;
+        }
+
+        if (!candidate.pathMissing) continue;
+
+        /**
+         * 본문은 최신인데 경로만 비었다 — **경로만 부른다** (#394).
+         *
+         * 본문까지 재번역하면 ⑴ 청크 전문이 불필요하게 외부 호출을 타고 ⑵ 이미 저장된 영문
+         * 본문이 새 생성물로 덮여 표현이 흔들리며 ⑶ 경로 번역이 계속 실패하는 청크가 **매
+         * 실행마다** 본문을 다시 번역하는 고리에 갇힌다. 경로가 또 실패하면 `null`이 돌아와
+         * 갱신을 건너뛰므로, 다음 실행도 여기(싼 쪽)로 다시 온다.
+         */
+        const sectionPathTranslated = await translatePath(candidate.sectionPath);
+        if (!sectionPathTranslated) continue;
         await this.txManager.run(() =>
-          this.repository.upsertChunkTranslation({
-            id: ulid(),
-            chunkId: candidate.chunk.id,
-            lang: options.target,
-            content,
-            titleTranslated,
+          this.repository.updateSectionPathTranslation(
+            candidate.chunk.id,
+            options.target,
             sectionPathTranslated,
-            sourceContentHash: candidate.chunk.contentHash,
-            translatorModel: this.translator.model,
-          }),
+          ),
         );
-        translated += 1;
+        pathFilled += 1;
       } catch (error) {
         this.logger.warn(`청크 ${candidate.chunk.id} 번역 실패 — 건너뜀: ${String(error)}`);
       }

@@ -501,10 +501,15 @@ export class GuidelineRepository {
     lang: SupportedLang,
     sectionPathTranslated: string[],
   ): Promise<void> {
-    void chunkId;
-    void lang;
-    void sectionPathTranslated;
-    throw new Error('updateSectionPathTranslation: 미구현 스텁 (#394)');
+    await this.txManager.conn
+      .update(evidenceChunkTranslations)
+      .set({ sectionPathTranslated })
+      .where(
+        and(
+          eq(evidenceChunkTranslations.chunkId, chunkId),
+          eq(evidenceChunkTranslations.lang, lang),
+        ),
+      );
   }
 
   /** 같은 (chunk, lang)은 한 행뿐이다 — 재실행이 행을 늘리지 않는다 (기준 18) */
