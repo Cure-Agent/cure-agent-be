@@ -78,8 +78,8 @@ argument-hint: <spec 번호 또는 경로 (예: 05)>
 
 ## Phase 5 — 배포·후속
 
-1. 구현 커밋: `[FEAT/#<이슈번호>] <요약>` — 동결 커밋과 분리 유지. 트레일러:
-   `Co-Authored-By: Claude Code <noreply@anthropic.com>`
+1. 구현 커밋: `[FEAT/#<이슈번호>] <요약>` — 동결 커밋과 분리 유지. 트레일러는 현재 하네스가
+   지정하는 AI 협업 트레일러 한 줄.
 2. **배포는 `automation/ship.md`에 위임한다.** 그 문서를 읽고 실행하면 현재 이슈 브랜치를
    Preflight가 감지해 **Phase 1·3을 스킵하고 Phase 2(검증)로 직행**하며, Phase 4에서
    `automation/pipeline.md`가 dev PR → CI → 배포 PR → CD까지 수행한다.

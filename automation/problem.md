@@ -101,7 +101,10 @@
 3. 브랜치 `"<prefix>#<이슈번호>"` 생성 → checkout
 4. **Preflight 이월 변경 승격**: `HAS_STASH=true`였다면 미커밋 변경을 WIP 커밋으로 올려 워킹
    트리를 clean하게 만든다:
-   `git add -A -- ':!.cure-implement' && (git diff --cached --quiet || git commit -m "wip: preflight carry-over")`
+   `git add -A && (git diff --cached --quiet || git commit -m "wip: preflight carry-over")`
+   - **`.cure-implement` 제외 pathspec을 붙이지 않는다.** `.gitignore`가 이미 제외해 결과가 같은데,
+     그 경로를 pathspec에 언급하면 git이 「ignored 경로를 지정했다」며 **exit 1**을 반환해 `&&` 뒤의
+     커밋이 통째로 스킵된다 — `:(exclude)` 문법으로 바꿔도, advice를 꺼도 종료 코드는 그대로다.
    - 이는 병렬 통합(cherry-pick)의 전제조건이다. 더티 워킹 트리 위에서 cherry-pick하면
      `error: your local changes would be overwritten`으로 실패하고, 병렬 워크트리에는 이 변경이
      없어 의미적 충돌이 통합 시점까지 감지되지 않는다.
@@ -226,6 +229,6 @@ Phase 1에서 해결책에 파괴적 마이그레이션이 포함되면 작업�
 - 마이그레이션은 새 파일 추가만 — 적용된 파일 수정 금지. 전 테이블 `base-columns`
 - 에러는 `ServiceException(ErrorCode)`만 사용. code 문자열 리터럴 금지
 - Entity를 컨트롤러에서 직접 반환 금지 — mapper → Response DTO
-- 상태 파일은 `.cure-implement/`(git-ignored)를 `/implement`와 공유한다. `git add -A`류 일괄
-  스테이징에는 항상 `-- ':!.cure-implement'`를 붙인다
+- 상태 파일은 `.cure-implement/`(git-ignored)를 `/implement`와 공유한다 — `.gitignore`가 제외하므로
+  `git add -A`에 별도 pathspec을 붙이지 않는다 (Phase 3-4 참조)
 - 모든 `gh`/`git` 명령 실패 시 에러 내용을 사용자에게 보고한다
