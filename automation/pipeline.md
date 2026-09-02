@@ -3,11 +3,8 @@
 커밋된 변경사항을 dev PR → CI → main 머지 → CD 배포까지 자동화한다. `/ship`에서 사용한다.
 브랜치명에 `#`이 포함되므로 모든 git/gh 명령에서 브랜치명은 따옴표로 감싼다.
 
-> **이 파일은 하네스 중립 「진실의 원천」이다.** 각 하네스는 어댑터를 통해 이 절차를 실행하며, 어댑터가 「폴링 실행 규칙」의 모드와 **커밋 Co-Author 트레일러**(Step 1)를 지정한다:
+> **이 파일은 하네스 중립 「진실의 원천」이다.** 각 하네스는 어댑터를 통해 이 절차를 실행하며, 어댑터가 「폴링 실행 규칙」의 모드를 지정한다:
 > - Claude Code → `.claude/common/pipeline.md` (이 파일로 리다이렉트하는 어댑터)
->
-> **하네스별 Co-Author 트레일러** (Step 1 커밋 메시지 끝에 붙는 한 줄):
-> - Claude Code → `Co-Authored-By: Claude Code <noreply@anthropic.com>`
 
 **실행 주체**: 전 과정(Step 1~4)을 하나의 실행 흐름이 직접 수행한다.
 - **Claude Code**: 메인 세션이 직접 수행하고 서브에이전트에 위임하지 않는다 — 파이프라인은 "액션 → CI/체크 폴링 → 다음 액션"의 반복인데, 서브에이전트 안에서 백그라운드 폴링을 돌리면 완료 후 재개가 안 돼 대기 지점에서 멈춘다. 메인 세션의 `run_in_background` Bash는 완료 시 세션을 확실히 재호출한다.
@@ -55,7 +52,7 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
 
 ## Step 1: 커밋 & PR & 머지 (dev)
 
-1. `git status --short`를 확인해 커밋 안 된 변경이 있으면 `git add -A` → **민감 파일 게이트 통과 후** 커밋한다 (`.cure-implement/` 등 하네스 스크래치는 `.gitignore`가 이미 제외한다). **커밋 제목은 `[TYPE/#이슈번호] 설명` 형식으로 쓴다** — Step 1-4의 PR 제목과 동일 규범이며 `chore:`·`feat:` 등 conventional-commits 형식을 섞지 않는다. squash 머지가 단일 커밋이면 GitHub이 PR 제목 대신 그 커밋 제목을 squash 제목으로 쓰는 폴백이 있으므로, 커밋 제목도 규범에 맞아야 PR-제목 경로든 단일-커밋 폴백이든 dev 히스토리가 일관되게 유지된다. squash 시 GitHub이 자동으로 붙이는 `(#PR번호)` 접미사는 커밋↔PR 자동 링크이므로 그대로 수용하고 수동 제거하지 않는다. 메시지 끝에는 **현재 하네스의 Co-Author 트레일러**를 붙인다 — 진입 어댑터가 지정한 `Co-Authored-By: <이름> <이메일>` 한 줄. 스테이징 후에도 변경이 없으면 커밋을 스킵한다. 게이트는 반드시 스테이징 **후**에 돌린다 — add 이전 검사로는 untracked였던 민감 파일이 잡히지 않는다:
+1. `git status --short`를 확인해 커밋 안 된 변경이 있으면 `git add -A` → **민감 파일 게이트 통과 후** 커밋한다 (`.cure-implement/` 등 하네스 스크래치는 `.gitignore`가 이미 제외한다). **커밋 제목은 `[TYPE/#이슈번호] 설명` 형식으로 쓴다** — Step 1-4의 PR 제목과 동일 규범이며 `chore:`·`feat:` 등 conventional-commits 형식을 섞지 않는다. squash 머지가 단일 커밋이면 GitHub이 PR 제목 대신 그 커밋 제목을 squash 제목으로 쓰는 폴백이 있으므로, 커밋 제목도 규범에 맞아야 PR-제목 경로든 단일-커밋 폴백이든 dev 히스토리가 일관되게 유지된다. squash 시 GitHub이 자동으로 붙이는 `(#PR번호)` 접미사는 커밋↔PR 자동 링크이므로 그대로 수용하고 수동 제거하지 않는다. 메시지 끝에는 **현재 하네스가 지정하는 AI 협업 트레일러** 한 줄을 붙인다 — 값은 하네스가 정하므로 이 문서가 고정하지 않는다(커밋 메시지를 검사하는 훅·워크플로우가 없어 문서에 박은 값은 실효가 없고, 하네스가 바뀔 때마다 어긋난다). 스테이징 후에도 변경이 없으면 커밋을 스킵한다. 게이트는 반드시 스테이징 **후**에 돌린다 — add 이전 검사로는 untracked였던 민감 파일이 잡히지 않는다:
    - 게이트: `automation/bin/sensitive-gate.sh` 실행. `SENSITIVE_GATE result=PASS` → 커밋 진행. `result=BLOCKED`(종료코드 1) → 출력된 파일을 `git reset HEAD <파일>`로 해제하고 보고 후 중단. `result=ERROR` → git 조회 실패(fail-closed) — 통과로 취급하지 않고 보고 후 중단. (Claude Code는 PreToolUse 훅이 추가로 이중 방어한다.)
 2. `git pull origin dev --rebase` — 충돌 시 `git rebase --abort` 후 보고하고 중단. (ship Preflight에서 이미 rebase했으므로 보통 no-op이다 — 검증이 도는 동안 dev가 움직인 경우의 안전망.)
 3. `git push --force-with-lease -u origin "<브랜치명>"`

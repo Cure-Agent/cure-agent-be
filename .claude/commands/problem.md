@@ -31,7 +31,7 @@ argument-hint: <문제 상황 또는 에러 로그 (예: 로그인이 가끔 풀
 - **폴링 모드**: Phase 6의 CI/CD·PR 체크 대기는 `automation/bin/`의 폴링 스크립트
   (`pr-gate.sh`·`run-wait.sh`)를 **`run_in_background: true` Bash**로 실행한다.
   포그라운드 `sleep` 차단·Monitor 도구 금지.
-- **Co-Author 트레일러**: 커밋 메시지 끝에 `Co-Authored-By: Claude Code <noreply@anthropic.com>`를 붙인다.
+- **Co-Author 트레일러**: 커밋 메시지 끝에 현재 하네스가 지정하는 AI 협업 트레일러 한 줄을 붙인다.
 - **안전 규칙**: 「민감 파일 커밋 금지」는 커밋 전 `automation/bin/sensitive-gate.sh` 실행으로 기계
   검사하고, PreToolUse 훅(`.claude/hooks/validate-git-sensitive.sh`)이 `git add/commit/push`를
   추가로 자동 차단한다 — 이중 방어로 작동한다.
