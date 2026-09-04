@@ -47,9 +47,20 @@ contracts, security, and new domains; a match promotes the work to a spec in pla
 | Audit      | Post-implementation diff audit ([freeze.md](../automation/freeze.md), "Post-audit")             | Detects shell-based bypasses such as `sed -i`. The protected file list is reconstructed from the **freeze commit itself**, not a mutable state file, and the audit requires an empty `git diff`. |
 
 When an implementation cannot pass the frozen tests, the **default hypothesis is an implementation
-defect**; the burden of proof stays with the implementation. If a test appears wrong, it is not
-patched in place. It becomes a specification-defect signal and enters TEST-DISPUTE: revise the spec
-→ let Codex derive the tests again → freeze again. The rationale is preserved in the commit message.
+defect**; the burden of proof stays with the implementation. Even when a test appears wrong, the
+harness does not patch it in place — it files a TEST-DISPUTE, and the classification decides who
+rules on it. A **specification defect** is settled by the user (revise the spec → let Codex derive
+the tests again → freeze again). A **test defect** — the spec is right and the test misrepresents it
+— is ruled on by **Codex**, which authored the test. Either way the rationale is preserved in the
+commit message.
+
+An upheld test defect must clear four re-verification layers: scope (only the disputed file changed),
+**stub re-RED** (the revised test is run at the stub-preparation commit and must fail), GREEN on the
+working branch, and determinism. The freeze gate's RED holds only in the stub state, but by dispute
+time an implementation already exists; without this check a revision that is GREEN, deterministic and
+in scope while **asserting nothing** would pass. A dispute is precisely when that risk peaks — the
+side raising it benefits from a weaker test, and the side ruling on it has just been handed a
+well-argued brief that its own test is wrong.
 
 ## Rules Born from Failures
 
@@ -106,8 +117,12 @@ The pipeline is automated, but humans retain three decision points:
 
 - **Spec forks** — Policy, trade-offs, and scope are confirmed with the user, then recorded with the
   decision and its rationale in the spec.
-- **TEST-DISPUTE approval** — User confirmation of a test or specification defect is itself the act
-  that establishes the corrected specification.
+- **Specification defects within TEST-DISPUTE** — User confirmation that an acceptance criterion is
+  ambiguous or contradictory is itself the act that establishes the corrected specification. Within
+  the same dispute, a **test defect is ruled on by Codex** — all that is settled there is whether the
+  test faithfully represents the spec, and the spec itself does not move, so the referee that derived
+  the test is the right judge. Codex can pull this gate back by returning `판정: 명세결함` ("verdict:
+  specification defect"), so the harness cannot bypass it by misclassifying.
 - **Deployment approval** — This is the only intervention point between completed implementation and
   production. PRs auto-merge as soon as their gates pass; without this approval, there would be no
   intervention point at all. The harness therefore forbids skipping it
