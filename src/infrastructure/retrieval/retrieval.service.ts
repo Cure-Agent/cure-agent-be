@@ -14,6 +14,7 @@ import { ConfigType } from '@nestjs/config';
 import { retrievalConfig } from '../../global/config/retrieval.config';
 import { TransactionManager } from '../../global/database/transaction-manager';
 import { MetricsService } from '../../global/observability/metrics/metrics.service';
+import { KeywordVocabularyService } from '../../domain/guideline/service/keyword-vocabulary.service';
 import { EMBEDDING_PROVIDER, EmbeddingProvider } from '../embedding/embedding-provider.port';
 
 /** 계측용 경과 시간 — hrtime은 시스템 시계 변경에 영향받지 않는다 */
@@ -73,6 +74,8 @@ export class RetrievalService {
     private readonly metrics: MetricsService,
     @Inject(retrievalConfig.KEY)
     private readonly config: ConfigType<typeof retrievalConfig>,
+    // 키워드 arm 어휘 프리필터 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**

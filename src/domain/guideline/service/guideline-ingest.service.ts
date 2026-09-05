@@ -9,6 +9,7 @@ import {
 } from '../../../infrastructure/embedding/embedding-provider.port';
 import { GuidelineRepository } from '../repository/guideline.repository';
 import { PipelineRunRepository } from '../repository/pipeline-run.repository';
+import { KeywordVocabularyService } from './keyword-vocabulary.service';
 import {
   GuidelineEmbedOutcome,
   GuidelineIngestInput,
@@ -34,6 +35,8 @@ export class GuidelineIngestService {
     private readonly repository: GuidelineRepository,
     private readonly runs: PipelineRunRepository,
     @Inject(EMBEDDING_PROVIDER) private readonly embeddingProvider: EmbeddingProvider,
+    // 어휘 갱신은 persist()의 트랜잭션 안에서 함께 돈다 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**

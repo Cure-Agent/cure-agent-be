@@ -55,6 +55,10 @@ export const retrievalConfig = registerAs('retrieval', () => ({
    * arm당 K는 `rerankCandidates`를 그대로 쓴다 — 후보군 크기 손잡이가 둘이면 동기화 사고가 난다.
    */
   hybridEnabled: process.env.RETRIEVAL_HYBRID_ENABLED !== 'false',
+  /** 어휘 프리필터 (docs/specs/45) — 스텁. 구현에서 env 파싱·기본값으로 대체한다 */
+  vocabPrefilterEnabled: false,
+  /** 어휘 프리필터 DF 컷 비율 (docs/specs/45) — 스텁 */
+  vocabCommonDfRatio: 0,
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.48;

@@ -13,6 +13,7 @@ import { toAdminGuideline, toAdminGuidelineVersion } from '../mapper/guideline.m
 import { GuidelineVersionRow } from '../persistence/guideline.schema';
 import { GuidelineRepository } from '../repository/guideline.repository';
 import { GuidelinePipelineService } from './guideline-pipeline.service';
+import { KeywordVocabularyService } from './keyword-vocabulary.service';
 
 const DEFAULT_SIZE = 20;
 
@@ -33,6 +34,8 @@ export class GuidelineAdminService {
     private readonly repository: GuidelineRepository,
     // 1건 동기 경로와 전건 잡이 같은 실행기를 공유한다 (docs/specs/22)
     private readonly pipeline: GuidelinePipelineService,
+    // ACTIVE 코퍼스를 바꾸는 두 경로(status 변경·삭제)가 어휘를 따라 갱신한다 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**

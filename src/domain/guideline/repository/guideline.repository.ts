@@ -571,4 +571,49 @@ export class GuidelineRepository {
     }
     return map;
   }
+
+  // ── 키워드 어휘 (docs/specs/45) ────────────────────────
+  //
+  // 판본 단위 어절 산출은 SQL이 아니라 서비스에서 토크나이저로 한다 — 질의와 **같은 함수**를
+  // 태워야 축이 갈리지 않는다(#402가 무너진 자리). 여기는 읽기·집합 연산만 맡는다.
+
+  /** 어휘 전건 로드 — 질의 시점 조회가 없으므로 이 경로 하나로만 읽힌다 */
+  loadVocabTerms(): Promise<{ term: string; chunkIxs: number[] }[]> {
+    throw new Error('not implemented');
+  }
+
+  /** ix → chunk id 해석표 전건 로드 */
+  loadChunkIndex(): Promise<{ chunkId: string; ix: number }[]> {
+    throw new Error('not implemented');
+  }
+
+  /** 판본의 청크 (id·본문) — 어절 산출 입력 */
+  listVersionChunkContents(_versionId: string): Promise<{ id: string; content: string }[]> {
+    throw new Error('not implemented');
+  }
+
+  /** ACTIVE 판본의 청크 전건 (id·본문) — 전량 재생성 입력 */
+  listActiveChunkContents(): Promise<{ id: string; content: string }[]> {
+    throw new Error('not implemented');
+  }
+
+  /** ix가 없는 청크에만 발급하고 전체 매핑을 돌려준다 — 발급은 append-only다 */
+  assignChunkIxs(_chunkIds: string[]): Promise<Map<string, number>> {
+    throw new Error('not implemented');
+  }
+
+  /** 항별 포스팅 합집합 upsert — 정렬·중복 제거된 집합으로 정규화한다 */
+  mergeVocabPostings(_entries: { term: string; chunkIxs: number[] }[]): Promise<void> {
+    throw new Error('not implemented');
+  }
+
+  /** 포스팅에서 ix들을 뺀다. 비게 된 항은 행째 지운다 */
+  subtractVocabPostings(_chunkIxs: number[]): Promise<void> {
+    throw new Error('not implemented');
+  }
+
+  /** 전량 재생성의 시작점 — 어휘만 비운다(`keyword_chunk_index`는 보존) */
+  clearVocab(): Promise<void> {
+    throw new Error('not implemented');
+  }
 }
