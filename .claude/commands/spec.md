@@ -3,8 +3,6 @@ name: spec
 description: docs/specs/ SDD 스펙 작성 — 실측 조사로 수치를 확정하고 갈림길을 사용자와 확정한 뒤 TEMPLATE.md 형식으로 쓴다. 작성까지만이며 배포는 /ship, 구현은 /implement가 한다.
 argument-hint: <다룰 문제·범위 (예: 306 면제 만료 통보)>
 disable-model-invocation: true
-model: fable
-effort: xhigh
 ---
 
 # /spec — 스펙 작성 하네스
@@ -14,10 +12,12 @@ effort: xhigh
 
 ## 모델
 
-이 스킬이 로드된 턴은 frontmatter(`model: fable`, `effort: xhigh`)로 돈다. 오버라이드는 **그 턴까지**다 —
-백그라운드 작업 통지나 새 프롬프트로 턴이 끊기면 세션 모델로 돌아오므로, 이어서 쓰려면 `/spec 계속`으로
-다시 부른다. (AskUserQuestion 응답은 턴을 끊지 않는다 — 조사→질문→작성이 한 턴에서 이어지면 전부 이
-설정으로 돈다.)
+**frontmatter가 모델·노력 수준을 강제하지 않는다** — 세션에서 고른 것을 그대로 쓴다. 무거운 스펙이면
+`/model`·`/effort`로 원하는 조합을 먼저 잡고 부르면 된다.
+
+`max`는 설정에 저장되지 않고 세션에만 적용되므로 그때그때 `/effort max`로 켠다. 모델별 기본 노력
+수준을 고정하려면 사용자 설정 `modelSettings`에 모델별 `effortLevel`을 둔다(이 키에는 `max`를 넣을 수
+없다). 모델 별칭 `best`는 Fable을 쓸 수 있으면 Fable, 아니면 `opus`와 같은 모델로 붙는다.
 
 ## Phase 0 — 대상·형식
 
