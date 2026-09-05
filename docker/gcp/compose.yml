@@ -105,6 +105,10 @@ services:
       RETRIEVAL_RERANK_CANDIDATES: ${RETRIEVAL_RERANK_CANDIDATES:-}
       RETRIEVAL_RERANK_SCORE_CUTOFF: ${RETRIEVAL_RERANK_SCORE_CUTOFF:-}
       RETRIEVAL_HYBRID_ENABLED: ${RETRIEVAL_HYBRID_ENABLED:-}
+      # 키워드 arm 어휘 프리필터 (docs/specs/45). 'false'만 발동하고, 빈 값은 코드 기본값(켜짐)이다.
+      # 컷 비율도 빈 값이면 코드 기본값 0.05다 — compose는 통로일 뿐 기본값을 갖지 않는다(#156).
+      RETRIEVAL_VOCAB_PREFILTER_ENABLED: ${RETRIEVAL_VOCAB_PREFILTER_ENABLED:-}
+      RETRIEVAL_VOCAB_COMMON_DF_RATIO: ${RETRIEVAL_VOCAB_COMMON_DF_RATIO:-}
       # 답변가능성 게이트 킬스위치 (docs/specs/40). 'false'만 발동하고, 빈 값은 코드 기본값(켜짐)이다.
       LLM_ANSWERABILITY_GATE_ENABLED: ${LLM_ANSWERABILITY_GATE_ENABLED:-}
       # 데모 환자 시딩. 위와 방향이 반대다 — 'true'만 발동하고 빈 값은 꺼짐(코드 기본값)이다.

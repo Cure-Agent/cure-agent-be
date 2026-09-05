@@ -29,6 +29,7 @@ import {
   guidelineVersions,
   guidelines,
 } from '../persistence/guideline.schema';
+import { keywordChunkIndex, keywordVocab } from '../persistence/keyword-vocab.schema';
 
 export interface ListGuidelinesFilter {
   query?: string;
@@ -115,6 +116,31 @@ export class GuidelineRepository {
       .orderBy(desc(guidelineVersions.revision))
       .limit(1);
     return rows[0]?.revision ?? 0;
+  }
+
+  /**
+   * 곧 SUPERSEDED로 내려갈 **현재 ACTIVE인** 다른 revision들 (docs/specs/45).
+   *
+   * 인제스트가 어휘에서 뺄 대상이다. 이미 SUPERSEDED인 revision은 어휘에 들어 있지 않으므로
+   * 제외한다 — 넣으면 판본마다 어휘 전건 UPDATE가 한 번씩 헛돈다(실측 ~0.9s/회).
+   */
+  async listOtherActiveRevisionIds(
+    guidelineId: string,
+    version: string,
+    keepVersionId: string,
+  ): Promise<string[]> {
+    const rows = await this.txManager.conn
+      .select({ id: guidelineVersions.id })
+      .from(guidelineVersions)
+      .where(
+        and(
+          eq(guidelineVersions.guidelineId, guidelineId),
+          eq(guidelineVersions.version, version),
+          ne(guidelineVersions.id, keepVersionId),
+          eq(guidelineVersions.status, 'ACTIVE'),
+        ),
+      );
+    return rows.map((row) => row.id);
   }
 
   /**
@@ -578,42 +604,158 @@ export class GuidelineRepository {
   // 태워야 축이 갈리지 않는다(#402가 무너진 자리). 여기는 읽기·집합 연산만 맡는다.
 
   /** 어휘 전건 로드 — 질의 시점 조회가 없으므로 이 경로 하나로만 읽힌다 */
-  loadVocabTerms(): Promise<{ term: string; chunkIxs: number[] }[]> {
-    throw new Error('not implemented');
+  async loadVocabTerms(): Promise<{ term: string; chunkIxs: number[] }[]> {
+    return this.txManager.conn
+      .select({ term: keywordVocab.term, chunkIxs: keywordVocab.chunkIxs })
+      .from(keywordVocab);
   }
 
   /** ix → chunk id 해석표 전건 로드 */
-  loadChunkIndex(): Promise<{ chunkId: string; ix: number }[]> {
-    throw new Error('not implemented');
+  async loadChunkIndex(): Promise<{ chunkId: string; ix: number }[]> {
+    return this.txManager.conn
+      .select({ chunkId: keywordChunkIndex.chunkId, ix: keywordChunkIndex.ix })
+      .from(keywordChunkIndex);
+  }
+
+  /**
+   * 판본이 이미 발급받은 ix — 제거 경로 전용 **읽기**다.
+   *
+   * 제거에 `assignChunkIxs`를 쓰면 어휘에서 빼려는 판본에 새 ix를 발급하게 된다(구멍만 늘고
+   * 뺄 대상은 못 찾는다). ACTIVE였던 적이 없는 판본은 여기서 빈 배열이 나오고, 그때 제거는
+   * 정확히 아무것도 하지 않는 것이 옳다.
+   */
+  async listVersionChunkIxs(versionId: string): Promise<number[]> {
+    const rows = await this.txManager.conn
+      .select({ ix: keywordChunkIndex.ix })
+      .from(keywordChunkIndex)
+      .innerJoin(evidenceChunks, eq(evidenceChunks.id, keywordChunkIndex.chunkId))
+      .where(eq(evidenceChunks.guidelineVersionId, versionId));
+    return rows.map((row) => row.ix);
   }
 
   /** 판본의 청크 (id·본문) — 어절 산출 입력 */
-  listVersionChunkContents(_versionId: string): Promise<{ id: string; content: string }[]> {
-    throw new Error('not implemented');
+  async listVersionChunkContents(versionId: string): Promise<{ id: string; content: string }[]> {
+    return this.txManager.conn
+      .select({ id: evidenceChunks.id, content: evidenceChunks.content })
+      .from(evidenceChunks)
+      .where(eq(evidenceChunks.guidelineVersionId, versionId));
   }
 
-  /** ACTIVE 판본의 청크 전건 (id·본문) — 전량 재생성 입력 */
-  listActiveChunkContents(): Promise<{ id: string; content: string }[]> {
-    throw new Error('not implemented');
+  /** ACTIVE 판본의 청크 전건 (id·본문) — 전량 재생성 입력. 어휘는 ACTIVE 경계로 정의된다 */
+  async listActiveChunkContents(): Promise<{ id: string; content: string }[]> {
+    return this.txManager.conn
+      .select({ id: evidenceChunks.id, content: evidenceChunks.content })
+      .from(evidenceChunks)
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .where(eq(guidelineVersions.status, 'ACTIVE'))
+      .orderBy(asc(evidenceChunks.id));
   }
 
-  /** ix가 없는 청크에만 발급하고 전체 매핑을 돌려준다 — 발급은 append-only다 */
-  assignChunkIxs(_chunkIds: string[]): Promise<Map<string, number>> {
-    throw new Error('not implemented');
+  /**
+   * ix가 없는 청크에만 발급하고 전체 매핑을 돌려준다.
+   *
+   * **발급은 append-only다** — 컬럼이 identity 시퀀스이므로 `onConflictDoNothing`이 만드는
+   * 구멍은 되감기지 않는다. `max(ix)+1`로 직접 계산하면 최대 ix를 가진 청크가 삭제될 때 그
+   * 번호가 재발급되어 포스팅이 남의 청크를 가리킨다.
+   */
+  async assignChunkIxs(chunkIds: string[]): Promise<Map<string, number>> {
+    if (chunkIds.length === 0) return new Map();
+
+    for (const batch of chunked(chunkIds, VOCAB_WRITE_BATCH)) {
+      await this.txManager.conn
+        .insert(keywordChunkIndex)
+        .values(batch.map((chunkId) => ({ chunkId })))
+        .onConflictDoNothing();
+    }
+
+    const assigned = new Map<string, number>();
+    for (const batch of chunked(chunkIds, VOCAB_WRITE_BATCH)) {
+      const rows = await this.txManager.conn
+        .select({ chunkId: keywordChunkIndex.chunkId, ix: keywordChunkIndex.ix })
+        .from(keywordChunkIndex)
+        .where(inArray(keywordChunkIndex.chunkId, batch));
+      for (const row of rows) assigned.set(row.chunkId, row.ix);
+    }
+    return assigned;
   }
 
-  /** 항별 포스팅 합집합 upsert — 정렬·중복 제거된 집합으로 정규화한다 */
-  mergeVocabPostings(_entries: { term: string; chunkIxs: number[] }[]): Promise<void> {
-    throw new Error('not implemented');
+  /** 항별 포스팅 **합집합** upsert — 정렬·중복 제거된 집합으로 정규화한다 */
+  async mergeVocabPostings(entries: { term: string; chunkIxs: number[] }[]): Promise<void> {
+    for (const batch of chunked(entries, VOCAB_WRITE_BATCH)) {
+      await this.txManager.conn
+        .insert(keywordVocab)
+        .values(
+          batch.map((entry) => ({
+            term: entry.term,
+            chunkIxs: normalizeIxs(entry.chunkIxs),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: keywordVocab.term,
+          set: {
+            // 덮어쓰기가 아니라 합집합이다 — 같은 어절이 여러 판본에 걸쳐 있으면
+            // 판본 하나를 적재해도 다른 판본의 포스팅이 남아야 한다 (기준 18)
+            chunkIxs: sql`(
+              SELECT COALESCE(array_agg(ix ORDER BY ix), '{}'::int[])
+              FROM (
+                SELECT DISTINCT unnest(${keywordVocab.chunkIxs} || excluded.chunk_ixs) AS ix
+              ) AS merged
+            )`,
+            updatedAt: new Date(),
+          },
+        });
+    }
   }
 
-  /** 포스팅에서 ix들을 뺀다. 비게 된 항은 행째 지운다 */
-  subtractVocabPostings(_chunkIxs: number[]): Promise<void> {
-    throw new Error('not implemented');
+  /** 포스팅에서 ix들을 뺀다. 비게 된 항은 행째 지운다 — 빈 포스팅은 DF 0인 유령 항이다 */
+  async subtractVocabPostings(chunkIxs: number[]): Promise<void> {
+    if (chunkIxs.length === 0) return;
+
+    // `sql.param`으로 **배열 하나**를 묶어 보낸다 — 그냥 보간하면 drizzle이 원소마다 placeholder를
+    // 펼쳐 `$1, $2::int[]`가 되고 드라이버가 "malformed array literal"로 죽는다.
+    const removed = sql`${sql.param(chunkIxs)}::int[]`;
+    await this.txManager.conn.execute(sql`
+      UPDATE ${keywordVocab}
+      SET chunk_ixs = COALESCE((
+            SELECT array_agg(ix ORDER BY ix)
+            FROM unnest(${keywordVocab.chunkIxs}) AS ix
+            WHERE NOT (ix = ANY(${removed}))
+          ), '{}'::int[]),
+          updated_at = now()
+      WHERE ${keywordVocab.chunkIxs} && ${removed}
+    `);
+    await this.txManager.conn
+      .delete(keywordVocab)
+      .where(sql`cardinality(${keywordVocab.chunkIxs}) = 0`);
   }
 
-  /** 전량 재생성의 시작점 — 어휘만 비운다(`keyword_chunk_index`는 보존) */
-  clearVocab(): Promise<void> {
-    throw new Error('not implemented');
+  /**
+   * 전량 재생성 — 어휘만 비우고 다시 채운다. **`keyword_chunk_index`는 건드리지 않는다**:
+   * ix를 재배정하면 살아 있는 앱 프로세스의 인메모리 포스팅이 남의 청크를 가리킨다
+   * (캐시 무효화가 프로세스 경계를 못 넘는다 — spec 45 위험 ⑶).
+   *
+   * 비우기와 채우기가 한 트랜잭션이어야 중간 실패가 어휘를 반쪽으로 남기지 않는다.
+   */
+  async replaceVocab(entries: { term: string; chunkIxs: number[] }[]): Promise<void> {
+    await this.txManager.run(async () => {
+      await this.txManager.conn.delete(keywordVocab);
+      await this.mergeVocabPostings(entries);
+    });
   }
+}
+
+/** 포스팅 정규화 — 정렬·중복 제거. 증분 결과를 전량 재생성과 직접 대조하려면 표현이 하나여야 한다 */
+function normalizeIxs(chunkIxs: number[]): number[] {
+  return [...new Set(chunkIxs)].sort((left, right) => left - right);
+}
+
+/** 어휘는 판본당 수천 항이라 한 문장에 다 싣지 않는다 — 파라미터 상한과 계획 시간이 함께 는다 */
+const VOCAB_WRITE_BATCH = 1000;
+
+function chunked<T>(values: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let start = 0; start < values.length; start += size) {
+    batches.push(values.slice(start, start + size));
+  }
+  return batches;
 }
