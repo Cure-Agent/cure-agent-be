@@ -13,6 +13,7 @@ import { toAdminGuideline, toAdminGuidelineVersion } from '../mapper/guideline.m
 import { GuidelineVersionRow } from '../persistence/guideline.schema';
 import { GuidelineRepository } from '../repository/guideline.repository';
 import { GuidelinePipelineService } from './guideline-pipeline.service';
+import { KeywordVocabularyService } from './keyword-vocabulary.service';
 
 const DEFAULT_SIZE = 20;
 
@@ -33,6 +34,8 @@ export class GuidelineAdminService {
     private readonly repository: GuidelineRepository,
     // 1건 동기 경로와 전건 잡이 같은 실행기를 공유한다 (docs/specs/22)
     private readonly pipeline: GuidelinePipelineService,
+    // ACTIVE 코퍼스를 바꾸는 두 경로(status 변경·삭제)가 어휘를 따라 갱신한다 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**
@@ -132,6 +135,10 @@ export class GuidelineAdminService {
   /**
    * 요청한 버전의 status만 바꾼다 — 승격이 같은 판본의 다른 revision을 내리지 않는다.
    * 한 번의 PATCH가 명시하지 않은 행을 바꾸지 않는 편이 예측 가능하다 (docs/specs/21).
+   *
+   * **어휘 갱신을 위해 트랜잭션으로 감싼다 (docs/specs/45).** 이 경로가 ACTIVE 코퍼스를 바꾸는데
+   * 어휘를 갱신하지 않으면 폐기한 판본의 어절이 후보를 계속 끌어오고 새 ACTIVE 판본의 어절은
+   * 영영 안 잡힌다 — 결과가 조용히 틀린다. 증분이 ~0.9s라 동기 응답에 그대로 붙는다.
    */
   async updateVersionStatus(
     versionId: string,
@@ -140,7 +147,13 @@ export class GuidelineAdminService {
     const version = await this.repository.findVersionById(versionId);
     if (!version) throw new ServiceException('NOT_FOUND');
 
-    await this.repository.updateVersionStatus(versionId, request.status);
+    await this.txManager.run(async () => {
+      await this.repository.updateVersionStatus(versionId, request.status);
+      if (request.status === 'ACTIVE') await this.vocabulary.applyVersion(versionId);
+      else await this.vocabulary.removeVersion(versionId);
+    });
+    this.vocabulary.invalidate();
+
     const chunkCount = await this.repository.countChunks(versionId);
     return toAdminGuidelineVersion({ ...version, status: request.status, chunkCount });
   }
@@ -156,11 +169,15 @@ export class GuidelineAdminService {
     }
 
     await this.txManager.run(async () => {
+      // 청크가 지워지기 **전에** 어휘에서 뺀다 — 삭제되면 keyword_chunk_index 행이 CASCADE로
+      // 함께 사라져 어느 ix를 빼야 하는지 알 수 없게 되고, 포스팅이 남의 청크를 가리키게 된다
+      await this.vocabulary.removeVersion(versionId);
       await this.repository.deleteVersionCascade(versionId);
       // 마지막 버전이었다면 빈 지침 행을 남기지 않는다
       if ((await this.repository.countVersions(version.guidelineId)) === 0) {
         await this.repository.deleteGuideline(version.guidelineId);
       }
     });
+    this.vocabulary.invalidate();
   }
 }

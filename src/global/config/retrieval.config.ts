@@ -55,9 +55,41 @@ export const retrievalConfig = registerAs('retrieval', () => ({
    * arm당 K는 `rerankCandidates`를 그대로 쓴다 — 후보군 크기 손잡이가 둘이면 동기화 사고가 난다.
    */
   hybridEnabled: process.env.RETRIEVAL_HYBRID_ENABLED !== 'false',
+  /**
+   * 키워드 arm 어휘 프리필터 (docs/specs/45). 기본 켜짐 — 끄면 §31 동작(키워드 arm 전량 스캔)이다.
+   *
+   * 질의 토큰의 부분문자열 DF로 흔한 토큰을 걷어내고 남은 희소 토큰이 가리키는 청크만 순위
+   * 대상으로 삼는다. 순위 식은 그대로 원문 질의의 `word_similarity`다 — 후보만 좁히고 순서는
+   * 건드리지 않는다. 실물 측정 1,073ms → 132ms(8.10배), top-30 일치 185/185.
+   *
+   * **롤백 축인 이유**: top-30이 기준선과 66/185만 같으므로(같은 이탈이 `ILIKE` 직접 방식과
+   * 정확히 일치한다) 품질 문제가 늦게 드러날 수 있고, 그때 재배포를 기다리지 않는다.
+   * 끄면 §31 동결 스위트가 그대로 통과하고 정책 문자열도 v4로 돌아간다.
+   */
+  vocabPrefilterEnabled: process.env.RETRIEVAL_VOCAB_PREFILTER_ENABLED !== 'false',
+  /**
+   * DF 컷 비율 (기본 0.05). 컷 = 이 비율 × 어휘가 덮는 청크 수이고, DF가 컷을 **초과**하는
+   * 토큰이 흔한 토큰이다.
+   *
+   * 0.05는 185문항 스윕의 실측값이다. **품질 천장(R@30 0.978)은 7.5%에서 닿지만 5%를 고른다**:
+   * ⑴ `max(벡터 335ms, 키워드)` 구조라 5%가 병렬 arm의 포화점이다 — 2.5%로 더 조여도 29ms만
+   * 얻고 R@30을 0.919로 깎는다 ⑵ 10%→5%의 302ms(prod 환산)는 실재한다 ⑶ 대가는 R@30 -0.005
+   * (185문항 중 1문항)이고 합집합 커버리지는 1.000 그대로라 §31 지표가 보존된다.
+   * 1%에서 후보 0건 7문항·커버리지 0.989로 절벽이 있으므로 **이 값을 더 내리지 않는다.**
+   *
+   * **성능 손잡이가 아니다** — 이번 한 번의 선택이고 이후엔 품질 축이다. 기권 44문항 대조에서
+   * 5~20% 구간의 기권/정답 후보 비율이 0.97~1.09로 무차별이라, §29 기권 재현율 회귀를 이
+   * 컷으로 겨냥할 수는 없다. 다시 고르려면 `pnpm eval:rag`가 지시해야 한다.
+   */
+  vocabCommonDfRatio: parsePositive(
+    process.env.RETRIEVAL_VOCAB_COMMON_DF_RATIO,
+    DEFAULT_COMMON_DF_RATIO,
+  ),
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.48;
+/** `KeywordVocabularyService`도 같은 기본값을 쓴다 — 두 곳이 갈리면 컷이 조용히 달라진다 */
+export const DEFAULT_COMMON_DF_RATIO = 0.05;
 
 /** 미지정·빈 값·수가 아닌 값은 전부 코드 기본값으로 떨어진다 (compose 빈 통과 규약) */
 function parseCutoff(raw: string | undefined): number {

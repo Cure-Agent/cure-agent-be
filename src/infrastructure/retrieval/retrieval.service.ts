@@ -14,6 +14,7 @@ import { ConfigType } from '@nestjs/config';
 import { retrievalConfig } from '../../global/config/retrieval.config';
 import { TransactionManager } from '../../global/database/transaction-manager';
 import { MetricsService } from '../../global/observability/metrics/metrics.service';
+import { KeywordVocabularyService } from '../../domain/guideline/service/keyword-vocabulary.service';
 import { EMBEDDING_PROVIDER, EmbeddingProvider } from '../embedding/embedding-provider.port';
 
 /** 계측용 경과 시간 — hrtime은 시스템 시계 변경에 영향받지 않는다 */
@@ -73,6 +74,8 @@ export class RetrievalService {
     private readonly metrics: MetricsService,
     @Inject(retrievalConfig.KEY)
     private readonly config: ConfigType<typeof retrievalConfig>,
+    // 키워드 arm 어휘 프리필터 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**
@@ -114,11 +117,18 @@ export class RetrievalService {
    */
   hybridPolicyVersion(rerankerModel?: string): string {
     const base = `hybrid-rrf${RRF_K}-top${this.config.rerankCandidates}x2`;
+    // 어휘 프리필터는 검색 결과를 실제로 바꾸므로(top-30이 기준선과 66/185만 같다)
+    // GenerationRun에서 구분돼야 한다. env로 컷을 바꾼 운영 기록도 §28·§29와 같은 규율로
+    // 문자열에 남는다. **꺼지면 v4 그대로**여야 §31 동결 스위트가 성립한다 (docs/specs/45).
+    const vocab = this.config.vocabPrefilterEnabled
+      ? `-vocab${this.config.vocabCommonDfRatio}`
+      : '';
     const rerank = rerankerModel
       ? `-rerank-${rerankerModel}-cut${this.config.distanceCutoff}` +
         `-score${this.config.rerankScoreCutoff}`
       : `-cut${this.config.distanceCutoff}`;
-    return `${base}${rerank}-v4/${this.embeddingProvider.model}`;
+    const version = this.config.vocabPrefilterEnabled ? 'v5' : 'v4';
+    return `${base}${vocab}${rerank}-${version}/${this.embeddingProvider.model}`;
   }
 
   /**
@@ -225,12 +235,26 @@ export class RetrievalService {
       });
 
     const keywordStartedAt = process.hrtime.bigint();
-    // 동점 평원이 넓다 — 한 질문의 top-30 경계에 같은 값 72건이 몰린 실측이 있다.
-    // id 2차 정렬이 없으면 같은 질의가 실행마다 다른 후보를 낸다.
-    const keywordArm = this.evidenceQuery(distance)
-      .where(and(...conditions))
-      .orderBy(desc(similarity), asc(evidenceChunks.id))
-      .limit(armK)
+    // 후보 생성과 순위를 **한 stage로 잰다** — 둘로 나누면 §31이 고정한 keyword_search의
+    // 의미(키워드 arm이 첫 토큰 전에 쓰는 시간)가 바뀌어 기준선과 비교할 수 없게 된다.
+    const keywordArm = this.keywordCandidates(query)
+      .then((candidateIds) =>
+        this.evidenceQuery(distance)
+          // 프리필터는 **후보만 좁힌다** — 코퍼스 경계 조건은 그대로 남는다.
+          // 어휘가 stale해 폐기 판본·타 좌표계 청크를 후보로 끌고 와도 여기서 걸린다.
+          .where(
+            and(
+              ...conditions,
+              ...(candidateIds === null ? [] : [inArray(evidenceChunks.id, candidateIds)]),
+            ),
+          )
+          // 순위는 **원문 질의**의 word_similarity다 — 축약 질의로 매기면 흔한 토큰이 기여하던
+          // 문맥이 사라져 R@30이 1.000 → 0.967로 떨어진 실측이 있다.
+          // 동점 평원이 넓다 — 한 질문의 top-30 경계에 같은 값 72건이 몰린 실측이 있다.
+          // id 2차 정렬이 없으면 같은 질의가 실행마다 다른 후보를 낸다.
+          .orderBy(desc(similarity), asc(evidenceChunks.id))
+          .limit(armK),
+      )
       .then((rows) => {
         this.metrics.recordRetrievalStage('keyword_search', elapsedSeconds(keywordStartedAt));
         return rows;
@@ -245,6 +269,19 @@ export class RetrievalService {
     if (vectorRows.length > 0) this.metrics.recordTop1Distance(vectorRows[0].distance);
 
     return fused;
+  }
+
+  /**
+   * 키워드 arm이 훑을 후보 id — `null`이면 **전량 스캔**이다 (docs/specs/45).
+   *
+   * 후보 0건은 arm을 통째로 죽이는 것이라 느린 것보다 나쁘다(하이브리드가 벡터 단독으로 조용히
+   * 퇴화한다). 그래서 어휘가 비었거나 희소 토큰이 아무 청크도 가리키지 못하면 서비스가 `null`을
+   * 돌려주고, 이 경로는 §31 동작 그대로가 된다.
+   */
+  private async keywordCandidates(query: string): Promise<string[] | null> {
+    if (!this.config.vocabPrefilterEnabled) return null;
+    const { chunkIds } = await this.vocabulary.selectCandidates(query);
+    return chunkIds;
   }
 
   /** 두 검색 경로가 **같은 코퍼스**를 보게 하는 단일 지점 — 한쪽만 고치면 경계가 새는 곳이다 */

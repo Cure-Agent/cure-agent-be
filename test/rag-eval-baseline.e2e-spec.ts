@@ -543,9 +543,11 @@ describe('spec 27: RAG 평가 기반', () => {
         .evaluate(evaluationItems);
       const markdown = renderEvalReport(report);
 
-      // issue #246, spec 27 기준 5 개정 — 기본 활성화된 하이브리드 검색 파이프라인의 v4를 기록한다.
+      // issue #246, spec 27 기준 5 개정 — 기본 활성화된 하이브리드 검색 파이프라인을 기록한다.
+      // issue #407, docs/specs/45 — 어휘 프리필터가 기본 켜지며 v4 → v5(컷 값 포함)가 됐다.
+      // 리포트의 목적이 「이 수치를 어느 검색 정책이 냈는가」이므로 기본값이 오르면 함께 오른다.
       expect(report.retrievalPolicyVersion).toBe(
-        'hybrid-rrf60-top30x2-cut2-v4/fake-embedding-v1',
+        'hybrid-rrf60-top30x2-vocab0.05-cut2-v5/fake-embedding-v1',
       );
       expect(markdown).toContain('retrievalPolicyVersion');
       expect(markdown).toContain(report.retrievalPolicyVersion);

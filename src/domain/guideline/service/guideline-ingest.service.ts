@@ -9,6 +9,7 @@ import {
 } from '../../../infrastructure/embedding/embedding-provider.port';
 import { GuidelineRepository } from '../repository/guideline.repository';
 import { PipelineRunRepository } from '../repository/pipeline-run.repository';
+import { KeywordVocabularyService } from './keyword-vocabulary.service';
 import {
   GuidelineEmbedOutcome,
   GuidelineIngestInput,
@@ -34,6 +35,8 @@ export class GuidelineIngestService {
     private readonly repository: GuidelineRepository,
     private readonly runs: PipelineRunRepository,
     @Inject(EMBEDDING_PROVIDER) private readonly embeddingProvider: EmbeddingProvider,
+    // 어휘 갱신은 persist()의 트랜잭션 안에서 함께 돈다 (docs/specs/45)
+    private readonly vocabulary: KeywordVocabularyService,
   ) {}
 
   /**
@@ -174,6 +177,9 @@ export class GuidelineIngestService {
       skippedChunks: outcome.skippedChunks,
     };
 
+    // 새 revision이 ACTIVE가 되면서 내려갈 판본들 — supersede **전에** 읽어야 한다 (docs/specs/45)
+    let supersededVersionIds: string[] = [];
+
     await this.txManager.run(async () => {
       if (!outcome.guidelineExists) {
         await this.repository.insertGuideline({
@@ -195,6 +201,11 @@ export class GuidelineIngestService {
       // 새 revision이 ACTIVE가 되면 직전 revision은 내려간다 — 같은 판본 안에서만이다 (docs/specs/21).
       // 이전 revision의 청크는 지우지 않는다: 과거 답변이 실제로 그 청크로 생성됐다.
       if (revision > 1) {
+        supersededVersionIds = await this.repository.listOtherActiveRevisionIds(
+          guidelineId,
+          input.version,
+          guidelineVersionId,
+        );
         await this.repository.supersedeOtherRevisions(
           guidelineId,
           input.version,
@@ -233,7 +244,20 @@ export class GuidelineIngestService {
           contentHash: chunk.contentHash,
         })),
       );
+
+      // 어휘는 ACTIVE 경계로 정의되므로 코퍼스와 **같은 트랜잭션**에서 따라간다 (docs/specs/45).
+      // 대가는 어휘 결함이 인제스트를 통째로 막는 것이고, 이 교환을 의도적으로 받는다 —
+      // 인제스트만 성공하고 어휘가 stale인 상태는 새 청크가 키워드 후보에 영영 안 잡히면서
+      // 아무 신호도 남기지 않는다.
+      for (const supersededId of supersededVersionIds) {
+        await this.vocabulary.removeVersion(supersededId);
+      }
+      await this.vocabulary.applyVersion(guidelineVersionId);
     });
+
+    // 무효화는 **커밋 뒤**다 — 트랜잭션 안에서 비우면 아직 커밋되지 않은 어휘를 스냅샷이
+    // 붙들 수 있고, 롤백되면 존재하지 않는 포스팅을 캐시가 계속 내놓는다.
+    this.vocabulary.invalidate();
 
     return {
       guidelineId,
