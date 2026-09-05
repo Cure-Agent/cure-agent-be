@@ -139,7 +139,8 @@ term 집합·df·포스팅 차이 **0** — ⑴ 증분 제거 = 그 판본 뺀 �
 
 **위험.** ⑴ 어휘 스캔이 O(어휘 × 질의 토큰) 선형이라 **코퍼스 증가에 비례**한다 — 지금 27ms이고,
 자릿수가 바뀌면 어휘에 n-gram 역색인을 한 겹 더 얹어야 한다(Out of scope). ⑵ ix 구멍은 재파싱마다
-쌓인다 — `max(ix)`가 ACTIVE 청크 수의 3배를 넘으면 재빌드 대상이라는 신호이지 고장이 아니다.
+쌓인다 — `mark`가 Int32Array 57KB라 구멍이 2배여도 비용이 없고, **구멍 회수 수단은 두지 않는다**
+(재배정은 살아 있는 인메모리 포스팅을 남의 청크로 돌린다 — 위 rebuild 행 참조).
 ⑶ 다중 인스턴스 배포에서는 인스턴스마다 27MB를 이고 각자 갱신 신호를 받아야 한다 — 지금은 단일
 컨테이너라 성립하지만, 수평 확장 시 **캐시 무효화가 프로세스 경계를 못 넘는다**는 것이 알려진 한계다.
 ⑷ 리랭크 **이후** 품질(기권 재현율)은 SQL로 못 잰다 — `pnpm eval:rag`로 확인해야 하며, 이 스펙의
@@ -153,13 +154,13 @@ term 집합·df·포스팅 차이 **0** — ⑴ 증분 제거 = 그 판본 뺀 �
 |---|---|
 | drizzle 마이그레이션 0026 (신규) | `keyword_vocab` · `keyword_chunk_index` 생성 (아래 Entity 절) |
 | `query-tokenizer.ts` (신규) | `tokenize(text)` — 질의용(조사 절단, 2자 미만 폐기)과 `eojeolsOf(text)` — 어휘용(raw 어절). 경계 `[^0-9A-Za-z가-힣]+` 하나를 공유한다. 규칙은 아래 불릿에 못박혀 있다 |
-| `keyword-vocabulary.service.ts` (신규) | 어휘 색인의 소유자. ⑴ 메모리 적재(정수 포스팅 → `Int32Array`) ⑵ `selectCandidates(query)` — 토큰별 부분문자열 확장 → DF 판정 → 희소 토큰 포스팅 합집합 ⑶ `applyVersion(versionId)` · `removeVersion(versionId)` 증분 갱신 ⑷ 갱신 후 캐시 무효화 |
-| `retrieval.service.ts` | `searchHybrid()`의 키워드 arm이 후보 id로 `inArray` 제한. **순위 식·정렬 키·arm별 순위 부기는 불변**(§31). `hybridPolicyVersion()` v5 + 컷 값 |
+| `keyword-vocabulary.service.ts` (신규) | 어휘 색인의 소유자. ⑴ 메모리 적재(정수 포스팅 → `Int32Array`) ⑵ `selectCandidates(query)` — 토큰별 부분문자열 확장 → DF 판정 → 희소 토큰 포스팅 합집합 ⑶ `applyVersion(versionId)` · `removeVersion(versionId)` 증분 갱신 ⑷ 갱신 후 캐시 무효화. **DF 판정의 분모는 「어휘 스냅샷이 덮는 청크 수」**(= 전 포스팅의 합집합 크기)이고 판정은 `df ≤ 비율 × 분모`다 — 어휘에서만 파생되므로 별도 count와 어긋날 수 없고, 어휘가 비면 분모 0 → 후보 0건 → 전량 스캔이 같은 규칙에서 나온다 |
+| `retrieval.service.ts` | `searchHybrid()`의 키워드 arm이 후보 id로 `inArray` 제한. **순위 식·정렬 키·arm별 순위 부기는 불변**(§31). policyVersion **v5**(K = `rerankCandidates`, 컷 = `vocabCommonDfRatio`): 리랭크 적용은 `hybrid-rrf60-top{K}x2-vocab{컷}-rerank-{리랭크모델}-cut{거리컷}-score{점수컷}-v5/{임베딩모델}`, 리랭크 미적용(폴백·비활성)은 `hybrid-rrf60-top{K}x2-vocab{컷}-cut{거리컷}-v5/{임베딩모델}`. **프리필터가 꺼지면 §31의 v4 문자열 그대로**다 |
 | `retrieval.config.ts` | `vocabPrefilterEnabled`(`RETRIEVAL_VOCAB_PREFILTER_ENABLED`, 기본 true) · `vocabCommonDfRatio`(`RETRIEVAL_VOCAB_COMMON_DF_RATIO`, 기본 **0.05**) — 기본값 코드 소유(#156 규약) |
 | `guideline.repository.ts` | 어휘 조회·증분 갱신 쿼리. 판본 단위 어절 산출은 SQL이 아니라 서비스에서 토크나이저로 한다(질의와 같은 함수를 태우기 위해) |
-| `guideline-ingest.service.ts` | `persist()` **트랜잭션 안에서** `applyVersion()` 호출, 캐시 무효화는 커밋 **뒤** |
+| `guideline-ingest.service.ts` | `persist()` **트랜잭션 안에서** `applyVersion()` 호출, 캐시 무효화는 커밋 **뒤**. 새 revision이 `supersedeOtherRevisions()`로 이전 revision을 내리므로(`guideline.repository.ts:124`) **그 판본들에 `removeVersion()`도 함께 부른다** — 빠뜨리면 재파싱마다 폐기 판본의 어절이 어휘에 남아 기준 2가 깨진다 |
 | `guideline-admin.service.ts` | `updateVersionStatus` — ACTIVE 진입이면 `applyVersion`, ACTIVE 이탈이면 `removeVersion`. **지금 트랜잭션이 없으므로 트랜잭션으로 감싼다.** `deleteVersion` — 기존 트랜잭션 안에서 `removeVersion` |
-| `scripts/rebuild-keyword-vocab.ts` (신규) | 전량 재생성 — 초기 백필·복구·ix 구멍 정리. 멱등 |
+| `scripts/rebuild-keyword-vocab.ts` (신규) | 전량 재생성 — 초기 백필·복구. 멱등. **`keyword_chunk_index`의 ix는 보존한다**(재배정하지 않는다) — 재배정하면 기준 22가 막으려는 사고를 스크립트가 스스로 일으킨다: 로컬에서 터널로 도는 수단이라 prod 앱 프로세스에 무효화 신호를 못 보내고(위험 ⑶), 재배정 순간 살아 있는 인메모리 포스팅이 남의 청크를 가리킨다 |
 | `.env.example` · compose | 두 신규 환경변수 (compose는 빈 통과) |
 
 **토크나이저 규칙은 이 문서가 원천이다** — 이 규칙으로 만든 토큰이 평가셋 185문항에서 위 실측을
