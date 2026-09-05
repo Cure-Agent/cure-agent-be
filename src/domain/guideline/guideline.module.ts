@@ -33,6 +33,7 @@ import { GuidelineListProvider } from './service/guideline-list.provider';
 import { GuidelineJobEventBus } from './sse/guideline-job-event.bus';
 import { GuidelineService } from './service/guideline.service';
 import { ChunkTranslatorService } from './service/chunk-translator.service';
+import { KeywordVocabularyService } from './service/keyword-vocabulary.service';
 import { LlmModule } from '../../infrastructure/llm/llm.module';
 
 @Module({
@@ -82,6 +83,9 @@ import { LlmModule } from '../../infrastructure/llm/llm.module';
     AdminGuard,
     // 청크 번역 멱등 잡 (docs/specs/42) — CLI가 소비한다
     ChunkTranslatorService,
+    // 키워드 arm 어휘 색인 (docs/specs/45) — 어휘 표가 코퍼스 위에 서므로 이 도메인이 소유하고,
+    // infrastructure/retrieval이 소비한다. 반대로 두면 RetrievalModule ↔ GuidelineModule 순환이다
+    KeywordVocabularyService,
   ],
   exports: [
     GuidelineIngestService,
@@ -91,6 +95,8 @@ import { LlmModule } from '../../infrastructure/llm/llm.module';
     GuidelineRevisionScanService,
     // pnpm translate:chunks가 부른다 (docs/specs/42)
     ChunkTranslatorService,
+    // RetrievalService(키워드 arm)와 pnpm rebuild:keyword-vocab이 부른다 (docs/specs/45)
+    KeywordVocabularyService,
   ],
 })
 export class GuidelineModule {}

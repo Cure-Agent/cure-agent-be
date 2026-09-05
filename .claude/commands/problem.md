@@ -27,11 +27,16 @@ argument-hint: <문제 상황 또는 에러 로그 (예: 로그인이 가끔 풀
   호출만 막으므로 Bash 우회 편집(`sed -i` 등)은 Phase 5의 사후 감사가 잡는다(훅=예방, diff=감사).
 - **Codex 호출**: `automation/freeze.md`의 4중 hang 방어를 그대로 적용한다. 긴 실행은
   `run_in_background: true`가 기본이며, 강제 kill(perl alarm 등)은 금지한다 — 지연 파일 착지가
-  동결 무결성을 오염시킨다.
+  동결 무결성을 오염시킨다. **테스트 파생 호출과 TEST-DISPUTE 판정 호출에 동일하게 적용된다.**
+- **디스퓨트 판정·재검증**: TEST-DISPUTE의 테스트 결함 판정은 Codex가 하고, 하네스는 sentinel
+  파싱·`git status` 프로토콜 검사·재검증 4계층만 수행한다 — assertion을 직접 고치지 않는 원칙은
+  판정 경로에서도 같다. 재검증 ②(스텁 재RED)의 임시 워크트리는 `git worktree add --detach`로 만들고
+  **검증 직후 `git worktree remove --force`로 제거**한다. 판정·재검증 결과는 Phase 5의 사용자 확인
+  보고에 `⚠️ TEST-DISPUTE` 항목으로 싣는다.
 - **폴링 모드**: Phase 6의 CI/CD·PR 체크 대기는 `automation/bin/`의 폴링 스크립트
   (`pr-gate.sh`·`run-wait.sh`)를 **`run_in_background: true` Bash**로 실행한다.
   포그라운드 `sleep` 차단·Monitor 도구 금지.
-- **Co-Author 트레일러**: 커밋 메시지 끝에 `Co-Authored-By: Claude Code <noreply@anthropic.com>`를 붙인다.
+- **Co-Author 트레일러**: 커밋 메시지 끝에 현재 하네스가 지정하는 AI 협업 트레일러 한 줄을 붙인다.
 - **안전 규칙**: 「민감 파일 커밋 금지」는 커밋 전 `automation/bin/sensitive-gate.sh` 실행으로 기계
   검사하고, PreToolUse 훅(`.claude/hooks/validate-git-sensitive.sh`)이 `git add/commit/push`를
   추가로 자동 차단한다 — 이중 방어로 작동한다.
