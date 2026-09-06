@@ -65,6 +65,12 @@ export class LlmGateway {
     // 소진 사유 추적 (docs/specs 없음 — 이슈 #352). 차단 스킵과 429 실패 둘 다 「기다리면
     // 풀린다」는 같은 사실이므로 함께 센다
     let rateLimited = false;
+    /**
+     * TTFT는 요청당 1회다 (docs/specs/46 기준 20). 첫 델타 이후에는 폴백하지 않으므로
+     * 시도가 갈릴 일이 없지만, `withRetry`는 델타를 낸 뒤의 재시도 가능 오류에도 클로저를
+     * 다시 돌린다 — 그 경로에서 두 번 관측되면 요청 하나가 표본 둘이 된다.
+     */
+    let firstTokenObserved = false;
 
     for (const provider of this.providers) {
       const circuitOpen = this.circuitBreaker.isOpen(provider.name);
@@ -114,6 +120,15 @@ export class LlmGateway {
             // firstTokenReceived는 **실제로 나간 델타**에서만 선다 — verdict만 받고 죽은
             // 시도는 아직 아무것도 내보내지 않았으므로 폴백해도 중복 출력이 없다
             firstTokenReceived = true;
+            // TTFT는 여기서 잰다 (docs/specs/46) — 폴백 규약이 「첫 토큰」을 정의하는 바로 그
+            // 자리라, 이 줄에 붙이면 두 규약이 같은 정의를 쓰는 것이 구조로 보장된다
+            if (!firstTokenObserved) {
+              firstTokenObserved = true;
+              this.metrics.recordLlmTimeToFirstToken(
+                provider.name,
+                (Date.now() - attemptStartedAt) / 1000,
+              );
+            }
             accumulated += chunk.text;
             await onDelta(chunk.text);
           }

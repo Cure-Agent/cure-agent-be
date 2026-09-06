@@ -533,7 +533,13 @@ type ConversationStreamEventDto =
       assistantMessageId: string;
     }
   | { eventType: "retrieval.started"; requestId: string }
+  | {
+      eventType: "retrieval.progress";          // 대기 구간의 단계 경계 (docs/specs/46)
+      stage: "embedded" | "searched" | "reranked";
+      candidates?: number;                      // searched에만 — 검색이 반환한 후보 수
+    }
   | { eventType: "retrieval.completed"; evidence: EvidenceDetailResponseDto[] }
+  | { eventType: "answer.started" }             // LLM 호출 직전 (docs/specs/46)
   | {
       eventType: "answer.delta";
       messageId: string;
@@ -555,6 +561,15 @@ type ConversationStreamEventDto =
 
 - **Heartbeat**: 15~30초 간격 SSE 주석(`: ping`) 전송 — 프록시 idle timeout으로 LLM이 느린 날 스트림이 끊기는 것을 방지. 응답 헤더에 `X-Accel-Buffering: no`, `Cache-Control: no-cache`.
 - `error` 이벤트 후 서버는 스트림을 닫는다. `answer.completed`/`answer.abstained`가 정상 종결 이벤트다.
+
+**진행 단계 규약 (docs/specs/46):**
+
+- **보낸 진행은 실제로 일어난 일이다.** 도달하지 못한 단계는 보내지 않는다 — 리랭크가 꺼진 구성(`RETRIEVAL_RERANK_ENABLED=false`)에는 `reranked`가 없고, 거리 게이트(①)로 기권하면 리랭커를 부르지 않으므로 역시 없다. 「없는 진행을 지어내지 않는다」가 이 계약의 불변식이다.
+- **단계는 이벤트 타입이 아니라 `stage` 필드로 쪼갠다.** 타입으로 나누면 소비자가 「구성에 따라 안 오는 것이 정상인 타입」을 구성별로 알아야 한다. 소비자는 **모르는 `stage`를 무시**하며, 그래서 단계를 늘리는 것이 breaking change가 아니다.
+- **`candidates`는 `searched`에만 싣는다** — 후보 수는 그 단계의 산출이다. 다른 stage에 빈 필드로 넣으면 계약만 넓어진다.
+- **`answer.started`는 LLM 호출 직전에 나가고 아무것도 싣지 않는다.** 근거 도착과 첫 델타 사이의 창이 이 이벤트의 존재 이유이며, evidence를 실으면 그 창을 여는 성질(작아서 즉시 도착) 자체를 잃는다. 생성 게이트(④)가 발화해 기권해도 이 이벤트는 **이미 나가 있다** — LLM을 실제로 불렀기 때문이고, 그것이 ①~③ 기권과 갈리는 사실이다.
+- **진행 이벤트는 상태를 만들지 않는다.** 그래서 아래 끊김 복구 계약이 그대로다 — 재조회 기준점은 여전히 `message.accepted`의 `assistantMessageId`다.
+- 창의 크기는 `llm_time_to_first_token_seconds{provider}`가 잰다. 「첫 토큰」의 정의는 docs/specs/40과 같은 **delta**이므로, 판정만 받고 끝난 요청은 관측되지 않는다.
 
 **기권 게이트는 4단이다** — ① 거리(docs/specs/28) ② 리랭크 ③ 점수(docs/specs/29) ④ **생성**(docs/specs/40). ①~③은 검색 단계에서 「이 근거가 질문과 관련 있는가」를 재고, ④는 생성 단계에서 「이 근거로 답할 수 있는가」를 잰다 — 후자는 근거 전문을 보고 답을 써 보는 쪽만 판단할 수 있어 생성기 자신이 낸다.
 

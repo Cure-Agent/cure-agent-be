@@ -180,9 +180,18 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     const types = events.map((e) => e.eventType);
 
     // 순서: accepted → retrieval.started → retrieval.completed → delta+ → answer.completed
+    //
+    // **위치가 아니라 상대 순서로 본다** — docs/specs/46이 이 사이에 retrieval.progress와
+    // answer.started를 additive하게 끼운다. 절대 인덱스로 고정하면 계약이 아니라 그때의
+    // 이벤트 개수를 동결하게 되고, 이후 additive 변경마다 여기가 깨진다.
     expect(types[0]).toBe('message.accepted');
     expect(types[1]).toBe('retrieval.started');
-    expect(types[2]).toBe('retrieval.completed');
+    expect(types.indexOf('retrieval.completed')).toBeGreaterThan(
+      types.indexOf('retrieval.started'),
+    );
+    expect(types.indexOf('answer.delta')).toBeGreaterThan(
+      types.indexOf('retrieval.completed'),
+    );
     expect(types[types.length - 1]).toBe('answer.completed');
 
     const accepted = events[0] as {
@@ -193,7 +202,9 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     expect(accepted.requestId).toBe('req-happy-1');
     assistantMessageId = accepted.assistantMessageId;
 
-    const retrieval = events[2] as { evidence: { id: string }[] } & SseEvent;
+    const retrieval = events.find(
+      (e) => e.eventType === 'retrieval.completed',
+    ) as { evidence: { id: string }[] } & SseEvent;
     expect(retrieval.evidence.length).toBeGreaterThanOrEqual(1);
     for (const item of retrieval.evidence) {
       expect(ingestedChunkIds).toContain(item.id);
