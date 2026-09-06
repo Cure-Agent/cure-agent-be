@@ -202,12 +202,14 @@ describe('spec 06: Conversation·Message + SSE + LLM 게이트웨이', () => {
     expect(accepted.requestId).toBe('req-happy-1');
     assistantMessageId = accepted.assistantMessageId;
 
-    const retrieval = events.find(
-      (e) => e.eventType === 'retrieval.completed',
-    ) as { evidence: { id: string }[] } & SseEvent;
-    expect(retrieval.evidence.length).toBeGreaterThanOrEqual(1);
-    for (const item of retrieval.evidence) {
-      expect(ingestedChunkIds).toContain(item.id);
+    // 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 1건씩 온다 — 「검색이 우리가
+    // 적재한 청크만 근거로 돌려준다」는 사실은 그대로이고 관측 지점만 옮겼다.
+    const evidenceFrames = events.filter(
+      (e) => e.eventType === 'retrieval.evidence',
+    ) as ({ evidence: { id: string } } & SseEvent)[];
+    expect(evidenceFrames.length).toBeGreaterThanOrEqual(1);
+    for (const frame of evidenceFrames) {
+      expect(ingestedChunkIds).toContain(frame.evidence.id);
     }
 
     const deltas = events.filter((e) => e.eventType === 'answer.delta') as ({

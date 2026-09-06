@@ -538,8 +538,17 @@ type ConversationStreamEventDto =
       stage: "embedded" | "searched" | "reranked";
       candidates?: number;                      // searched에만 — 검색이 반환한 후보 수
     }
-  | { eventType: "retrieval.completed"; evidence: EvidenceDetailResponseDto[] }
-  | { eventType: "answer.started" }             // LLM 호출 직전 (docs/specs/46)
+  | {
+      eventType: "answer.started";              // 검색 게이트 통과 경계 (docs/specs/47)
+      evidenceCount: number;                    // 최종 근거 수 — 근거 배열은 싣지 않는다
+    }
+  | {
+      eventType: "retrieval.evidence";           // 근거 1건 = 프레임 1개 (docs/specs/47)
+      index: number;                             // 0부터 연속
+      total: number;                             // 모든 프레임에서 같다
+      evidence: EvidenceDetailResponseDto;
+    }
+  | { eventType: "retrieval.completed" }        // 검색 구간 종결 표지 — 근거를 싣지 않는다
   | {
       eventType: "answer.delta";
       messageId: string;
@@ -567,14 +576,21 @@ type ConversationStreamEventDto =
 - **보낸 진행은 실제로 일어난 일이다.** 도달하지 못한 단계는 보내지 않는다 — 리랭크가 꺼진 구성(`RETRIEVAL_RERANK_ENABLED=false`)에는 `reranked`가 없고, 거리 게이트(①)로 기권하면 리랭커를 부르지 않으므로 역시 없다. 「없는 진행을 지어내지 않는다」가 이 계약의 불변식이다.
 - **단계는 이벤트 타입이 아니라 `stage` 필드로 쪼갠다.** 타입으로 나누면 소비자가 「구성에 따라 안 오는 것이 정상인 타입」을 구성별로 알아야 한다. 소비자는 **모르는 `stage`를 무시**하며, 그래서 단계를 늘리는 것이 breaking change가 아니다.
 - **`candidates`는 `searched`에만 싣는다** — 후보 수는 그 단계의 산출이다. 다른 stage에 빈 필드로 넣으면 계약만 넓어진다.
-- **`answer.started`는 LLM 호출 직전에 나가고 아무것도 싣지 않는다.** 근거 도착과 첫 델타 사이의 창이 이 이벤트의 존재 이유이며, evidence를 실으면 그 창을 여는 성질(작아서 즉시 도착) 자체를 잃는다. 생성 게이트(④)가 발화해 기권해도 이 이벤트는 **이미 나가 있다** — LLM을 실제로 불렀기 때문이고, 그것이 ①~③ 기권과 갈리는 사실이다.
 - **진행 이벤트는 상태를 만들지 않는다.** 그래서 아래 끊김 복구 계약이 그대로다 — 재조회 기준점은 여전히 `message.accepted`의 `assistantMessageId`다.
-- 창의 크기는 `llm_time_to_first_token_seconds{provider}`가 잰다. 「첫 토큰」의 정의는 docs/specs/40과 같은 **delta**이므로, 판정만 받고 끝난 요청은 관측되지 않는다.
+
+**프레임 도착 규약 (docs/specs/47):**
+
+- **도착 순서를 네트워크 운에 맡기지 않고 발신 순서로 정한다.** 같은 스트림에서 뒤에 쓴 작은 프레임이 앞의 큰 프레임을 앞지를 수는 없다 — 큰 프레임의 마지막 부분 블록은 다음 write까지 갇히므로, 그 꼬리 **안에** 있는 이벤트는 함께 갇힌다. 그래서 작은 프레임을 큰 프레임 **앞**에 두고, 큰 프레임은 **쪼갠다**.
+- **`answer.started`는 리랭크 직후·근거 번역 조회 이전에 나가고 `evidenceCount`만 싣는다.** 이 자리에서 이 이벤트가 말하는 사실은 「LLM 호출 직전」이 아니라 **「검색 게이트를 통과해 답변 생성으로 넘어간다」**다. 그래도 ①~③ 기권과 갈리는 축은 그대로다 — `abstainReason`이 그 시점에 이미 확정돼 있어 검색 게이트 기권에는 나가지 않고, 생성 게이트(④) 기권에는 **이미 나가 있다**. 근거 배열을 싣지 않는 이유는 §46과 같다(작아야 즉시 도착한다). `evidenceCount`를 싣는 이유는 순서를 뒤집은 대가다 — 화면의 「근거 N건을 바탕으로」가 이 시점에 다른 원천을 갖지 못한다.
+- **근거는 `retrieval.evidence`로 1건당 한 프레임씩 나간다.** 꼬리 지연 자체는 소켓 계층의 성질이라 없앨 수 없고, 우리가 바꿀 수 있는 것은 **일찍 도착한 바이트가 완결된 프레임인가**뿐이다. 순서는 발신 순서가 곧 리랭크 순위이고, `index`는 재배치 키가 아니라 검산용이다. **약속은 점진 렌더까지이지 지연 제거가 아니다** — 마지막 1~2건은 여전히 늦는다. 바이트 임계는 계약에 적지 않는다(정지 경계가 표본마다 8.1KB·24.5KB로 갈렸다 — 소켓 상태에 의존한다).
+- **`retrieval.completed`는 근거를 싣지 않는다.** 남기면 큰 프레임이 그대로라 그 뒤 전부(첫 델타 포함)를 계속 밀어내 쪼갠 의미가 없다. 남는 것은 검색 구간의 종결 표지뿐이다.
+- 근거 프레임도 상태를 만들지 않으므로 끊김 복구 계약의 재조회 기준점은 그대로다.
+- `answer.started`가 여는 창의 크기는 `llm_time_to_first_token_seconds{provider}`가 잰다. 「첫 토큰」의 정의는 docs/specs/40과 같은 **delta**이므로, 판정만 받고 끝난 요청은 관측되지 않는다.
 
 **기권 게이트는 4단이다** — ① 거리(docs/specs/28) ② 리랭크 ③ 점수(docs/specs/29) ④ **생성**(docs/specs/40). ①~③은 검색 단계에서 「이 근거가 질문과 관련 있는가」를 재고, ④는 생성 단계에서 「이 근거로 답할 수 있는가」를 잰다 — 후자는 근거 전문을 보고 답을 써 보는 쪽만 판단할 수 있어 생성기 자신이 낸다.
 
 - `answer.abstained`의 `reason`은 사유별로 다른 문구다: 근거 0건 · 관련도 미달(①~③ 공통) · **근거로 답할 수 없음**(④). 사유가 다르면 다르게 읽혀야 재질의를 유도한다.
-- **④의 `retrieval.completed`는 근거를 싣는다** — 근거를 보낸 뒤에 발화하므로 되부를 수 없고, ①~③이 **빈 배열**을 싣는 것과 다른 사실이라 다르게 보이는 것이 옳다.
+- **④는 `retrieval.evidence`를 정상 발신한다** — 근거를 보낸 뒤에 발화하므로 되부를 수 없다. ①~③은 근거 프레임이 **하나도 없다**는 것이 다른 사실이고, 다르게 보이는 것이 옳다(docs/specs/47 — `retrieval.completed`의 빈 배열이 지고 있던 구분이 프레임 유무로 옮겨갔다).
 - **④는 `GenerationRun`을 남기고 ①~③은 남기지 않는다**(§9) — 「`ABSTAINED` + run 있음 = 생성 게이트 / run 없음 = 검색 게이트」가 자기서술적 불변식이다.
 - ④가 발화하면 답변 텍스트도 인용도 남기지 않는다(content 빈 문자열, `message_citations` 0건). 무관 근거를 인용한 산문 거부가 프로덕션에서 실제로 영속화된 적이 있다.
 

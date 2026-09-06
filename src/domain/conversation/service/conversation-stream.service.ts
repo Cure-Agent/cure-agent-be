@@ -380,6 +380,27 @@ export class ConversationStreamService {
       }
 
       /**
+       * 답변 시작 (docs/specs/47 기준 1~6).
+       *
+       * **큰 프레임보다 앞에 선다.** §46은 이 이벤트를 `retrieval.completed` 뒤에 두고 「작은
+       * 프레임이 앞선 꼬리를 밀어낸다」고 기대했으나, 같은 스트림에서 뒤에 쓴 30B가 앞의 32KB를
+       * 앞지를 수는 없다 — prod 실측 2/2에서 창이 0ms였다. 도착 순서는 발신 순서로만 정해진다.
+       *
+       * 자리가 「리랭크 블록 직후·번역 조회 이전」인 이유: `abstainReason`이 이미 확정돼 검색
+       * 게이트(①~③) 기권 배제 조건이 그대로 유지되고, 번역 DB 조회(§42)보다도 앞서 창이 그만큼
+       * 넓다. 그래서 이 경계가 말하는 사실도 「LLM 호출 직전」이 아니라 **「검색 게이트를 통과해
+       * 답변 생성으로 넘어간다」**가 된다 — 생성 게이트(④) 기권과 ①~③ 기권을 가르는 축(§8)은
+       * 그대로다.
+       *
+       * `evidenceCount`만 싣는다. 순서를 뒤집으면 `retrieval.completed`가 아직 오지 않아 화면의
+       * 「지침 근거 N건을 바탕으로」의 N이 0이 되는데, 정수 하나는 프레임을 60B 미만으로 유지해
+       * 「작아서 즉시 도착한다」는 성질을 잃지 않는다.
+       */
+      if (!abstainReason) {
+        sse.send({ eventType: 'answer.started', evidenceCount: evidenceRows.length });
+      }
+
+      /**
        * 근거 상세에 번역을 붙인다 (docs/specs/42 기준 12b). 한국어 경로는 조회 자체를 건너뛰어
        * 오늘과 같은 질의 수를 유지한다 — 번역 기능이 한국어 사용자의 지연을 늘리지 않는다.
        */
@@ -391,17 +412,40 @@ export class ConversationStreamService {
               responseLang,
             );
 
-      sse.send({
-        eventType: 'retrieval.completed',
-        evidence: abstainReason
-          ? []
-          : evidenceRows.map((row) =>
-              toEvidenceDetail(
-                { ...row, translation: chunkTranslations.get(row.chunk.id) ?? null },
-                responseLang,
-              ),
+      /**
+       * 근거를 **1건당 한 프레임**으로 보낸다 (docs/specs/47 기준 7~15).
+       *
+       * 꼬리 지연 자체는 소켓 계층의 성질이라 없앨 수 없다 — 우리가 바꿀 수 있는 것은 **일찍
+       * 도착한 바이트가 완결된 프레임인가**뿐이다. 32KB 한 덩이면 75%가 도착해 있어도 근거를 한
+       * 건도 그리지 못하지만, 6.4KB씩 쪼개면 그 안에 3~4건이 완결된 채로 들어 있다.
+       *
+       * `index`는 화면의 재배치 키가 아니라 검산용이고, 순서는 발신 순서가 곧 리랭크 순위다.
+       * `total`을 매 프레임에 싣는 이유는 마지막 프레임이 늦어도 화면이 「몇 건 중 몇 건」을
+       * 말할 수 있어야 하기 때문이다. 마지막 1~2건이 여전히 늦는 것은 이 계약이 없애는 것이
+       * 아니다 — 약속은 **점진 렌더**이지 지연 제거가 아니다.
+       */
+      if (!abstainReason) {
+        const total = evidenceRows.length;
+        evidenceRows.forEach((row, index) => {
+          sse.send({
+            eventType: 'retrieval.evidence',
+            index,
+            total,
+            // 오늘 배열 원소를 만들던 그 매퍼다 — 형태가 갈리면 근거 화면이 둘로 나뉜다
+            evidence: toEvidenceDetail(
+              { ...row, translation: chunkTranslations.get(row.chunk.id) ?? null },
+              responseLang,
             ),
-      });
+          });
+        });
+      }
+
+      /**
+       * `evidence`를 싣지 않는다 (docs/specs/47 기준 11) — 남기면 32KB 프레임이 그대로라 꼬리가
+       * 그 뒤 전부(첫 델타 포함)를 계속 밀어내고, 쪼갠 의미가 없어진다. 근거가 이미 프레임으로
+       * 다 나갔으므로 이 이벤트는 **검색 구간의 종결 표지**만 남는다.
+       */
+      sse.send({ eventType: 'retrieval.completed' });
 
       if (abstainReason) {
         ragOutcome = 'abstained';
@@ -503,18 +547,8 @@ export class ConversationStreamService {
     const timeoutSignal = AbortSignal.timeout(STREAM_TIMEOUT_MS);
     const signal = AbortSignal.any([clientSignal, timeoutSignal]);
 
-    /**
-     * 답변 시작 (docs/specs/46 기준 9~11).
-     *
-     * 근거 도착과 첫 델타 사이에 서는 유일한 경계다. 작은 프레임이라 즉시 나가고, 그러면서
-     * 앞선 `retrieval.completed`의 꼬리를 함께 밀어낸다 — 실측에서 성공 경로 5/5가 두 이벤트를
-     * 같은 chunk로 받아 2단계 문구의 창이 0ms였다.
-     *
-     * **생성 게이트(④)로 기권해도 이 이벤트는 이미 나가 있다** — LLM을 실제로 불렀기 때문이고,
-     * 그것이 검색 게이트(①~③) 기권과 갈리는 사실이다.
-     */
-    sse.send({ eventType: 'answer.started' });
-
+    // `answer.started`는 여기서 보내지 않는다 — 호출자가 근거 프레임보다 **앞에서** 이미 보냈다
+    // (docs/specs/47). 이 자리에 두면 앞선 큰 프레임의 꼬리에 갇혀 창이 0ms가 된다.
     let outcome;
     try {
       outcome = await this.llmGateway.stream(

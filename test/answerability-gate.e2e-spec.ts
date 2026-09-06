@@ -199,12 +199,14 @@ function assistantMessageIdOf(events: SseEvent[]): string {
   return value;
 }
 
+/**
+ * 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 **1건씩** 온다 — 관측 지점만 옮겼고,
+ * 「④는 근거를 싣고 ①~③은 싣지 않는다」는 사실은 프레임 유무가 그대로 진다.
+ */
 function evidenceOf(events: SseEvent[]): unknown[] {
-  const evidence = eventOf(events, 'retrieval.completed').evidence;
-  if (!Array.isArray(evidence)) {
-    throw new Error('retrieval.completed evidence가 배열이 아닙니다.');
-  }
-  return evidence;
+  return events
+    .filter((event) => event.eventType === 'retrieval.evidence')
+    .map((event) => event.evidence);
 }
 
 function reasonOf(events: SseEvent[]): string {
@@ -685,12 +687,12 @@ describe('spec 40: 답변가능성 생성 게이트', () => {
     expect(result.rows[0].count).toBe(0);
   });
 
-  it('기준 9: 생성 게이트 기권은 검색된 근거를 retrieval.completed에 유지한다', () => {
+  it('기준 9: 생성 게이트 기권은 검색된 근거를 근거 프레임으로 유지한다', () => {
     expect(terminalEvent(gateEvents).eventType).toBe('answer.abstained');
     expect(evidenceOf(gateEvents).length).toBeGreaterThan(0);
   });
 
-  it('기준 10: 생성 게이트는 근거를 싣고 검색 게이트는 빈 근거를 싣는다', () => {
+  it('기준 10: 생성 게이트는 근거를 보내고 검색 게이트는 하나도 보내지 않는다', () => {
     expect(terminalEvent(gateEvents).eventType).toBe('answer.abstained');
     expect(evidenceOf(gateEvents).length).toBeGreaterThan(0);
     expect(terminalEvent(distanceGateEvents).eventType).toBe(

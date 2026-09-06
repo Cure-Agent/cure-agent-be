@@ -266,12 +266,17 @@ function guidanceOf(events: SseEvent[]): GuidanceDto {
   return guidance as GuidanceDto;
 }
 
+/** 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 1건씩 온다 — 관측 지점만 옮겼다. */
 function retrievalEvidenceOf(events: SseEvent[]): Array<Record<string, unknown>> {
-  const evidence = eventOf(events, 'retrieval.completed').evidence;
-  if (!Array.isArray(evidence)) {
-    throw new Error('retrieval.completed evidence가 배열이 아닙니다.');
-  }
-  return evidence as Array<Record<string, unknown>>;
+  return events
+    .filter((event) => event.eventType === 'retrieval.evidence')
+    .map((event) => {
+      const item = event.evidence;
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new Error('retrieval.evidence의 evidence가 객체가 아닙니다.');
+      }
+      return item as Record<string, unknown>;
+    });
 }
 
 function evidenceItemOf(
