@@ -174,28 +174,26 @@ function terminalEvent(events: SseEvent[]): SseEvent | undefined {
   return events[events.length - 1];
 }
 
-function eventOf(events: SseEvent[], eventType: string): SseEvent {
-  const event = events.find((candidate) => candidate.eventType === eventType);
-  if (!event) throw new Error(eventType + ' 이벤트가 없습니다.');
-  return event;
-}
-
-/** EvidenceDetail의 안정 필드인 evidence_chunks.id만 꺼낸다. */
-function evidenceIds(event: SseEvent): string[] {
-  if (!Array.isArray(event.evidence)) {
-    throw new Error('retrieval.completed evidence가 배열이 아닙니다.');
-  }
-
-  return event.evidence.map((item) => {
-    if (typeof item !== 'object' || item === null) {
-      throw new Error('evidence 항목이 객체가 아닙니다.');
-    }
-    const id = (item as { id?: unknown }).id;
-    if (typeof id !== 'string') {
-      throw new Error('evidence 항목에 문자열 id가 없습니다.');
-    }
-    return id;
-  });
+/**
+ * EvidenceDetail의 안정 필드인 evidence_chunks.id만 꺼낸다.
+ *
+ * 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 **1건씩** 오고 발신 순서가 곧 최종
+ * 순위다 — 관측 지점만 옮겼고 단언하는 순서의 의미는 그대로다.
+ */
+function evidenceIds(events: SseEvent[]): string[] {
+  return events
+    .filter((event) => event.eventType === 'retrieval.evidence')
+    .map((event) => {
+      const item = event.evidence;
+      if (typeof item !== 'object' || item === null) {
+        throw new Error('retrieval.evidence의 evidence가 객체가 아닙니다.');
+      }
+      const id = (item as { id?: unknown }).id;
+      if (typeof id !== 'string') {
+        throw new Error('evidence 항목에 문자열 id가 없습니다.');
+      }
+      return id;
+    });
 }
 
 /** 지정한 라벨 조각이 모두 있는 행의 마지막 숫자를 비율 값으로 읽는다. */
@@ -840,7 +838,7 @@ describe('spec 31: pg_trgm 키워드 arm과 RRF 합집합 하이브리드 검색
       );
 
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(evidenceIds(eventOf(events, 'retrieval.completed'))).toEqual(
+      expect(evidenceIds(events)).toEqual(
         rrfOrder,
       );
       expect(throwReranker.calls - callsBefore).toBe(1);
@@ -905,7 +903,7 @@ describe('spec 31: pg_trgm 키워드 arm과 RRF 합집합 하이브리드 검색
       );
 
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(evidenceIds(eventOf(events, 'retrieval.completed'))).toEqual(
+      expect(evidenceIds(events)).toEqual(
         vectorTop5,
       );
     });
