@@ -102,6 +102,26 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * 첫 토큰까지의 지연 (docs/specs/46).
+   *
+   * `llm_request_duration_seconds`는 스트림 **전체**라 첫 토큰까지를 못 가른다 — spec 46이
+   * `answer.started`로 여는 창의 크기가 바로 이 값인데, 재는 서버 축이 없어 그 스텝의 실측
+   * TTFT(0.65~1.5초)는 전부 브라우저 관측으로만 얻었다. 창이 실제로 열리는지를 다음에도
+   * 브라우저로 재야 한다면 그 값은 관측되지 않는 것과 같다.
+   *
+   * **같은 시도 창의 앞부분이라 라벨·시작점을 `llm_request_duration_seconds`와 맞춘다** —
+   * 시작점이 갈리면 두 축의 차(= 첫 토큰 이후 소요)가 의미를 잃는다. 프로바이더 폴백이
+   * 돌아도 성공한 시도의 창만 재므로, 앞선 프로바이더의 실패 시간이 이 값에 섞이지 않는다.
+   */
+  private readonly llmTimeToFirstToken = new Histogram({
+    name: 'llm_time_to_first_token_seconds',
+    help: 'LLM 첫 토큰까지의 지연(초)',
+    labelNames: ['provider'] as const,
+    buckets: [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10],
+    registers: [this.registry],
+  });
+
   /** 토큰 소비량 — 비용 추적의 근거. 프로바이더가 usage를 보고할 때만 증가한다 */
   private readonly llmTokens = new Counter({
     name: 'llm_tokens_total',
@@ -425,6 +445,17 @@ export class MetricsService {
 
   recordLlmDuration(provider: string, durationSec: number): void {
     this.llmDuration.observe({ provider }, durationSec);
+  }
+
+  /**
+   * 첫 토큰까지의 지연 기록 (docs/specs/46).
+   *
+   * 「첫 토큰」의 정의는 §40과 같다 — **사용자에게 나가는 delta**다. 답변가능성 판정(verdict)은
+   * 출력이 아니므로, 판정만 받고 끝난 시도는 여기 오지 않는다. 정의가 갈리면 생성 게이트가
+   * 발화한 요청이 TTFT 분포에 섞여 「빠른 첫 토큰」으로 잡힌다.
+   */
+  recordLlmTimeToFirstToken(provider: string, durationSec: number): void {
+    this.llmTimeToFirstToken.observe({ provider }, durationSec);
   }
 
   recordLlmTokens(provider: string, model: string, input: number, output: number): void {
