@@ -146,6 +146,9 @@ class BlockingAfterFirstDeltaProvider implements LlmProvider {
       }
       signal.addEventListener('abort', onAbort, { once: true });
     });
+
+    // 실 프로바이더와 같이 호출자 abort를 정상 완료로 삼키지 않고 게이트웨이에 전파한다.
+    signal.throwIfAborted();
   }
 }
 
