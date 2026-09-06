@@ -31,6 +31,19 @@ export const RETRIEVAL_TOP_K = 5;
  */
 const RRF_K = 60;
 
+/**
+ * 검색 단계 경계 통지 (docs/specs/46) — `recordRetrievalStage`로 **메트릭에만** 흘리던 경계를
+ * 호출자도 볼 수 있게 한다. 메트릭은 사후 집계라 진행 중인 한 요청의 화면에 닿지 못한다.
+ *
+ * **후보 수는 `searched`의 산출이므로 그 단계에만 실린다.** 유니온으로 갈라 두면
+ * 「다른 stage에는 실을 것이 없어 넣지 않는다」(§46 판단표)가 호출자 규율이 아니라 타입이 된다.
+ */
+export type RetrievalStageNotice =
+  | { stage: 'embedded' }
+  | { stage: 'searched'; candidates: number };
+
+export type RetrievalStageListener = (notice: RetrievalStageNotice) => void;
+
 export interface RetrievalFilters {
   guidelineIds?: string[];
   recommendationGrades?: string[];
@@ -172,10 +185,12 @@ export class RetrievalService {
     query: string,
     filters?: RetrievalFilters,
     topK: number = RETRIEVAL_TOP_K,
+    onStage?: RetrievalStageListener,
   ): Promise<RetrievedEvidence[]> {
     const embedStartedAt = process.hrtime.bigint();
     const [embedding] = await this.embeddingProvider.embed([query]);
     this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
+    onStage?.({ stage: 'embedded' });
 
     // 정렬에만 쓰던 거리를 SELECT에도 싣는다 — 같은 식이므로 추가 연산 비용은 없다
     const distance = cosineDistance(evidenceChunks.embedding, embedding);
@@ -190,6 +205,7 @@ export class RetrievalService {
     // 0건도 기록한다 — 그 0이 abstain의 원인이고, 급등은 인제스트 사고의 조기 경보다
     this.metrics.recordRetrievedChunks(rows.length);
     if (rows.length > 0) this.metrics.recordTop1Distance(rows[0].distance);
+    onStage?.({ stage: 'searched', candidates: rows.length });
 
     return rows;
   }
@@ -209,10 +225,12 @@ export class RetrievalService {
     query: string,
     filters?: RetrievalFilters,
     armK: number = this.config.rerankCandidates,
+    onStage?: RetrievalStageListener,
   ): Promise<HybridEvidence[]> {
     const embedStartedAt = process.hrtime.bigint();
     const [embedding] = await this.embeddingProvider.embed([query]);
     this.metrics.recordRetrievalStage('embed', elapsedSeconds(embedStartedAt));
+    onStage?.({ stage: 'embedded' });
 
     const conditions = this.corpusConditions(filters);
     const distance = cosineDistance(evidenceChunks.embedding, embedding);
@@ -267,6 +285,9 @@ export class RetrievalService {
     // 최소 거리는 벡터 arm top-1과 같다(전 코퍼스 최소값): §28 거리 게이트의 의미가 보존된다.
     this.metrics.recordRetrievedChunks(fused.length);
     if (vectorRows.length > 0) this.metrics.recordTop1Distance(vectorRows[0].distance);
+    // 두 arm이 끝나고 융합까지 마쳐야 「검색이 반환한 후보」다 — arm 하나가 먼저 끝나도
+    // 그것은 이 단계의 산출이 아니다 (§46 「보낸 진행은 실제로 일어난 일」)
+    onStage?.({ stage: 'searched', candidates: fused.length });
 
     return fused;
   }

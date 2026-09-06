@@ -40,6 +40,7 @@ import {
 import {
   RETRIEVAL_TOP_K,
   RetrievalService,
+  RetrievalStageNotice,
   RetrievedEvidence,
 } from '../../../infrastructure/retrieval/retrieval.service';
 import { RERANKER, Reranker } from '../../../infrastructure/retrieval/reranker.port';
@@ -98,6 +99,14 @@ export function classifyStreamFailure(error: unknown): ErrorCode {
   // 나머지(DB·영속화·예상 못한 결함)는 우리 쪽 문제다
   return 'INTERNAL_ERROR';
 }
+
+/**
+ * 화면에 알리는 진행 단계 (docs/specs/46).
+ *
+ * `reranked`가 검색 서비스의 유니온에 없는 이유는 **리랭크가 대화 정책이기 때문**이다 —
+ * 판정도 폴백도 여기서 일어나므로 검색 서비스는 그 단계를 알지 못한다(§29와 같은 경계).
+ */
+type StreamProgressNotice = RetrievalStageNotice | { stage: 'reranked' };
 
 /** PATIENT_GUIDANCE 스트림에서 완료 tx가 소비하는 가이던스 생성 재료 */
 interface GuidanceContext {
@@ -238,6 +247,18 @@ export class ConversationStreamService {
       sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
 
       /**
+       * 진행 단계를 화면에 알린다 (docs/specs/46).
+       *
+       * evidence를 싣지 않아 100B 미만이라, `retrieval.completed`(실측 18~35KB)가 겪는 꼬리
+       * 지연을 겪지 않는다 — 그것이 이 이벤트가 통하는 이유 전부다.
+       * **보내는 것은 실제로 일어난 단계뿐이다**: 기권으로 이탈하면 그 뒤 단계는 오지 않고,
+       * 리랭크가 꺼진 구성에서는 `reranked` 자체가 없다. 없는 진행을 지어내지 않는다.
+       */
+      const sendProgress = (notice: StreamProgressNotice): void => {
+        sse.send({ eventType: 'retrieval.progress', ...notice });
+      };
+
+      /**
        * 검색 입력을 한국어로 정규화한다 (docs/specs/42).
        *
        * **검색은 언제나 한국어로 돈다** — 키워드 arm이 pg_trgm 문자 n-gram이라(§31) 영문 질의는
@@ -268,14 +289,25 @@ export class ConversationStreamService {
       const hybridActive = this.retrievalService.hybridEnabled;
       const rerankActive = this.retrievalService.rerankEnabled;
       const retrieved = hybridActive
-        ? await this.retrievalService.searchHybrid(searchQuestion, dto.filters)
+        ? await this.retrievalService.searchHybrid(
+            searchQuestion,
+            dto.filters,
+            undefined,
+            sendProgress,
+          )
         : rerankActive
           ? await this.retrievalService.search(
               searchQuestion,
               dto.filters,
               this.retrievalService.rerankCandidates,
+              sendProgress,
             )
-          : await this.retrievalService.search(searchQuestion, dto.filters);
+          : await this.retrievalService.search(
+              searchQuestion,
+              dto.filters,
+              undefined,
+              sendProgress,
+            );
 
       /**
        * 게이트 ① 거리 (docs/specs/28) — **후보 최소 거리만 본다.** 통과하면 나머지에 컷 밖
@@ -339,6 +371,12 @@ export class ConversationStreamService {
           this.metrics.recordRerank('fallback', elapsedSec());
           this.logger.warn(`[${traceId}] 리랭크 실패 — 코사인 순위 폴백: ${String(error)}`);
         }
+        /**
+         * 성공·점수 컷 기권·호출 실패 폴백이 **모두 여기로 온다** (docs/specs/46 기준 7·14) —
+         * 단계는 일어났고 결과만 갈린다. 결말별로 보낼지를 정하면 「보낸 진행 = 일어난 일」이
+         * 결말 축과 뒤섞여, 폴백한 요청의 화면이 리랭크를 건너뛴 것처럼 보인다.
+         */
+        sendProgress({ stage: 'reranked' });
       }
 
       /**
@@ -464,6 +502,19 @@ export class ConversationStreamService {
     let seq = 0;
     const timeoutSignal = AbortSignal.timeout(STREAM_TIMEOUT_MS);
     const signal = AbortSignal.any([clientSignal, timeoutSignal]);
+
+    /**
+     * 답변 시작 (docs/specs/46 기준 9~11).
+     *
+     * 근거 도착과 첫 델타 사이에 서는 유일한 경계다. 작은 프레임이라 즉시 나가고, 그러면서
+     * 앞선 `retrieval.completed`의 꼬리를 함께 밀어낸다 — 실측에서 성공 경로 5/5가 두 이벤트를
+     * 같은 chunk로 받아 2단계 문구의 창이 0ms였다.
+     *
+     * **생성 게이트(④)로 기권해도 이 이벤트는 이미 나가 있다** — LLM을 실제로 불렀기 때문이고,
+     * 그것이 검색 게이트(①~③) 기권과 갈리는 사실이다.
+     */
+    sse.send({ eventType: 'answer.started' });
+
     let outcome;
     try {
       outcome = await this.llmGateway.stream(

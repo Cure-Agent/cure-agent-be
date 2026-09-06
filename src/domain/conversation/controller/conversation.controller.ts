@@ -138,8 +138,13 @@ export class ConversationController {
   @ApiOperation({
     summary: '질문 전송 + SSE 스트리밍 답변',
     description:
-      'message.accepted → retrieval.started/completed → answer.delta(seq) → ' +
-      'answer.completed | answer.abstained | error. 15초 heartbeat 주석 전송.',
+      'message.accepted → retrieval.started → retrieval.progress(stage) → retrieval.completed → ' +
+      'answer.started → answer.delta(seq) → answer.completed | answer.abstained | error. ' +
+      'retrieval.progress의 stage는 embedded·searched·reranked이며 **실제로 일어난 단계만** 나간다 ' +
+      '— 리랭크가 꺼져 있거나 기권으로 먼저 이탈하면 그 단계는 오지 않는다. ' +
+      'candidates(검색이 반환한 후보 수)는 stage=searched에만 실린다. ' +
+      'answer.started는 LLM 호출 직전에 나가며 아무것도 싣지 않는다 — 생성 게이트가 발화해 ' +
+      '기권하는 경우에도 이미 발신돼 있다. 15초 heartbeat 주석 전송.',
   })
   @ApiProduces('text/event-stream')
   async streamMessage(
