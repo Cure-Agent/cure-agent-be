@@ -103,6 +103,11 @@ function eventOf(events: SseEvent[], eventType: string): SseEvent {
   return event;
 }
 
+/** 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 1건씩 온다 — 관측 지점만 옮겼다. */
+function evidenceFrames(events: SseEvent[]): SseEvent[] {
+  return events.filter((event) => event.eventType === 'retrieval.evidence');
+}
+
 /** 소수 또는 백분율로 렌더링된 지표를 원래 리포트 값과 비교한다. */
 function renderedMetricValue(markdown: string, label: string): number {
   for (const line of markdown.split('\n')) {
@@ -319,7 +324,8 @@ describe('spec 28: 검색 거리 임계값 top-1 게이트', () => {
   });
 
   describe('기준 2: 컷 기권의 근거 비노출', () => {
-    it('기준 2: 컷 초과 시 retrieval.completed는 빈 evidence를 싣는다', async () => {
+    // docs/specs/47: 근거 비노출을 「빈 evidence 배열」이 아니라 **근거 프레임 0건**이 말한다.
+    it('기준 2: 컷 초과 시 근거 프레임이 하나도 나가지 않는다', async () => {
       const events = await askInNewConversation(
         smallCutoffApp,
         smallCutoffCookie,
@@ -327,7 +333,8 @@ describe('spec 28: 검색 거리 임계값 top-1 게이트', () => {
       );
       const retrievalCompleted = eventOf(events, 'retrieval.completed');
 
-      expect(retrievalCompleted.evidence).toEqual([]);
+      expect(evidenceFrames(events)).toEqual([]);
+      expect(retrievalCompleted).not.toHaveProperty('evidence');
     });
   });
 
@@ -341,10 +348,9 @@ describe('spec 28: 검색 거리 임계값 top-1 게이트', () => {
         middleCutoffCookie,
         'req-cutoff-top1-only',
       );
-      const retrievalCompleted = eventOf(events, 'retrieval.completed');
 
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(retrievalCompleted.evidence).toHaveLength(middleSearchCount);
+      expect(evidenceFrames(events)).toHaveLength(middleSearchCount);
     });
   });
 

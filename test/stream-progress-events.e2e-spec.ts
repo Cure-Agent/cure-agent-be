@@ -1,4 +1,5 @@
 // docs/specs/46 수용 기준 1~22 동결 테스트 — 구현 중 수정 금지
+// (docs/specs/47이 기준 9·10·15·16의 프레임 계약을 대체했다 — 각 it의 주석 참조)
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -869,9 +870,13 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
     expect(terminalEvent(hybridOffEvents).eventType).toBe('answer.completed');
   });
 
-  it('기준 9: answer.started는 retrieval.completed 뒤이자 첫 answer.delta 앞이다', () => {
-    const completedIndex = happyEvents.findIndex(
-      (event) => event.eventType === 'retrieval.completed',
+  // docs/specs/47이 이 순서를 대체했다 — `answer.started`는 이제 `retrieval.completed`
+  // **앞**에 선다. 뒤에 두면 앞선 큰 프레임의 꼬리에 갇혀 창이 0ms가 되는 것이 prod 실측이다.
+  // 「첫 델타 앞」이라는 이 기준의 원래 의미는 그대로 유지된다.
+  it('기준 9: answer.started는 리랭크 단계 뒤이자 첫 answer.delta 앞이다', () => {
+    const rerankedIndex = happyEvents.findIndex(
+      (event) =>
+        event.eventType === 'retrieval.progress' && event.stage === 'reranked',
     );
     const startedIndexes = happyEvents.flatMap((event, index) =>
       event.eventType === 'answer.started' ? [index] : [],
@@ -881,15 +886,17 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
     );
 
     expect(startedIndexes).toHaveLength(1);
-    expect(startedIndexes[0]).toBeGreaterThan(completedIndex);
+    expect(startedIndexes[0]).toBeGreaterThan(rerankedIndex);
     expect(startedIndexes[0]).toBeLessThan(firstDeltaIndex);
   });
 
-  it('기준 10: answer.started에는 evidence가 없고 eventType 키 하나만 있다', () => {
+  // evidence **배열**을 싣지 않는다는 이 기준의 취지는 그대로다 — docs/specs/47이 더한 것은
+  // 정수 하나(`evidenceCount`)뿐이라 프레임은 여전히 즉시 도착할 만큼 작다.
+  it('기준 10: answer.started에는 evidence 배열이 없고 evidenceCount만 실린다', () => {
     const started = eventOf(happyEvents, 'answer.started');
 
     expect(hasOwn(started, 'evidence')).toBe(false);
-    expectExactKeys(started, ['eventType']);
+    expectExactKeys(started, ['eventType', 'evidenceCount']);
   });
 
   it('기준 11: 생성 게이트 기권도 LLM 호출 전 answer.started를 이미 발신한다', () => {
@@ -953,8 +960,10 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
       'searched',
       'reranked',
     ]);
-    expectExactKeys(retrievalCompleted, ['eventType', 'evidence']);
-    expect(retrievalCompleted.evidence).toEqual([]);
+    // docs/specs/47: 「기권은 근거를 노출하지 않는다」를 빈 배열이 아니라 **근거 프레임 0건**이
+    // 말한다. `retrieval.completed`에는 evidence 키 자체가 없다.
+    expectExactKeys(retrievalCompleted, ['eventType']);
+    expect(eventsOf(scoreGateEvents, 'retrieval.evidence')).toHaveLength(0);
     expectExactKeys(abstained, [
       'eventType',
       'message',
@@ -969,7 +978,10 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
       'searched',
       'reranked',
     ]);
-    expectExactKeys(eventOf(happyEvents, 'answer.started'), ['eventType']);
+    expectExactKeys(eventOf(happyEvents, 'answer.started'), [
+      'eventType',
+      'evidenceCount',
+    ]);
 
     expectExactKeys(eventOf(happyEvents, 'message.accepted'), [
       'eventType',
@@ -981,10 +993,8 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
       'eventType',
       'requestId',
     ]);
-    expectExactKeys(eventOf(happyEvents, 'retrieval.completed'), [
-      'eventType',
-      'evidence',
-    ]);
+    // docs/specs/47이 evidence를 근거 프레임으로 옮겼다 — 이 이벤트는 종결 표지만 남는다
+    expectExactKeys(eventOf(happyEvents, 'retrieval.completed'), ['eventType']);
     for (const delta of eventsOf(happyEvents, 'answer.delta')) {
       expectExactKeys(delta, ['eventType', 'messageId', 'seq', 'delta']);
     }

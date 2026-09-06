@@ -138,13 +138,18 @@ export class ConversationController {
   @ApiOperation({
     summary: '질문 전송 + SSE 스트리밍 답변',
     description:
-      'message.accepted → retrieval.started → retrieval.progress(stage) → retrieval.completed → ' +
-      'answer.started → answer.delta(seq) → answer.completed | answer.abstained | error. ' +
+      'message.accepted → retrieval.started → retrieval.progress(stage) → answer.started → ' +
+      'retrieval.evidence(index,total) × N → retrieval.completed → answer.delta(seq) → ' +
+      'answer.completed | answer.abstained | error. ' +
       'retrieval.progress의 stage는 embedded·searched·reranked이며 **실제로 일어난 단계만** 나간다 ' +
       '— 리랭크가 꺼져 있거나 기권으로 먼저 이탈하면 그 단계는 오지 않는다. ' +
       'candidates(검색이 반환한 후보 수)는 stage=searched에만 실린다. ' +
-      'answer.started는 LLM 호출 직전에 나가며 아무것도 싣지 않는다 — 생성 게이트가 발화해 ' +
-      '기권하는 경우에도 이미 발신돼 있다. 15초 heartbeat 주석 전송.',
+      'answer.started는 검색 게이트를 통과해 답변 생성으로 넘어가는 경계이며 큰 프레임보다 ' +
+      '**앞에** 나간다 — evidenceCount(최종 근거 수)만 싣고 근거 배열은 싣지 않는다. ' +
+      '검색 게이트(근거 0건·거리 컷·점수 컷) 기권에는 나가지 않고, 생성 게이트 기권에는 ' +
+      '이미 발신돼 있다. 근거는 retrieval.evidence로 **1건당 한 프레임**씩 리랭크 순위대로 나가며 ' +
+      'index는 0부터 연속, total은 모든 프레임에서 같다 — retrieval.completed는 근거를 싣지 않는다. ' +
+      '15초 heartbeat 주석 전송.',
   })
   @ApiProduces('text/event-stream')
   async streamMessage(

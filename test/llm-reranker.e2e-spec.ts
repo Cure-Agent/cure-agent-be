@@ -173,22 +173,24 @@ function eventOf(events: SseEvent[], eventType: string): SseEvent {
 /**
  * EvidenceDetail의 안정 필드인 id(= evidence_chunks.id)만 꺼내 순서를 비교한다.
  * (동결 전 기계적 수정: DTO에 content 필드가 없어 접근자만 id로 교정 — 단언 의미 불변)
+ *
+ * 근거는 docs/specs/47부터 `retrieval.evidence` 프레임으로 **1건씩** 오고 발신 순서가 곧 리랭크
+ * 순위다 — 관측 지점만 옮겼고 단언하는 순서의 의미는 그대로다.
  */
-function evidenceIds(event: SseEvent): string[] {
-  if (!Array.isArray(event.evidence)) {
-    throw new Error('retrieval.completed evidence가 배열이 아닙니다.');
-  }
-
-  return event.evidence.map((item) => {
-    if (typeof item !== 'object' || item === null) {
-      throw new Error('evidence 항목이 객체가 아닙니다.');
-    }
-    const id = (item as { id?: unknown }).id;
-    if (typeof id !== 'string') {
-      throw new Error('evidence 항목에 문자열 id가 없습니다.');
-    }
-    return id;
-  });
+function evidenceIds(events: SseEvent[]): string[] {
+  return events
+    .filter((event) => event.eventType === 'retrieval.evidence')
+    .map((event) => {
+      const item = event.evidence;
+      if (typeof item !== 'object' || item === null) {
+        throw new Error('retrieval.evidence의 evidence가 객체가 아닙니다.');
+      }
+      const id = (item as { id?: unknown }).id;
+      if (typeof id !== 'string') {
+        throw new Error('evidence 항목에 문자열 id가 없습니다.');
+      }
+      return id;
+    });
 }
 
 /** 라벨에 '리랭크'가 있는 행의 마지막 숫자를 지표 값으로 읽는다. */
@@ -427,9 +429,7 @@ describe('spec 29: LLM 리랭커 K=30 재정렬과 관련도 게이트', () => {
         reverseCookie,
         'req-rerank-reverse',
       );
-      const retrievalCompleted = eventOf(events, 'retrieval.completed');
-
-      expect(evidenceIds(retrievalCompleted)).toEqual(
+      expect(evidenceIds(events)).toEqual(
         [...cosineOrder].reverse().slice(0, 5),
       );
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
@@ -463,14 +463,19 @@ describe('spec 29: LLM 리랭커 K=30 재정렬과 관련도 게이트', () => {
   });
 
   describe('기준 3: 점수 기권 노출 규약', () => {
-    it('기준 3a: 점수 기권의 retrieval.completed는 빈 evidence를 싣는다', async () => {
+    // docs/specs/47: 「빈 evidence 배열」이 지고 있던 사실을 **근거 프레임 0건**이 대신 진다.
+    // `retrieval.completed`는 더 이상 근거를 싣지 않으므로 빈 배열도 남지 않는다.
+    it('기준 3a: 점수 기권은 근거 프레임을 하나도 보내지 않는다', async () => {
       const events = await askInNewConversation(
         lowScoreApp,
         lowScoreCookie,
         'req-rerank-low-score-evidence',
       );
 
-      expect(eventOf(events, 'retrieval.completed').evidence).toEqual([]);
+      expect(evidenceIds(events)).toEqual([]);
+      expect(eventOf(events, 'retrieval.completed')).not.toHaveProperty(
+        'evidence',
+      );
     });
 
     it('기준 3b: 점수 기권은 beyond_cutoff와 같은 reason 문구를 전달한다', async () => {
@@ -540,7 +545,7 @@ describe('spec 29: LLM 리랭커 K=30 재정렬과 관련도 게이트', () => {
       );
 
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(evidenceIds(eventOf(events, 'retrieval.completed'))).toEqual(
+      expect(evidenceIds(events)).toEqual(
         cosineOrder,
       );
       expect(throwReranker.calls - callsBefore).toBe(1);
@@ -620,7 +625,7 @@ describe('spec 29: LLM 리랭커 K=30 재정렬과 관련도 게이트', () => {
       );
 
       expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(evidenceIds(eventOf(events, 'retrieval.completed'))).toEqual(
+      expect(evidenceIds(events)).toEqual(
         cosineOrder,
       );
     });
