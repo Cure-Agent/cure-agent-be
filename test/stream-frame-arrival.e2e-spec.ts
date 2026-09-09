@@ -97,7 +97,7 @@ interface TestRetrievalConfig {
   rerankScoreCutoff: number;
   hybridEnabled: boolean;
   vocabPrefilterEnabled: boolean;
-  vocabCommonDfRatio: number;
+  keywordCandidateBudget: number;
 }
 
 interface ByteReader {
@@ -547,7 +547,7 @@ describe('spec 47: 근거 프레임 도착 순서 계약', () => {
     rerankScoreCutoff: SCORE_CUTOFF,
     hybridEnabled: true,
     vocabPrefilterEnabled: true,
-    vocabCommonDfRatio: 0.05,
+    keywordCandidateBudget: 75,
   };
 
   const withGateEnv = async <T>(

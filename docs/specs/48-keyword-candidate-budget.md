@@ -162,7 +162,7 @@ BM25에 필요한 값이 §45가 이미 저장한 `keyword_vocab(term, chunk_ixs
 
 | 진입점 | 변경 |
 |---|---|
-| `keyword-vocabulary.service.ts` | ⑴ 스냅샷에 `docLen: Int32Array`(ix → 그 청크를 가리키는 어휘 항 수)와 `avgDocLen`을 추가 — **포스팅에서 파생**하므로 표를 안 건드린다. `markSize` 확정 **뒤에** 세야 배열을 잡을 수 있다 ⑵ `selectCandidates(query)`의 후보 생성 규칙을 **전 토큰 BM25 상위 N**으로 교체 — 흔한 토큰을 버리지 않으므로 `TokenSelection.common`은 관측용으로만 남는다 ⑶ 동점 2차 정렬은 청크 id 오름차순 |
+| `keyword-vocabulary.service.ts` | ⑴ 스냅샷에 `docLen: Int32Array`(ix → 그 청크를 가리키는 어휘 항 수)와 `avgDocLen`을 추가 — **포스팅에서 파생**하므로 표를 안 건드린다. `markSize` 확정 **뒤에** 세야 배열을 잡을 수 있다 ⑵ `selectCandidates(query)`의 후보 생성 규칙을 **전 토큰 BM25 상위 N**으로 교체 — 흔한 토큰을 버리지 않으므로 `TokenSelection.common`은 관측용으로만 남는다. 컷은 **코드 상수 0.05**로 고정되며 env로 바꿀 수 없다(기준 25) — 「§45 기준으로는 흔했다」를 읽는 라벨이지 동작이 아니다 ⑶ 동점 2차 정렬은 청크 id 오름차순 |
 | `retrieval.service.ts` | ⑴ `keywordCandidates()`가 **요청 필터가 하나라도 있으면 `null`**을 반환 ⑵ `hybridPolicyVersion()`의 `-vocab{컷}` → `-bm25{예산}`, 버전 `v5` → `v6`(꺼지면 v4 그대로) |
 | `retrieval.config.ts` | `vocabCommonDfRatio` **제거**, `keywordCandidateBudget`(`RETRIEVAL_KEYWORD_CANDIDATE_BUDGET`, 기본 **75**) 신설. `vocabPrefilterEnabled`는 그대로. 기본값 코드 소유(#156 규약) |
 | `.env.example` · compose | `RETRIEVAL_VOCAB_COMMON_DF_RATIO` 제거, `RETRIEVAL_KEYWORD_CANDIDATE_BUDGET` 추가 |
@@ -174,6 +174,9 @@ BM25에 필요한 값이 §45가 이미 저장한 `keyword_vocab(term, chunk_ixs
 - **IDF**: `ln(1 + (N − df + 0.5) / (df + 0.5))` — 항상 양수라 흔한 토큰이 죽지 않고 작아지기만 한다.
 - **점수**: `Σ_토큰 IDF × (tf × (k1 + 1)) / (tf + k1 × (1 − b + b × dl / avgdl))`, `k1 = 1.2` · `b = 0.75`.
 - **`avgdl`** = 포스팅 총합 ÷ `N`. **`N`** = 어휘가 덮는 청크 수(§45 정의).
+- **채점 대상**: 질의 토큰이 **하나라도 가리킨 청크**뿐이다(= 점수 > 0). 미매칭 청크를 0점으로 정렬에
+  넣지 않는다 — 넣으면 희소 토큰 하나만 걸린 질의에서 남는 칸이 **id가 작은 0점 청크로 임의 충전**되고,
+  기준 9의 「후보 0건 → 전량 스캔」이 규칙에서 나오지 않아 별도 예외가 된다.
 - **후보**: 점수 내림차순 · 청크 id 오름차순으로 상위 `budget`. **점수는 후보 확정 후 버린다.**
 - 토큰 확장·DF 산출·토크나이저 규칙은 §45 그대로다 — 이 스텝은 그 위의 선택 규칙만 바꾼다.
 
@@ -191,7 +194,7 @@ BM25에 필요한 값이 §45가 이미 저장한 `keyword_vocab(term, chunk_ixs
 **BM25가 후보를 고른다**
 
 1. 후보 수가 예산을 넘지 않는다 (유닛)
-2. 어휘가 덮는 청크가 예산보다 적으면 그 전부가 후보다 (유닛)
+2. **질의 토큰이 가리킨 청크**가 예산보다 적으면 그 전부가 후보다 (유닛)
 3. DF가 컷을 초과하던 **흔한 토큰도 후보 생성에 기여한다** — 그 토큰만 가리키는 청크가 후보에 들 수 있다 (유닛 — §45 기준 4·5를 **대체**한다)
 4. 같은 토큰이 여러 어절형으로 나타나는 청크가 한 형으로만 나타나는 청크보다 높은 점수를 받는다 (유닛 — tf 정의)
 5. `df`가 큰 토큰의 기여가 `df`가 작은 토큰의 기여보다 작다 (유닛 — IDF 방향)

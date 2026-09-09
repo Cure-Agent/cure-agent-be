@@ -62,7 +62,7 @@ interface TestRetrievalConfig {
   rerankScoreCutoff: number;
   hybridEnabled: boolean;
   vocabPrefilterEnabled: boolean;
-  vocabCommonDfRatio: number;
+  keywordCandidateBudget: number;
 }
 
 interface ByteReader {
@@ -432,7 +432,7 @@ describe('spec 46: 답변 SSE 진행 단계 이벤트', () => {
     rerankScoreCutoff: SCORE_CUTOFF,
     hybridEnabled: true,
     vocabPrefilterEnabled: true,
-    vocabCommonDfRatio: 0.05,
+    keywordCandidateBudget: 75,
   };
 
   const withGateEnv = async <T>(
