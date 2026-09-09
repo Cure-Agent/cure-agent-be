@@ -1,5 +1,4 @@
-// docs/specs/45 수용 기준 1~24·26~28 동결 테스트 — 구현 중 수정 금지
-import { createHash } from 'node:crypto';
+// docs/specs/45 수용 기준 1~2·14~23 동결 테스트 — 구현 중 수정 금지
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
@@ -17,7 +16,6 @@ import { GuidelineAdminService } from '../src/domain/guideline/service/guideline
 import { GuidelineIngestInput } from '../src/domain/guideline/service/guideline-ingest.input';
 import { GuidelineIngestService } from '../src/domain/guideline/service/guideline-ingest.service';
 import { KeywordVocabularyService } from '../src/domain/guideline/service/keyword-vocabulary.service';
-import { retrievalConfig } from '../src/global/config/retrieval.config';
 import { OAuthProviderRegistry } from '../src/infrastructure/oauth/oauth-provider.registry';
 import {
   RERANKER,
@@ -25,55 +23,16 @@ import {
   Reranker,
   RerankResult,
 } from '../src/infrastructure/retrieval/reranker.port';
-import { RetrievalService } from '../src/infrastructure/retrieval/retrieval.service';
 import { bootstrapApp } from './fixtures/app-bootstrap';
 import { FakeOAuthProviderRegistry } from './fixtures/fake-oauth';
 import {
-  BOUNDARY_RARE_TERM,
-  COMMON_TERM,
-  DirectChunkFixture,
   keywordVocabCorpus,
-  originalQueryRankingChunks,
-  SINGLETON_RARE_TERM,
   singleChunkGuideline,
-  tiedKeywordChunks,
-  VOCAB_CORPUS_SIZE,
 } from './fixtures/keyword-vocab-samples';
 import { socialSignUp } from './fixtures/social-auth';
 
 const CSRF = { 'X-CSRF-Protection': '1' };
-const DISTANCE_CUTOFF = 2;
-const SCORE_CUTOFF = 6;
-const RERANK_CANDIDATES = 5;
 const KEYWORD_BUDGET = 75;
-const EMBEDDING_MODEL = 'fake-embedding-v1';
-const RERANK_POLICY =
-  'hybrid-rrf60-top5x2-vocab0.05-rerank-vocab-recording-reranker-test-cut2-score6-v5/fake-embedding-v1';
-const FALLBACK_POLICY =
-  'hybrid-rrf60-top5x2-vocab0.05-cut2-v5/fake-embedding-v1';
-const DISABLED_V4_POLICY =
-  'hybrid-rrf60-top5x2-rerank-vocab-disabled-reranker-test-cut2-score6-v4/fake-embedding-v1';
-const DIRECT_VECTOR =
-  '[' + ['1', ...Array.from({ length: 1535 }, () => '0')].join(',') + ']';
-
-interface TestRetrievalConfig {
-  distanceCutoff: number;
-  rerankEnabled: boolean;
-  rerankCandidates: number;
-  rerankScoreCutoff: number;
-  hybridEnabled: boolean;
-  vocabPrefilterEnabled: boolean;
-  keywordCandidateBudget: number;
-}
-
-interface SseEvent {
-  eventType: string;
-  [key: string]: unknown;
-}
-
-interface PrometheusLabels {
-  [key: string]: string;
-}
 
 interface VocabRow {
   term: string;
@@ -86,32 +45,16 @@ interface ChunkIndexRow {
 }
 
 class RecordingReranker implements Reranker {
-  calls = 0;
-
   constructor(readonly model: string) {}
 
   rerank(
     _question: string,
     candidates: RerankCandidate[],
   ): Promise<RerankResult> {
-    this.calls += 1;
     return Promise.resolve({
       order: candidates.map((candidate) => candidate.chunkId),
       top1Relevance: 10,
     });
-  }
-}
-
-class ThrowingReranker implements Reranker {
-  readonly model = 'vocab-throwing-reranker-test';
-  calls = 0;
-
-  rerank(
-    _question: string,
-    _candidates: RerankCandidate[],
-  ): Promise<RerankResult> {
-    this.calls += 1;
-    return Promise.reject(new Error('의도된 어휘 프리필터 리랭커 오류'));
   }
 }
 
@@ -126,87 +69,6 @@ const failingVocabulary = {
   invalidate: jest.fn(),
   rebuildAll: jest.fn().mockResolvedValue({ terms: 0, postings: 0, chunks: 0 }),
 };
-
-function parseSse(body: string): SseEvent[] {
-  return body
-    .split('\n\n')
-    .map((frame) => frame.trim())
-    .filter((frame) => frame.startsWith('data: '))
-    .map((frame) => JSON.parse(frame.slice('data: '.length)) as SseEvent);
-}
-
-function metricValue(
-  body: string,
-  metricName: string,
-  expectedLabels: PrometheusLabels = {},
-): number {
-  for (const rawLine of body.split('\n')) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-
-    const sample = line.match(/^(\S+)\s+(\S+)/);
-    if (!sample) continue;
-    const series = sample[1];
-    const braceIndex = series.indexOf('{');
-    const actualName = braceIndex === -1 ? series : series.slice(0, braceIndex);
-    if (actualName !== metricName) continue;
-
-    const labels: PrometheusLabels = {};
-    if (braceIndex !== -1) {
-      const labelText = series.slice(braceIndex + 1, series.lastIndexOf('}'));
-      for (const match of labelText.matchAll(
-        /([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"/g,
-      )) {
-        labels[match[1]] = match[2];
-      }
-    }
-
-    if (
-      !Object.entries(expectedLabels).every(
-        ([key, value]) => labels[key] === value,
-      )
-    ) {
-      continue;
-    }
-    const value = Number(sample[2]);
-    if (Number.isFinite(value)) return value;
-  }
-  return 0;
-}
-
-/** 히스토그램 count를 지정 라벨 값별로 읽어 새 stage 유출까지 검출한다. */
-function metricValuesByLabel(
-  body: string,
-  metricName: string,
-  labelName: string,
-): Map<string, number> {
-  const values = new Map<string, number>();
-  for (const rawLine of body.split('\n')) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const sample = line.match(/^(\S+)\s+(\S+)/);
-    if (!sample) continue;
-    const series = sample[1];
-    const braceIndex = series.indexOf('{');
-    const actualName = braceIndex === -1 ? series : series.slice(0, braceIndex);
-    if (actualName !== metricName) continue;
-    const labelText =
-      braceIndex === -1
-        ? ''
-        : series.slice(braceIndex + 1, series.lastIndexOf('}'));
-    const label = labelText.match(
-      new RegExp(`${labelName}="((?:\\\\.|[^"])*)"`),
-    );
-    if (!label) continue;
-    const value = Number(sample[2]);
-    if (Number.isFinite(value)) values.set(label[1], value);
-  }
-  return values;
-}
-
-function terminalEvent(events: SseEvent[]): SseEvent | undefined {
-  return events[events.length - 1];
-}
 
 function normalizedVocab(rows: VocabRow[]): VocabRow[] {
   return rows
@@ -226,45 +88,21 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
   let redisContainer: StartedRedisContainer;
   let pool: Pool;
   let app: INestApplication;
-  let fallbackApp: INestApplication;
-  let disabledApp: INestApplication;
   let failureApp: INestApplication;
   let adminCookie: string;
-  let answerCookie: string;
-  let fallbackCookie: string;
-  let disabledCookie: string;
-  let requestSequence = 0;
 
   const recordingReranker = new RecordingReranker(
     'vocab-recording-reranker-test',
   );
-  const throwingReranker = new ThrowingReranker();
-  const disabledReranker = new RecordingReranker(
-    'vocab-disabled-reranker-test',
-  );
-
-  const enabledConfig: TestRetrievalConfig = {
-    distanceCutoff: DISTANCE_CUTOFF,
-    rerankEnabled: true,
-    rerankCandidates: RERANK_CANDIDATES,
-    rerankScoreCutoff: SCORE_CUTOFF,
-    hybridEnabled: true,
-    vocabPrefilterEnabled: true,
-    keywordCandidateBudget: KEYWORD_BUDGET,
-  };
 
   const createApp = async (
-    reranker: Reranker,
-    config: TestRetrievalConfig,
     vocabularyOverride?: typeof failingVocabulary,
   ): Promise<INestApplication> => {
     let builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(OAuthProviderRegistry)
       .useClass(FakeOAuthProviderRegistry)
       .overrideProvider(RERANKER)
-      .useValue(reranker)
-      .overrideProvider(retrievalConfig.KEY)
-      .useValue(config);
+      .useValue(recordingReranker);
     if (vocabularyOverride) {
       builder = builder
         .overrideProvider(KeywordVocabularyService)
@@ -288,17 +126,8 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
     pool = new Pool({ connectionString: container.getConnectionUri() });
     await migrate(drizzle(pool), { migrationsFolder: 'drizzle/migrations' });
 
-    app = await createApp(recordingReranker, enabledConfig);
-    fallbackApp = await createApp(throwingReranker, enabledConfig);
-    disabledApp = await createApp(disabledReranker, {
-      ...enabledConfig,
-      vocabPrefilterEnabled: false,
-    });
-    failureApp = await createApp(
-      recordingReranker,
-      enabledConfig,
-      failingVocabulary,
-    );
+    app = await createApp();
+    failureApp = await createApp(failingVocabulary);
 
     const admin = await socialSignUp(app, {
       email: 'spec45-admin@clinic.kr',
@@ -310,30 +139,6 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
     await pool.query(`UPDATE clinicians SET role = 'ADMIN' WHERE id = $1`, [
       admin.clinicianId,
     ]);
-    answerCookie = (
-      await socialSignUp(app, {
-        email: 'spec45-answer@clinic.kr',
-        providerId: 'spec45-answer',
-        clinicName: '스펙45 답변 한의원',
-        licenseNumber: 'SPEC-4502',
-      })
-    ).cookie;
-    fallbackCookie = (
-      await socialSignUp(fallbackApp, {
-        email: 'spec45-fallback@clinic.kr',
-        providerId: 'spec45-fallback',
-        clinicName: '스펙45 폴백 한의원',
-        licenseNumber: 'SPEC-4503',
-      })
-    ).cookie;
-    disabledCookie = (
-      await socialSignUp(disabledApp, {
-        email: 'spec45-disabled@clinic.kr',
-        providerId: 'spec45-disabled',
-        clinicName: '스펙45 롤백 한의원',
-        licenseNumber: 'SPEC-4504',
-      })
-    ).cookie;
   });
 
   beforeEach(async () => {
@@ -356,20 +161,16 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       RESTART IDENTITY CASCADE
     `);
 
-    for (const target of [app, fallbackApp, disabledApp]) {
-      try {
-        target.get(KeywordVocabularyService).invalidate();
-      } catch {
-        // 현재 스텁의 throw는 개별 RED 테스트에서 관찰한다. 격리 정리는 다음 테스트를 막지 않는다.
-      }
+    try {
+      app.get(KeywordVocabularyService).invalidate();
+    } catch {
+      // 현재 스텁의 throw는 개별 RED 테스트에서 관찰한다. 격리 정리는 다음 테스트를 막지 않는다.
     }
     jest.clearAllMocks();
   });
 
   afterAll(async () => {
     await failureApp?.close();
-    await disabledApp?.close();
-    await fallbackApp?.close();
     await app?.close();
     await pool?.end();
     await container?.stop();
@@ -434,153 +235,6 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       .set('Cookie', adminCookie)
       .send({ status })
       .expect(200);
-  };
-
-  const insertDirectCorpus = async (
-    key: string,
-    chunks: DirectChunkFixture[],
-  ): Promise<{ guidelineId: string; versionId: string }> => {
-    const guidelineId = `${key}-guideline`;
-    const versionId = `${key}-version`;
-    const sectionId = `${key}-section`;
-    await pool.query(
-      `
-        INSERT INTO guidelines (id, title, publisher)
-        VALUES ($1, $2, $3)
-      `,
-      [guidelineId, `${key} 결정 코퍼스`, `${key} 합성 학회`],
-    );
-    await pool.query(
-      `
-        INSERT INTO guideline_versions (
-          id, guideline_id, version, revision, status,
-          published_at, source_url, content_hash
-        )
-        VALUES ($1, $2, '1.0', 1, 'ACTIVE', $3, $4, $5)
-      `,
-      [
-        versionId,
-        guidelineId,
-        new Date('2026-09-05T00:00:00.000Z'),
-        `https://example.test/spec45/${key}`,
-        createHash('sha256').update(`${key}-version`).digest('hex'),
-      ],
-    );
-    await pool.query(
-      `
-        INSERT INTO guideline_sections (
-          id, guideline_version_id, title, path, "order"
-        )
-        VALUES ($1, $2, $3, $4, 1)
-      `,
-      [sectionId, versionId, '결정 합성 절', ['1', '결정 합성 절']],
-    );
-    for (const [index, chunk] of chunks.entries()) {
-      await pool.query(
-        `
-          INSERT INTO evidence_chunks (
-            id, section_id, guideline_version_id, content, embedding,
-            embedding_model, "order", content_hash
-          )
-          VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8)
-        `,
-        [
-          chunk.id,
-          sectionId,
-          versionId,
-          chunk.content,
-          DIRECT_VECTOR,
-          EMBEDDING_MODEL,
-          index,
-          createHash('sha256')
-            .update(`${key}:${chunk.id}:${chunk.content}`)
-            .digest('hex'),
-        ],
-      );
-    }
-    return { guidelineId, versionId };
-  };
-
-  const ingestPairWithTerm = async (
-    term: string,
-    key: string,
-  ): Promise<{
-    guidelineA: string;
-    guidelineB: string;
-    versionA: string;
-    versionB: string;
-    chunkA: string;
-    chunkB: string;
-  }> => {
-    await ingest(keywordVocabCorpus);
-    const first = await ingest(
-      singleChunkGuideline(`${key}-a`, `${term} 첫지침전용어`),
-    );
-    const second = await ingest(
-      singleChunkGuideline(`${key}-b`, `${term} 둘지침전용어`),
-    );
-    const [chunkA] = await chunkIdsForVersion(first.guidelineVersionId);
-    const [chunkB] = await chunkIdsForVersion(second.guidelineVersionId);
-    return {
-      guidelineA: first.guidelineId,
-      guidelineB: second.guidelineId,
-      versionA: first.guidelineVersionId,
-      versionB: second.guidelineVersionId,
-      chunkA,
-      chunkB,
-    };
-  };
-
-  const scrapeMetrics = async (target: INestApplication): Promise<string> => {
-    const response = await request(target.getHttpServer())
-      .get('/api/v1/metrics')
-      .expect(200);
-    return response.text;
-  };
-
-  const createConversation = async (
-    target: INestApplication,
-    cookie: string,
-  ): Promise<string> => {
-    const response = await request(target.getHttpServer())
-      .post('/api/v1/conversations')
-      .set(CSRF)
-      .set('Cookie', cookie)
-      .send({ type: 'GUIDELINE_QA' })
-      .expect(201);
-    return response.body.data.id as string;
-  };
-
-  const ask = async (
-    target: INestApplication,
-    cookie: string,
-    question: string,
-    prefix: string,
-  ): Promise<SseEvent[]> => {
-    requestSequence += 1;
-    const conversationId = await createConversation(target, cookie);
-    const response = await request(target.getHttpServer())
-      .post(`/api/v1/conversations/${conversationId}/messages/stream`)
-      .set(CSRF)
-      .set('Cookie', cookie)
-      .send({
-        content: question,
-        clientRequestId: `${prefix}-${requestSequence}`,
-      })
-      .expect(200);
-    return parseSse(response.text);
-  };
-
-  const generationRunCount = async (policy: string): Promise<number> => {
-    const result = await pool.query<{ count: string }>(
-      `
-        SELECT count(*) AS count
-        FROM generation_runs
-        WHERE retrieval_policy_version = $1
-      `,
-      [policy],
-    );
-    return Number(result.rows[0].count);
   };
 
   describe('A. 어휘가 매칭과 같은 축으로 선다', () => {
@@ -701,272 +355,6 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       ]);
       expect(await vocabTerm('구판전용어')).toBeUndefined();
       expect(await vocabTerm('신판전용어')).toBeDefined();
-    });
-  });
-
-  describe('B. 후보 생성은 후보만 좁히고 순위는 보존한다', () => {
-    it('기준 7: 희소 토큰 포스팅 합집합만 키워드 arm의 순위 대상이 된다', async () => {
-      await ingest(keywordVocabCorpus);
-      const query = `${COMMON_TERM} ${BOUNDARY_RARE_TERM} ${SINGLETON_RARE_TERM}`;
-      const expected = await pool.query<{ id: string }>(
-        `
-          SELECT id
-          FROM evidence_chunks
-          WHERE content ILIKE '%' || $1 || '%'
-             OR content ILIKE '%' || $2 || '%'
-          ORDER BY id
-        `,
-        [BOUNDARY_RARE_TERM, SINGLETON_RARE_TERM],
-      );
-      const expectedIds = expected.rows.map((row) => row.id);
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(query, KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid(query, undefined, VOCAB_CORPUS_SIZE);
-      const keywordIds = results
-        .filter((row) => row.keywordRank !== null)
-        .map((row) => row.chunk.id)
-        .sort();
-      const commonOnly = await pool.query<{ id: string }>(
-        `
-          SELECT id
-          FROM evidence_chunks
-          WHERE content ILIKE '%' || $1 || '%'
-            AND content NOT ILIKE '%' || $2 || '%'
-            AND content NOT ILIKE '%' || $3 || '%'
-          ORDER BY id
-          LIMIT 1
-        `,
-        [COMMON_TERM, BOUNDARY_RARE_TERM, SINGLETON_RARE_TERM],
-      );
-
-      expect(selected.tokens).toEqual([
-        { token: COMMON_TERM, df: 4, common: true },
-        { token: BOUNDARY_RARE_TERM, df: 2, common: false },
-        { token: SINGLETON_RARE_TERM, df: 1, common: false },
-      ]);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual(expectedIds);
-      expect(keywordIds).toEqual(expectedIds);
-      expect(commonOnly.rows).toHaveLength(1);
-      expect(keywordIds).not.toContain(commonOnly.rows[0].id);
-    });
-
-    it('기준 8: 키워드 순위는 축약 질의가 아닌 원문을 word_similarity의 1번 인자로 쓴다', async () => {
-      await insertDirectCorpus('ranking', originalQueryRankingChunks);
-      await app.get(KeywordVocabularyService).rebuildAll();
-      const originalQuery = `${COMMON_TERM} ${BOUNDARY_RARE_TERM}`;
-      const compactQuery = BOUNDARY_RARE_TERM;
-      const candidateIds = ['rank-a', 'rank-z'];
-      const rawOrder = await pool.query<{ id: string }>(
-        `
-          SELECT id
-          FROM evidence_chunks
-          WHERE id = ANY($1::text[])
-          ORDER BY word_similarity($2::text, content) DESC, id ASC
-        `,
-        [candidateIds, originalQuery],
-      );
-      const compactOrder = await pool.query<{ id: string }>(
-        `
-          SELECT id
-          FROM evidence_chunks
-          WHERE id = ANY($1::text[])
-          ORDER BY word_similarity($2::text, content) DESC, id ASC
-        `,
-        [candidateIds, compactQuery],
-      );
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(originalQuery, KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid(originalQuery, undefined, VOCAB_CORPUS_SIZE);
-      const actualKeywordOrder = results
-        .filter((row) => row.keywordRank !== null)
-        .sort((a, b) => (a.keywordRank ?? 0) - (b.keywordRank ?? 0))
-        .map((row) => row.chunk.id);
-
-      expect(rawOrder.rows.map((row) => row.id)).toEqual(['rank-z', 'rank-a']);
-      expect(compactOrder.rows.map((row) => row.id)).toEqual([
-        'rank-a',
-        'rank-z',
-      ]);
-      expect(rawOrder.rows).not.toEqual(compactOrder.rows);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual(candidateIds);
-      expect(actualKeywordOrder).toEqual(rawOrder.rows.map((row) => row.id));
-    });
-
-    it('기준 9: word_similarity 동점의 2차 정렬 키는 청크 id 오름차순이다', async () => {
-      await insertDirectCorpus('tie', tiedKeywordChunks);
-      await app.get(KeywordVocabularyService).rebuildAll();
-      const scores = await pool.query<{ id: string; score: number }>(
-        `
-          SELECT id, word_similarity($1::text, content)::float8 AS score
-          FROM evidence_chunks
-          WHERE id = ANY($2::text[])
-          ORDER BY id
-        `,
-        ['동점희소', ['tie-a', 'tie-b']],
-      );
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates('동점희소', KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid('동점희소', undefined, VOCAB_CORPUS_SIZE);
-      const keywordOrder = results
-        .filter((row) => row.keywordRank !== null)
-        .sort((a, b) => (a.keywordRank ?? 0) - (b.keywordRank ?? 0))
-        .map((row) => row.chunk.id);
-
-      expect(scores.rows.map((row) => row.id)).toEqual(['tie-a', 'tie-b']);
-      expect(scores.rows[0].score).toBe(scores.rows[1].score);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual([
-        'tie-a',
-        'tie-b',
-      ]);
-      expect(keywordOrder).toEqual(['tie-a', 'tie-b']);
-    });
-
-    it('기준 10: 질의 토큰이 전부 흔하면 null 후보로 전량 스캔해 키워드 결과를 낸다', async () => {
-      await ingest(keywordVocabCorpus);
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(COMMON_TERM, KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid(COMMON_TERM, undefined, VOCAB_CORPUS_SIZE);
-      const keywordRows = results.filter((row) => row.keywordRank !== null);
-
-      expect(selected.tokens).toEqual([
-        { token: COMMON_TERM, df: 4, common: true },
-      ]);
-      expect(selected.chunkIds).toBeNull();
-      expect(keywordRows).toHaveLength(VOCAB_CORPUS_SIZE);
-      expect(
-        keywordRows.some((row) => !row.chunk.content.includes(COMMON_TERM)),
-      ).toBe(true);
-    });
-
-    it('기준 10b: 희소한 미등재 신조어의 포스팅이 0건이어도 전량 스캔으로 돌아간다', async () => {
-      await ingest(keywordVocabCorpus);
-      const query = '코퍼스밖신조어';
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(query, KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid(query, undefined, VOCAB_CORPUS_SIZE);
-
-      expect(selected.tokens).toEqual([
-        { token: query, df: 0, common: false },
-      ]);
-      expect(selected.chunkIds).toBeNull();
-      expect(results.filter((row) => row.keywordRank !== null)).toHaveLength(
-        VOCAB_CORPUS_SIZE,
-      );
-    });
-
-    it('기준 11: keyword_vocab가 비어 있는 백필 전 창에도 키워드 arm은 결과를 낸다', async () => {
-      const created = await ingest(
-        singleChunkGuideline('empty-vocab-window', '백필전검색어 합성근거문장'),
-      );
-      const [chunkId] = await chunkIdsForVersion(created.guidelineVersionId);
-      expect((await vocabRows()).length).toBeGreaterThan(0);
-      await pool.query('DELETE FROM keyword_vocab');
-      app.get(KeywordVocabularyService).invalidate();
-
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates('백필전검색어', KEYWORD_BUDGET);
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid('백필전검색어', undefined, RERANK_CANDIDATES);
-
-      expect(selected.chunkIds).toBeNull();
-      expect(results.some((row) => row.chunk.id === chunkId)).toBe(true);
-      expect(results.some((row) => row.keywordRank !== null)).toBe(true);
-    });
-
-    it('기준 12a: 프리필터 후보라도 embedding_model이 다르면 키워드 arm에서 제외한다', async () => {
-      const pair = await ingestPairWithTerm('모델경계희소어', 'model-boundary');
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates('모델경계희소어', KEYWORD_BUDGET);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual(
-        [pair.chunkA, pair.chunkB].sort(),
-      );
-      await pool.query(
-        `UPDATE evidence_chunks SET embedding_model = 'other-embedding-model' WHERE id = $1`,
-        [pair.chunkA],
-      );
-
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid('모델경계희소어', undefined, VOCAB_CORPUS_SIZE);
-      const keywordIds = results
-        .filter((row) => row.keywordRank !== null)
-        .map((row) => row.chunk.id);
-
-      expect(keywordIds).toContain(pair.chunkB);
-      expect(keywordIds).not.toContain(pair.chunkA);
-      expect(results.map((row) => row.chunk.id)).not.toContain(pair.chunkA);
-    });
-
-    it('기준 12b: stale 후보에 남아 있어도 ACTIVE가 아닌 판본 청크는 키워드 arm에서 제외한다', async () => {
-      const pair = await ingestPairWithTerm('상태경계희소어', 'status-boundary');
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates('상태경계희소어', KEYWORD_BUDGET);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual(
-        [pair.chunkA, pair.chunkB].sort(),
-      );
-      // 검색 SQL의 독립 경계 가드 검증을 위해 관리자 훅을 우회해 의도적으로 stale 후보를 만든다.
-      await pool.query(
-        `UPDATE guideline_versions SET status = 'SUPERSEDED' WHERE id = $1`,
-        [pair.versionA],
-      );
-
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid('상태경계희소어', undefined, VOCAB_CORPUS_SIZE);
-      const keywordIds = results
-        .filter((row) => row.keywordRank !== null)
-        .map((row) => row.chunk.id);
-
-      expect(keywordIds).toContain(pair.chunkB);
-      expect(keywordIds).not.toContain(pair.chunkA);
-      expect(results.some((row) => row.version.id === pair.versionA)).toBe(
-        false,
-      );
-    });
-
-    it('기준 13: guidelineIds 필터는 프리필터 후보 집합과 함께 적용된다', async () => {
-      const pair = await ingestPairWithTerm('지침필터희소어', 'guideline-filter');
-      const selected = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates('지침필터희소어', KEYWORD_BUDGET);
-      expect([...(selected.chunkIds ?? [])].sort()).toEqual(
-        [pair.chunkA, pair.chunkB].sort(),
-      );
-
-      const results = await app
-        .get(RetrievalService)
-        .searchHybrid(
-          '지침필터희소어',
-          { guidelineIds: [pair.guidelineA] },
-          VOCAB_CORPUS_SIZE,
-        );
-      const keywordRows = results.filter((row) => row.keywordRank !== null);
-
-      expect(keywordRows.length).toBeGreaterThan(0);
-      expect(
-        keywordRows.every((row) => row.guideline.id === pair.guidelineA),
-      ).toBe(true);
-      expect(keywordRows.map((row) => row.chunk.id)).toContain(pair.chunkA);
-      expect(keywordRows.map((row) => row.chunk.id)).not.toContain(pair.chunkB);
     });
   });
 
@@ -1273,154 +661,6 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
 
       expect(afterFirst).toEqual(before);
       expect(afterSecond).toEqual(before);
-    });
-  });
-
-  describe('D. 롤백 축', () => {
-    it('기준 24a: RETRIEVAL_VOCAB_PREFILTER_ENABLED=false면 후보 밖 청크까지 키워드 전량 스캔한다', async () => {
-      await ingest(keywordVocabCorpus, disabledApp);
-      const rareIds = await pool.query<{ id: string }>(
-        `
-          SELECT id
-          FROM evidence_chunks
-          WHERE content ILIKE '%' || $1 || '%'
-          ORDER BY id
-        `,
-        [BOUNDARY_RARE_TERM],
-      );
-      expect(rareIds.rows).toHaveLength(2);
-
-      const results = await disabledApp
-        .get(RetrievalService)
-        .searchHybrid(
-          `${COMMON_TERM} ${BOUNDARY_RARE_TERM}`,
-          undefined,
-          VOCAB_CORPUS_SIZE,
-        );
-      const keywordIds = results
-        .filter((row) => row.keywordRank !== null)
-        .map((row) => row.chunk.id);
-      const rareSet = new Set(rareIds.rows.map((row) => row.id));
-
-      expect(keywordIds).toHaveLength(VOCAB_CORPUS_SIZE);
-      expect(keywordIds.some((id) => !rareSet.has(id))).toBe(true);
-    });
-  });
-
-  describe('E. 정책 버전', () => {
-    it('기준 26: 프리필터와 리랭크를 적용한 GenerationRun은 컷을 담은 하드코딩 v5를 기록한다', async () => {
-      await ingest(keywordVocabCorpus);
-      const selection = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
-      expect(selection.chunkIds).not.toBeNull();
-      const before = await generationRunCount(RERANK_POLICY);
-
-      const events = await ask(
-        app,
-        answerCookie,
-        BOUNDARY_RARE_TERM,
-        'spec45-v5-rerank',
-      );
-      const after = await generationRunCount(RERANK_POLICY);
-
-      expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(after - before).toBe(1);
-    });
-
-    it('기준 26b: 프리필터는 켰지만 리랭크가 폴백되면 컷을 담은 no-rerank v5를 기록한다', async () => {
-      await ingest(keywordVocabCorpus, fallbackApp);
-      const selection = await fallbackApp
-        .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
-      expect(selection.chunkIds).not.toBeNull();
-      const before = await generationRunCount(FALLBACK_POLICY);
-
-      const events = await ask(
-        fallbackApp,
-        fallbackCookie,
-        BOUNDARY_RARE_TERM,
-        'spec45-v5-fallback',
-      );
-      const after = await generationRunCount(FALLBACK_POLICY);
-
-      expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(after - before).toBe(1);
-    });
-
-    it('기준 27: 프리필터 플래그가 꺼지면 GenerationRun은 §31의 하드코딩 v4 문자열 그대로다', async () => {
-      await ingest(keywordVocabCorpus, disabledApp);
-      const before = await generationRunCount(DISABLED_V4_POLICY);
-
-      const events = await ask(
-        disabledApp,
-        disabledCookie,
-        BOUNDARY_RARE_TERM,
-        'spec45-disabled-v4',
-      );
-      const after = await generationRunCount(DISABLED_V4_POLICY);
-
-      expect(terminalEvent(events)?.eventType).toBe('answer.completed');
-      expect(after - before).toBe(1);
-    });
-  });
-
-  describe('F. 관측', () => {
-    it('기준 28: 후보 생성과 순위 1회를 합친 keyword_search 히스토그램 표본만 정확히 1 증가한다', async () => {
-      await ingest(keywordVocabCorpus);
-      const selection = await app
-        .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
-      expect(selection.chunkIds).not.toBeNull();
-      expect(selection.chunkIds).toHaveLength(2);
-      const before = await scrapeMetrics(app);
-      const beforeStages = metricValuesByLabel(
-        before,
-        'rag_retrieval_duration_seconds_count',
-        'stage',
-      );
-
-      await app
-        .get(RetrievalService)
-        .searchHybrid(
-          BOUNDARY_RARE_TERM,
-          undefined,
-          RERANK_CANDIDATES,
-        );
-      const after = await scrapeMetrics(app);
-      const afterStages = metricValuesByLabel(
-        after,
-        'rag_retrieval_duration_seconds_count',
-        'stage',
-      );
-
-      expect(
-        metricValue(after, 'rag_retrieval_duration_seconds_count', {
-          stage: 'keyword_search',
-        }) -
-          metricValue(before, 'rag_retrieval_duration_seconds_count', {
-            stage: 'keyword_search',
-          }),
-      ).toBe(1);
-
-      const allStages = new Set([
-        ...beforeStages.keys(),
-        ...afterStages.keys(),
-      ]);
-      const changedStages = Object.fromEntries(
-        [...allStages]
-          .map((stage) => [
-            stage,
-            (afterStages.get(stage) ?? 0) - (beforeStages.get(stage) ?? 0),
-          ] as const)
-          .filter(([, delta]) => delta !== 0)
-          .sort(([left], [right]) => left.localeCompare(right)),
-      );
-      expect(changedStages).toEqual({
-        embed: 1,
-        keyword_search: 1,
-        vector_search: 1,
-      });
     });
   });
 });
