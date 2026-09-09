@@ -45,7 +45,7 @@ const CSRF = { 'X-CSRF-Protection': '1' };
 const DISTANCE_CUTOFF = 2;
 const SCORE_CUTOFF = 6;
 const RERANK_CANDIDATES = 5;
-const VOCAB_RATIO = 0.05;
+const KEYWORD_BUDGET = 75;
 const EMBEDDING_MODEL = 'fake-embedding-v1';
 const RERANK_POLICY =
   'hybrid-rrf60-top5x2-vocab0.05-rerank-vocab-recording-reranker-test-cut2-score6-v5/fake-embedding-v1';
@@ -63,7 +63,7 @@ interface TestRetrievalConfig {
   rerankScoreCutoff: number;
   hybridEnabled: boolean;
   vocabPrefilterEnabled: boolean;
-  vocabCommonDfRatio: number;
+  keywordCandidateBudget: number;
 }
 
 interface SseEvent {
@@ -250,7 +250,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
     rerankScoreCutoff: SCORE_CUTOFF,
     hybridEnabled: true,
     vocabPrefilterEnabled: true,
-    vocabCommonDfRatio: VOCAB_RATIO,
+    keywordCandidateBudget: KEYWORD_BUDGET,
   };
 
   const createApp = async (
@@ -589,7 +589,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const token = '임상';
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(token);
+        .selectCandidates(token, KEYWORD_BUDGET);
       const ilike = await pool.query<{ count: number }>(
         `
           SELECT count(DISTINCT ec.id)::int AS count
@@ -628,7 +628,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       );
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(token);
+        .selectCandidates(token, KEYWORD_BUDGET);
       const tokenSelection = selected.tokens.find(
         (candidate) => candidate.token === token,
       );
@@ -721,7 +721,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const expectedIds = expected.rows.map((row) => row.id);
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(query);
+        .selectCandidates(query, KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid(query, undefined, VOCAB_CORPUS_SIZE);
@@ -779,7 +779,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       );
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(originalQuery);
+        .selectCandidates(originalQuery, KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid(originalQuery, undefined, VOCAB_CORPUS_SIZE);
@@ -812,7 +812,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       );
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates('동점희소');
+        .selectCandidates('동점희소', KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid('동점희소', undefined, VOCAB_CORPUS_SIZE);
@@ -834,7 +834,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       await ingest(keywordVocabCorpus);
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(COMMON_TERM);
+        .selectCandidates(COMMON_TERM, KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid(COMMON_TERM, undefined, VOCAB_CORPUS_SIZE);
@@ -855,7 +855,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const query = '코퍼스밖신조어';
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(query);
+        .selectCandidates(query, KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid(query, undefined, VOCAB_CORPUS_SIZE);
@@ -880,7 +880,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
 
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates('백필전검색어');
+        .selectCandidates('백필전검색어', KEYWORD_BUDGET);
       const results = await app
         .get(RetrievalService)
         .searchHybrid('백필전검색어', undefined, RERANK_CANDIDATES);
@@ -894,7 +894,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const pair = await ingestPairWithTerm('모델경계희소어', 'model-boundary');
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates('모델경계희소어');
+        .selectCandidates('모델경계희소어', KEYWORD_BUDGET);
       expect([...(selected.chunkIds ?? [])].sort()).toEqual(
         [pair.chunkA, pair.chunkB].sort(),
       );
@@ -919,7 +919,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const pair = await ingestPairWithTerm('상태경계희소어', 'status-boundary');
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates('상태경계희소어');
+        .selectCandidates('상태경계희소어', KEYWORD_BUDGET);
       expect([...(selected.chunkIds ?? [])].sort()).toEqual(
         [pair.chunkA, pair.chunkB].sort(),
       );
@@ -947,7 +947,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const pair = await ingestPairWithTerm('지침필터희소어', 'guideline-filter');
       const selected = await app
         .get(KeywordVocabularyService)
-        .selectCandidates('지침필터희소어');
+        .selectCandidates('지침필터희소어', KEYWORD_BUDGET);
       expect([...(selected.chunkIds ?? [])].sort()).toEqual(
         [pair.chunkA, pair.chunkB].sort(),
       );
@@ -974,7 +974,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
     it('기준 14: 인제스트한 판본 전용 어절의 포스팅이 그 새 청크를 후보로 가리킨다', async () => {
       await ingest(keywordVocabCorpus);
       const vocabulary = app.get(KeywordVocabularyService);
-      const before = await vocabulary.selectCandidates('새판본전용어');
+      const before = await vocabulary.selectCandidates('새판본전용어', KEYWORD_BUDGET);
       expect(before.tokens).toEqual([
         { token: '새판본전용어', df: 0, common: false },
       ]);
@@ -982,7 +982,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
         singleChunkGuideline('new-ingest-vocab', '새판본전용어 합성근거문장'),
       );
       const [chunkId] = await chunkIdsForVersion(created.guidelineVersionId);
-      const selected = await vocabulary.selectCandidates('새판본전용어');
+      const selected = await vocabulary.selectCandidates('새판본전용어', KEYWORD_BUDGET);
 
       expect(await vocabTerm('새판본전용어')).toBeDefined();
       expect(selected.tokens).toEqual([
@@ -998,14 +998,14 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const vocabulary = app.get(KeywordVocabularyService);
       expect(await vocabTerm('상태이탈전용어')).toBeDefined();
       expect(
-        (await vocabulary.selectCandidates('상태이탈전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('상태이탈전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(1);
 
       await patchStatus(created.guidelineVersionId, 'SUPERSEDED');
 
       expect(await vocabTerm('상태이탈전용어')).toBeUndefined();
       expect(
-        (await vocabulary.selectCandidates('상태이탈전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('상태이탈전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(0);
     });
 
@@ -1016,19 +1016,19 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const vocabulary = app.get(KeywordVocabularyService);
       expect(await vocabTerm('상태복귀전용어')).toBeDefined();
       expect(
-        (await vocabulary.selectCandidates('상태복귀전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('상태복귀전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(1);
       await patchStatus(created.guidelineVersionId, 'SUPERSEDED');
       expect(await vocabTerm('상태복귀전용어')).toBeUndefined();
       expect(
-        (await vocabulary.selectCandidates('상태복귀전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('상태복귀전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(0);
 
       await patchStatus(created.guidelineVersionId, 'ACTIVE');
 
       expect(await vocabTerm('상태복귀전용어')).toBeDefined();
       expect(
-        (await vocabulary.selectCandidates('상태복귀전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('상태복귀전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(1);
     });
 
@@ -1039,7 +1039,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       const vocabulary = app.get(KeywordVocabularyService);
       expect(await vocabTerm('삭제판본전용어')).toBeDefined();
       expect(
-        (await vocabulary.selectCandidates('삭제판본전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('삭제판본전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(1);
 
       await app
@@ -1048,7 +1048,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
 
       expect(await vocabTerm('삭제판본전용어')).toBeUndefined();
       expect(
-        (await vocabulary.selectCandidates('삭제판본전용어')).tokens[0].df,
+        (await vocabulary.selectCandidates('삭제판본전용어', KEYWORD_BUDGET)).tokens[0].df,
       ).toBe(0);
     });
 
@@ -1075,6 +1075,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       expect(secondIndex).toBeDefined();
       const before = await vocabulary.selectCandidates(
         '공유존재어 첫판본전용어',
+        KEYWORD_BUDGET,
       );
       expect(before.tokens.map(({ token, df }) => ({ token, df }))).toEqual([
         { token: '공유존재어', df: 2 },
@@ -1085,6 +1086,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
 
       const after = await vocabulary.selectCandidates(
         '공유존재어 첫판본전용어',
+        KEYWORD_BUDGET,
       );
       expect(await vocabTerm('첫판본전용어')).toBeUndefined();
       expect(await vocabTerm('둘판본전용어')).toBeDefined();
@@ -1310,7 +1312,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       await ingest(keywordVocabCorpus);
       const selection = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM);
+        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
       expect(selection.chunkIds).not.toBeNull();
       const before = await generationRunCount(RERANK_POLICY);
 
@@ -1330,7 +1332,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       await ingest(keywordVocabCorpus, fallbackApp);
       const selection = await fallbackApp
         .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM);
+        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
       expect(selection.chunkIds).not.toBeNull();
       const before = await generationRunCount(FALLBACK_POLICY);
 
@@ -1368,7 +1370,7 @@ describe('spec 45: 키워드 arm 어휘 프리필터', () => {
       await ingest(keywordVocabCorpus);
       const selection = await app
         .get(KeywordVocabularyService)
-        .selectCandidates(BOUNDARY_RARE_TERM);
+        .selectCandidates(BOUNDARY_RARE_TERM, KEYWORD_BUDGET);
       expect(selection.chunkIds).not.toBeNull();
       expect(selection.chunkIds).toHaveLength(2);
       const before = await scrapeMetrics(app);

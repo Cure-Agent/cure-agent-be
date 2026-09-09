@@ -1,26 +1,50 @@
 import { Injectable } from '@nestjs/common';
-import { DEFAULT_COMMON_DF_RATIO } from '../../../global/config/retrieval.config';
-import { eojeolsOf, tokenize } from '../../../infrastructure/retrieval/query-tokenizer';
+import { eojeolsOf } from '../../../infrastructure/retrieval/query-tokenizer';
 import { GuidelineRepository } from '../repository/guideline.repository';
 
-/** 질의 토큰 1개의 DF 판정 결과 — 기준 1·4·5·6이 이 값을 직접 본다 */
+/**
+ * 흔함 라벨의 기준 비율 (docs/specs/48). **손잡이가 아니라 코드 상수다** —
+ * `RETRIEVAL_VOCAB_COMMON_DF_RATIO`는 제거됐고 이 값은 env로 바뀌지 않는다.
+ */
+const COMMON_DF_REFERENCE_RATIO = 0.05;
+
+/** 질의 토큰 1개의 DF 판정 결과 — spec 48 기준 3·5가 이 값을 직접 본다 */
 export interface TokenSelection {
   /** 질의에서 잘린 토큰 (조사 절단 후) */
   token: string;
   /**
    * 부분문자열 DF — 이 토큰을 품은 어휘 항들의 **포스팅 합집합** 크기다.
-   * 항별 `df`의 합이 아니다: 같은 청크가 여러 항에 걸쳐 겹세어지면 틀린다 (기준 1).
+   * 항별 `df`의 합이 아니다: 같은 청크가 여러 항에 걸쳐 겹세어지면 틀린다 (§45 기준 1).
    */
   df: number;
-  /** DF가 컷을 **초과**하면 흔한 토큰이라 후보 생성에 기여하지 않는다 (기준 4·5) */
+  /**
+   * **후보 선택에 쓰이지 않는 관측 라벨이다** (docs/specs/48). §45에서는 이 값이 true면
+   * 토큰을 통째로 버렸지만, BM25 예산은 흔한 토큰을 버리는 대신 IDF로 가중만 낮춘다 —
+   * 남은 의미는 「§45의 5% 기준으로는 흔했다」뿐이며 `COMMON_DF_REFERENCE_RATIO`로 고정된다.
+   */
   common: boolean;
 }
 
-/** `selectCandidates`의 결과 — `chunkIds`가 null이면 전량 스캔이다 (기준 10·11) */
+/** `selectCandidates`의 결과 — `chunkIds`가 null이면 전량 스캔이다 (기준 9·10) */
 export interface CandidateSelection {
   tokens: TokenSelection[];
-  /** 희소 토큰 포스팅의 합집합. **후보 0건이면 null**로 접어 전량 스캔에 넘긴다 */
+  /** BM25 상위 `budget`의 청크 id. **후보 0건이면 null**로 접어 전량 스캔에 넘긴다 */
   chunkIds: string[] | null;
+}
+
+/**
+ * 어휘에서 파생된 BM25 길이 정규화 값 (docs/specs/48 기준 21의 관측 지점).
+ *
+ * 점수는 후보 확정 즉시 버려지므로 파생값이 stale해도 **결과에 조용히만 나타난다** —
+ * 그래서 어휘 갱신이 이 값들을 실제로 따라오는지 볼 수 있는 창을 따로 낸다.
+ */
+export interface VocabDerivedStats {
+  /** 어휘가 덮는 청크 수 = BM25의 `N` (§45 정의 그대로) */
+  corpusSize: number;
+  /** 포스팅 총합 ÷ `corpusSize` = BM25의 `avgdl` */
+  avgDocLen: number;
+  /** chunk id → 그 청크를 가리키는 어휘 항의 수 = BM25의 `dl` */
+  docLenByChunkId: Record<string, number>;
 }
 
 /** 전량 재생성 결과 (`scripts/rebuild-keyword-vocab.ts`) */
@@ -69,63 +93,23 @@ export class KeywordVocabularyService {
   constructor(private readonly repository: GuidelineRepository) {}
 
   /**
-   * 토큰별 부분문자열 확장 → DF 판정 → 희소 토큰 포스팅 합집합.
+   * 토큰별 부분문자열 확장 → 전 토큰 BM25 → 상위 `budget` (docs/specs/48).
    *
-   * O(어휘 × 질의 토큰) 선형이며 prod 어휘(93,391항·47.7만 자 = 코퍼스의 5.37%)에서 27ms다.
-   * 코퍼스가 자릿수로 커져 이 값이 문제로 관측되면 n-gram 역색인을 얹는다(Out of scope).
+   * **예산은 인자로 받는다** — 값의 소유자는 `retrieval.config`이고 `RetrievalService`가
+   * 정책 문자열에 싣는 값과 **같은 값**이어야 한다. 여기서 env를 따로 읽으면 두 축이 갈린다.
    */
-  async selectCandidates(query: string): Promise<CandidateSelection> {
-    const snapshot = await this.load();
-    const tokens = tokenize(query);
-    const threshold = this.commonDfThreshold(snapshot.corpusSize);
+  async selectCandidates(
+    _query: string,
+    _budget: number,
+  ): Promise<CandidateSelection> {
+    await this.load();
+    throw new Error('docs/specs/48 스텁: BM25 예산 후보 선택 미구현');
+  }
 
-    // mark는 호출마다 새로 잡는다 — 재사용하면 동시 질의가 서로의 표식을 덮어쓴다.
-    // prod 규모에서도 57KB라 할당 비용이 스캔 비용에 묻힌다.
-    const tokenMark = new Int32Array(snapshot.markSize);
-    const candidateMark = new Uint8Array(snapshot.markSize);
-    const candidateIxs: number[] = [];
-    const selections: TokenSelection[] = [];
-
-    tokens.forEach((token, stamp) => {
-      // stamp를 토큰마다 올려 mark를 지우지 않고 재사용한다 (0은 미표식이라 +1)
-      const generation = stamp + 1;
-      const matched: number[] = [];
-      let df = 0;
-
-      for (let index = 0; index < snapshot.terms.length; index += 1) {
-        if (!snapshot.terms[index].includes(token)) continue;
-        matched.push(index);
-        for (const ix of snapshot.postings[index]) {
-          if (tokenMark[ix] === generation) continue;
-          tokenMark[ix] = generation;
-          df += 1;
-        }
-      }
-
-      // **초과**가 흔함이다 — 컷과 같으면 쓴다. 그래야 컷을 낮출수록 후보가 단조롭게 좁아진다
-      const common = df > threshold;
-      selections.push({ token, df, common });
-      if (common) return;
-
-      for (const index of matched) {
-        for (const ix of snapshot.postings[index]) {
-          if (candidateMark[ix] === 1) continue;
-          candidateMark[ix] = 1;
-          candidateIxs.push(ix);
-        }
-      }
-    });
-
-    const chunkIds: string[] = [];
-    for (const ix of candidateIxs) {
-      const chunkId = snapshot.chunkIdByIx[ix];
-      if (chunkId !== undefined) chunkIds.push(chunkId);
-    }
-
-    // 후보 0건은 arm을 통째로 죽이는 것이라 **느린 것보다 나쁘다** — 하이브리드가 벡터 단독으로
-    // 조용히 퇴화한다. 질의 토큰이 전부 흔하거나, 희소 토큰이 코퍼스에 없는 신조어뿐이거나,
-    // 어휘가 비었을 때(백필 전 배포 창) 모두 여기로 온다.
-    return { tokens: selections, chunkIds: chunkIds.length > 0 ? chunkIds : null };
+  /** 어휘 파생값 관측 (docs/specs/48 기준 21) */
+  async derivedStats(): Promise<VocabDerivedStats> {
+    await this.load();
+    throw new Error('docs/specs/48 스텁: 어휘 파생값 미구현');
   }
 
   /**
@@ -180,21 +164,12 @@ export class KeywordVocabularyService {
     };
   }
 
-  /** 컷 = 비율 × 어휘가 덮는 청크 수. 어휘가 비면 0이고 모든 토큰의 DF 0이 이를 넘지 못한다 */
-  private commonDfThreshold(corpusSize: number): number {
-    return this.commonDfRatio * corpusSize;
-  }
-
   /**
-   * 컷 비율. 설정 주입 대신 여기서 읽는 이유는 이 서비스가 도메인 소유이기 때문이다 —
-   * `retrieval.config`는 검색 설정의 단일 소유자이고, 값은 `RetrievalService`가 정책 문자열에
-   * 싣는 것과 같아야 한다.
+   * 관측 라벨의 컷 = `COMMON_DF_REFERENCE_RATIO` × 어휘가 덮는 청크 수.
+   * 어휘가 비면 0이고 모든 토큰의 DF 0이 이를 넘지 못한다.
    */
-  private get commonDfRatio(): number {
-    const raw = process.env.RETRIEVAL_VOCAB_COMMON_DF_RATIO;
-    if (raw === undefined || raw.trim() === '') return DEFAULT_COMMON_DF_RATIO;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_COMMON_DF_RATIO;
+  private commonDfThreshold(corpusSize: number): number {
+    return COMMON_DF_REFERENCE_RATIO * corpusSize;
   }
 
   private load(): Promise<VocabSnapshot> {

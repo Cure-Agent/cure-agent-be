@@ -133,9 +133,8 @@ export class RetrievalService {
     // 어휘 프리필터는 검색 결과를 실제로 바꾸므로(top-30이 기준선과 66/185만 같다)
     // GenerationRun에서 구분돼야 한다. env로 컷을 바꾼 운영 기록도 §28·§29와 같은 규율로
     // 문자열에 남는다. **꺼지면 v4 그대로**여야 §31 동결 스위트가 성립한다 (docs/specs/45).
-    const vocab = this.config.vocabPrefilterEnabled
-      ? `-vocab${this.config.vocabCommonDfRatio}`
-      : '';
+    // docs/specs/48 스텁: `-bm25{예산}`·v6 교체는 구현에서 한다
+    const vocab = this.config.vocabPrefilterEnabled ? '-vocab' : '';
     const rerank = rerankerModel
       ? `-rerank-${rerankerModel}-cut${this.config.distanceCutoff}` +
         `-score${this.config.rerankScoreCutoff}`
@@ -301,7 +300,11 @@ export class RetrievalService {
    */
   private async keywordCandidates(query: string): Promise<string[] | null> {
     if (!this.config.vocabPrefilterEnabled) return null;
-    const { chunkIds } = await this.vocabulary.selectCandidates(query);
+    // docs/specs/48 스텁: 요청 필터가 걸리면 건너뛰는 규칙은 구현에서 넣는다
+    const { chunkIds } = await this.vocabulary.selectCandidates(
+      query,
+      this.config.keywordCandidateBudget,
+    );
     return chunkIds;
   }
 
