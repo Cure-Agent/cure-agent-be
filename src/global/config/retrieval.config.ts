@@ -68,12 +68,32 @@ export const retrievalConfig = registerAs('retrieval', () => ({
    */
   vocabPrefilterEnabled: process.env.RETRIEVAL_VOCAB_PREFILTER_ENABLED !== 'false',
   /**
-   * 키워드 arm 후보 예산 (docs/specs/48) — **스텁**. 파싱·기본값은 구현에서 채운다.
+   * 키워드 arm 후보 예산 (docs/specs/48, 기본 75). 질의 토큰 전체의 BM25 점수 상위 이만큼이
+   * 순위 대상이 되고 나머지는 버려진다. §45의 DF 하드컷을 대체한다.
+   *
+   * **하드컷이 진 이유는 토큰별 OR라 증거를 합산하지 못해서다.** 희소 토큰 하나만 걸린 잡음
+   * 청크는 전부 들어오고 여러 토큰이 조금씩 걸린 청크는 탈락했다. BM25는 흔한 토큰을 버리는
+   * 대신 IDF로 가중만 낮춰 증거에 참여시킨다 — prod 코퍼스 실측(7,154청크 × 185문항)에서
+   * **후보가 558 → 75로 7.4배 줄었는데 키워드 R@30이 0.973 → 1.000으로 올랐고**,
+   * 융합 R@30 0.995 → 1.000 · 순위 SQL 99ms → 13ms · 합집합 커버리지 1.000 보존이다.
+   *
+   * 75는 **60~150 평원 안에서 고른 값**이다: ⑴ 60 미만은 합집합 커버리지가 1.000 → 0.995로
+   * 깨지는 절벽이라 하한이 확정돼 있다 ⑵ 평원 안에서는 실측이 값을 못 가른다(60·100·150이
+   * 소수점까지 같다) ⑶ 그 안에서 안전 프록시(기권 44 vs 정답 185의 top-1 word_similarity
+   * 격차)가 예산이 작을수록 단조 개선하는데 **그 축은 `pnpm eval:rag`로 검증 불가능하다**
+   * (노이즈 바닥이 1문항). 검증할 수 없는 축에서는 유리한 방향을 택했다.
+   *
+   * 코퍼스가 커져 절벽이 올라오면 재배포 없이 이 값을 올린다 — 그때의 재조정은 같은 스윕을
+   * 다시 돌려야 한다.
    */
-  keywordCandidateBudget: 0,
+  keywordCandidateBudget: parsePositive(
+    process.env.RETRIEVAL_KEYWORD_CANDIDATE_BUDGET,
+    DEFAULT_KEYWORD_CANDIDATE_BUDGET,
+  ),
 }));
 
 const DEFAULT_DISTANCE_CUTOFF = 0.48;
+const DEFAULT_KEYWORD_CANDIDATE_BUDGET = 75;
 
 /** 미지정·빈 값·수가 아닌 값은 전부 코드 기본값으로 떨어진다 (compose 빈 통과 규약) */
 function parseCutoff(raw: string | undefined): number {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eojeolsOf } from '../../../infrastructure/retrieval/query-tokenizer';
+import { eojeolsOf, tokenize } from '../../../infrastructure/retrieval/query-tokenizer';
 import { GuidelineRepository } from '../repository/guideline.repository';
 
 /**
@@ -69,7 +69,19 @@ interface VocabSnapshot {
   corpusSize: number;
   /** `mark` 배열 크기 = max(ix)+1. 구멍이 2배여도 Int32Array 57KB라 비용이 없다 */
   markSize: number;
+  /**
+   * ix → 그 청크를 가리키는 어휘 항의 수 = BM25의 `dl` (docs/specs/48).
+   * **포스팅에서 파생하므로 표를 안 건드린다** — 백필도 재빌드도 필요 없었던 이유다.
+   * prod 평균 148.7이고 `markSize` 확정 뒤라야 배열 크기를 잡을 수 있다.
+   */
+  docLen: Int32Array;
+  /** 포스팅 총합 ÷ `corpusSize` = BM25의 `avgdl`. 어휘가 비면 0이다 */
+  avgDocLen: number;
 }
+
+/** BM25 상수 — 표준값이고 185문항으로 조정하면 과적합이다 (docs/specs/48 Out of scope) */
+const BM25_K1 = 1.2;
+const BM25_B = 0.75;
 
 /**
  * 키워드 arm 어휘 색인의 소유자 (docs/specs/45).
@@ -99,17 +111,111 @@ export class KeywordVocabularyService {
    * 정책 문자열에 싣는 값과 **같은 값**이어야 한다. 여기서 env를 따로 읽으면 두 축이 갈린다.
    */
   async selectCandidates(
-    _query: string,
-    _budget: number,
+    query: string,
+    budget: number,
   ): Promise<CandidateSelection> {
-    await this.load();
-    throw new Error('docs/specs/48 스텁: BM25 예산 후보 선택 미구현');
+    const snapshot = await this.load();
+    const tokens = tokenize(query);
+    const threshold = this.commonDfThreshold(snapshot.corpusSize);
+
+    // 표식은 호출마다 새로 잡는다 — 재사용하면 동시 질의가 서로의 표식을 덮어쓴다.
+    // prod 규모에서도 셋을 합쳐 230KB라 할당 비용이 스캔 비용에 묻힌다.
+    const tokenGeneration = new Int32Array(snapshot.markSize);
+    const termFrequency = new Int32Array(snapshot.markSize);
+    const score = new Float64Array(snapshot.markSize);
+    const scored = new Uint8Array(snapshot.markSize);
+    const scoredIxs: number[] = [];
+    const selections: TokenSelection[] = [];
+
+    tokens.forEach((token, stamp) => {
+      // stamp를 토큰마다 올려 표식을 지우지 않고 재사용한다 (0은 미표식이라 +1)
+      const generation = stamp + 1;
+      const touched: number[] = [];
+      let df = 0;
+
+      for (let index = 0; index < snapshot.terms.length; index += 1) {
+        if (!snapshot.terms[index].includes(token)) continue;
+        for (const ix of snapshot.postings[index]) {
+          // **tf는 출현 횟수가 아니라 어절형의 가짓수다** — `임상`이 한 청크에서
+          // `임상적`·`임상질문`으로 나타나면 2이고, `임상적`만 10번 나와도 1이다.
+          // 어휘가 항별 집합이라 여기서 셀 수 있는 것이 이것뿐이며, 이 근사가 통한다는
+          // 근거는 185문항 실측이다(docs/specs/48 위험 ⑷).
+          if (tokenGeneration[ix] === generation) {
+            termFrequency[ix] += 1;
+            continue;
+          }
+          tokenGeneration[ix] = generation;
+          termFrequency[ix] = 1;
+          touched.push(ix);
+          df += 1;
+        }
+      }
+
+      // `common`은 이제 관측 라벨이다 — 흔한 토큰도 아래 IDF 가중으로 증거에 참여한다
+      selections.push({ token, df, common: df > threshold });
+      // df가 0이면 IDF만 커지고 더할 tf가 없다. 어휘가 비어도 여기서 걸린다
+      // (그래야 `avgDocLen`이 0인 채로 나눗셈에 닿지 않는다)
+      if (df === 0) return;
+
+      // 항상 양수라 흔한 토큰이 죽지 않고 작아지기만 한다
+      const idf = Math.log(
+        1 + (snapshot.corpusSize - df + 0.5) / (df + 0.5),
+      );
+      for (const ix of touched) {
+        const tf = termFrequency[ix];
+        const saturation =
+          tf +
+          BM25_K1 *
+            (1 - BM25_B + (BM25_B * snapshot.docLen[ix]) / snapshot.avgDocLen);
+        score[ix] += (idf * (tf * (BM25_K1 + 1))) / saturation;
+        if (scored[ix] === 1) continue;
+        scored[ix] = 1;
+        scoredIxs.push(ix);
+      }
+    });
+
+    // **점수는 여기서 버린다** — 순위는 원문 질의의 `word_similarity`가 매긴다.
+    // 같은 30건을 회수해도 BM25 순서를 융합에 넘기면 융합 R@30이 0.995 → 0.989이고
+    // 합집합 커버리지가 1.000 → 0.995로 깨진다(RRF가 점수를 안 보고 순위만 본다).
+    const candidates: string[] = scoredIxs
+      .map((ix) => ({ chunkId: snapshot.chunkIdByIx[ix], value: score[ix] }))
+      .filter(
+        (entry): entry is { chunkId: string; value: number } =>
+          entry.chunkId !== undefined,
+      )
+      .sort((left, right) => right.value - left.value || compare(left.chunkId, right.chunkId))
+      .slice(0, budget)
+      .map((entry) => entry.chunkId);
+
+    // 후보 0건은 arm을 통째로 죽이는 것이라 **느린 것보다 나쁘다** — 하이브리드가 벡터
+    // 단독으로 조용히 퇴화한다. 질의 토큰이 코퍼스에 없는 신조어뿐이거나 어휘가 비었을 때
+    // (백필 전 배포 창) 모두 여기로 온다.
+    return {
+      tokens: selections,
+      chunkIds: candidates.length > 0 ? candidates : null,
+    };
   }
 
-  /** 어휘 파생값 관측 (docs/specs/48 기준 21) */
+  /**
+   * 어휘 파생값 관측 (docs/specs/48 기준 21).
+   *
+   * 점수는 후보 확정 즉시 버려지므로 `dl`·`avgdl`이 stale해도 **결과에 조용히만** 나타난다.
+   * 어휘 갱신이 이 값들을 실제로 따라오는지 볼 수 있는 유일한 창이다.
+   */
   async derivedStats(): Promise<VocabDerivedStats> {
-    await this.load();
-    throw new Error('docs/specs/48 스텁: 어휘 파생값 미구현');
+    const snapshot = await this.load();
+    const docLenByChunkId: Record<string, number> = {};
+    for (let ix = 0; ix < snapshot.docLen.length; ix += 1) {
+      const length = snapshot.docLen[ix];
+      if (length === 0) continue;
+      const chunkId = snapshot.chunkIdByIx[ix];
+      if (chunkId !== undefined) docLenByChunkId[chunkId] = length;
+    }
+    return {
+      corpusSize: snapshot.corpusSize,
+      avgDocLen: snapshot.avgDocLen,
+      docLenByChunkId,
+    };
   }
 
   /**
@@ -203,17 +309,42 @@ export class KeywordVocabularyService {
     const terms: string[] = [];
     const postings: Int32Array[] = [];
     const covered = new Set<number>();
+    let totalPostings = 0;
     for (const row of rows) {
       terms.push(row.term);
       postings.push(Int32Array.from(row.chunkIxs));
+      totalPostings += row.chunkIxs.length;
       for (const ix of row.chunkIxs) {
         covered.add(ix);
         if (ix + 1 > markSize) markSize = ix + 1;
       }
     }
 
-    return { terms, postings, chunkIdByIx, corpusSize: covered.size, markSize };
+    // `markSize`가 확정된 **뒤에야** 배열을 잡을 수 있어 포스팅을 한 번 더 돈다.
+    // 위 루프에 합치면 `chunkIdByIx`에 없는 ix를 만나는 순간 배열이 짧아진다.
+    const docLen = new Int32Array(markSize);
+    for (const posting of postings) {
+      for (const ix of posting) docLen[ix] += 1;
+    }
+
+    const corpusSize = covered.size;
+    return {
+      terms,
+      postings,
+      chunkIdByIx,
+      corpusSize,
+      markSize,
+      docLen,
+      // 어휘가 비면 0이지만 그때는 모든 토큰의 df도 0이라 나눗셈에 닿지 않는다
+      avgDocLen: corpusSize > 0 ? totalPostings / corpusSize : 0,
+    };
   }
+}
+
+/** 청크 id 오름차순 — 동점 절단의 결정성이 여기 하나에 걸려 있다 (기준 7) */
+function compare(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
 }
 
 /**

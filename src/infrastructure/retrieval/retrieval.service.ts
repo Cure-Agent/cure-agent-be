@@ -130,16 +130,18 @@ export class RetrievalService {
    */
   hybridPolicyVersion(rerankerModel?: string): string {
     const base = `hybrid-rrf${RRF_K}-top${this.config.rerankCandidates}x2`;
-    // 어휘 프리필터는 검색 결과를 실제로 바꾸므로(top-30이 기준선과 66/185만 같다)
-    // GenerationRun에서 구분돼야 한다. env로 컷을 바꾼 운영 기록도 §28·§29와 같은 규율로
-    // 문자열에 남는다. **꺼지면 v4 그대로**여야 §31 동결 스위트가 성립한다 (docs/specs/45).
-    // docs/specs/48 스텁: `-bm25{예산}`·v6 교체는 구현에서 한다
-    const vocab = this.config.vocabPrefilterEnabled ? '-vocab' : '';
+    // 후보 선택은 검색 결과를 실제로 바꾸므로 GenerationRun에서 구분돼야 한다. env로 예산을
+    // 바꾼 운영 기록도 §28·§29·§45와 같은 규율로 문자열에 남는다 — §45의 `-vocab{컷}`이
+    // 여기서 `-bm25{예산}`이 된다(docs/specs/48). **꺼지면 v4 그대로**여야 §31 동결 스위트가
+    // 성립한다.
+    const vocab = this.config.vocabPrefilterEnabled
+      ? `-bm25${this.config.keywordCandidateBudget}`
+      : '';
     const rerank = rerankerModel
       ? `-rerank-${rerankerModel}-cut${this.config.distanceCutoff}` +
         `-score${this.config.rerankScoreCutoff}`
       : `-cut${this.config.distanceCutoff}`;
-    const version = this.config.vocabPrefilterEnabled ? 'v5' : 'v4';
+    const version = this.config.vocabPrefilterEnabled ? 'v6' : 'v4';
     return `${base}${vocab}${rerank}-${version}/${this.embeddingProvider.model}`;
   }
 
@@ -254,7 +256,7 @@ export class RetrievalService {
     const keywordStartedAt = process.hrtime.bigint();
     // 후보 생성과 순위를 **한 stage로 잰다** — 둘로 나누면 §31이 고정한 keyword_search의
     // 의미(키워드 arm이 첫 토큰 전에 쓰는 시간)가 바뀌어 기준선과 비교할 수 없게 된다.
-    const keywordArm = this.keywordCandidates(query)
+    const keywordArm = this.keywordCandidates(query, filters)
       .then((candidateIds) =>
         this.evidenceQuery(distance)
           // 프리필터는 **후보만 좁힌다** — 코퍼스 경계 조건은 그대로 남는다.
@@ -295,12 +297,22 @@ export class RetrievalService {
    * 키워드 arm이 훑을 후보 id — `null`이면 **전량 스캔**이다 (docs/specs/45).
    *
    * 후보 0건은 arm을 통째로 죽이는 것이라 느린 것보다 나쁘다(하이브리드가 벡터 단독으로 조용히
-   * 퇴화한다). 그래서 어휘가 비었거나 희소 토큰이 아무 청크도 가리키지 못하면 서비스가 `null`을
+   * 퇴화한다). 그래서 어휘가 비었거나 질의 토큰이 아무 청크도 가리키지 못하면 서비스가 `null`을
    * 돌려주고, 이 경로는 §31 동작 그대로가 된다.
+   *
+   * **요청 필터가 걸리면 프리필터를 건너뛴다** (docs/specs/48). 프리필터의 임무가 「순위가
+   * 훑을 양을 묶기」 하나인데 필터가 이미 그 일을 끝냈다 — prod 실측에서 등급 `A`를 걸면
+   * 남는 청크가 69건이고, 거기에 예산까지 걸면 후보가 평균 1.5건으로 무너져 키워드 arm이
+   * 사실상 죽는다(§45가 「후보 0건은 느린 것보다 나쁘다」로 막으려던 그 상태다).
+   * **필터 자체는 절대 우회하지 않는다** — 그것은 사용자가 요구한 답의 범위이고
+   * `corpusConditions`가 그대로 건다.
    */
-  private async keywordCandidates(query: string): Promise<string[] | null> {
+  private async keywordCandidates(
+    query: string,
+    filters?: RetrievalFilters,
+  ): Promise<string[] | null> {
     if (!this.config.vocabPrefilterEnabled) return null;
-    // docs/specs/48 스텁: 요청 필터가 걸리면 건너뛰는 규칙은 구현에서 넣는다
+    if (hasRequestFilter(filters)) return null;
     const { chunkIds } = await this.vocabulary.selectCandidates(
       query,
       this.config.keywordCandidateBudget,
@@ -348,6 +360,19 @@ export class RetrievalService {
       .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
       .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id));
   }
+}
+
+/**
+ * 요청 필터가 하나라도 걸렸는가 (docs/specs/48).
+ * **`corpusConditions`와 같은 판정이어야 한다** — 한쪽만 빈 배열을 필터로 세면
+ * 프리필터를 건너뛰고도 SQL은 아무것도 안 좁혀 전량 스캔이 조용히 살아난다.
+ */
+function hasRequestFilter(filters?: RetrievalFilters): boolean {
+  return Boolean(
+    filters?.guidelineIds?.length ||
+      filters?.recommendationGrades?.length ||
+      filters?.evidenceLevels?.length,
+  );
 }
 
 /**
