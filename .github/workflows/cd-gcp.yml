@@ -39,15 +39,15 @@ jobs:
       # 답변가능성 게이트 킬스위치 (docs/specs/40). 위와 같은 이유로 저장소 변수다 —
       # 미설정이면 빈 값이라 켜진 상태이고, 끄려면 vars에 'false'를 넣는다(재배포로 반영).
       LLM_ANSWERABILITY_GATE_ENABLED: ${{ vars.LLM_ANSWERABILITY_GATE_ENABLED }}
-      # 키워드 arm 어휘 프리필터 킬스위치 (docs/specs/45). 위 둘과 같은 이유로 저장소 변수다 —
+      # 키워드 arm 후보 프리필터 킬스위치 (docs/specs/45·48). 위 둘과 같은 이유로 저장소 변수다 —
       # 미설정이면 빈 값이라 켜진 상태이고, 끄려면 vars에 'false'를 넣는다(재배포로 반영).
       #
-      # **컷 비율(RETRIEVAL_VOCAB_COMMON_DF_RATIO)은 여기 두지 않는다.** 그쪽은 긴급 손잡이가
-      # 아니라 품질 축이고 재조정에 `pnpm eval:rag`가 지시해야 하므로, 다른 RETRIEVAL_* 값들과
-      # 같이 compose 통로로만 남긴다. 이 스위치만 올리는 이유는 존재 이유가 「품질 문제가 늦게
-      # 드러나면 재배포를 기다리지 않는다」인데, compose 통로만으로는 GitHub에서 끌 수 없기
-      # 때문이다 — envs 목록에 없는 변수는 원격 셸에 생기지 않아 ${VAR:-}가 빈 값이 되고,
-      # 박스에서 손으로 심어도 다음 CD가 되돌린다.
+      # **후보 예산(RETRIEVAL_KEYWORD_CANDIDATE_BUDGET)은 여기 두지 않는다.** 그쪽은 긴급
+      # 손잡이가 아니라 품질 축이고 재조정에 `pnpm eval:rag`가 지시해야 하므로, 다른
+      # RETRIEVAL_* 값들과 같이 compose 통로로만 남긴다. 이 스위치만 올리는 이유는 존재 이유가
+      # 「품질 문제가 늦게 드러나면 재배포를 기다리지 않는다」인데, compose 통로만으로는
+      # GitHub에서 끌 수 없기 때문이다 — envs 목록에 없는 변수는 원격 셸에 생기지 않아
+      # ${VAR:-}가 빈 값이 되고, 박스에서 손으로 심어도 다음 CD가 되돌린다.
       RETRIEVAL_VOCAB_PREFILTER_ENABLED: ${{ vars.RETRIEVAL_VOCAB_PREFILTER_ENABLED }}
       # 데모 환자 시딩. 위 셋과 방향이 반대라 vars에 'true'를 넣어야 켜진다 —
       # 미설정이면 빈 값이라 꺼진 상태다(라이브 데모에서만 켠다).
