@@ -27,6 +27,13 @@ coverage/
 .codex/*
 !.codex/skills/
 
+# 하네스 마이그레이션 산출물 — 어떤 런타임도 읽지 않는다.
+# `.claude/commands/{ship,spec}.md`를 기계 치환한 사본이라 새 내용이 없고, 치환이 경로까지
+# 깨뜨린다(`.Codex/hooks/...`). 절차 원본은 automation/*.md에 하네스 중립으로 있으므로
+# 어댑터 사본이 늘면 automation/을 고쳤을 때 갱신을 놓치는 자리만 생긴다.
+# 반복 생성되므로 무시한다 — 안 그러면 `git add -A`에 딸려 들어간다(#429 스텁 커밋 전례).
+.agents/
+
 # 테스트 동결 하네스 스크래치 (automation/freeze.md — /implement·/problem 공용)
 .cure-implement/
 
