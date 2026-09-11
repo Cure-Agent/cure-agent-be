@@ -83,10 +83,12 @@
     "jest": "^30.4.2",
     "prettier": "^3.9.6",
     "supertest": "^7.2.2",
+    "testcontainers": "^12.0.4",
     "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.65.0"
+    "typescript-eslint": "^8.65.0",
+    "yaml": "^2.9.0"
   },
   "pnpm": {
     "//": "Dependabot 취약점 해소 (2026-09-10). 전부 트랜지티브라 직접 올릴 수 없어 override로 끌어올린다. 상위 패키지가 패치 버전을 물면 해당 줄을 지운다 — 남겨두면 상위의 정상 범위를 조용히 묶는다. 메이저를 넘지 않도록 캐럿으로 고정한다.",
