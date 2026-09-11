@@ -119,6 +119,17 @@ export const ErrorCodes = {
   // 상류 실패라 502다 (§10.1) — 지금은 임베딩 실패가 INTERNAL_ERROR(500)로 흘러
   // 우리 코드의 결함과 구분되지 않는다.
   GUIDELINE_EMBEDDING_FAILED: { status: 502, message: '지침 임베딩에 실패했습니다.' },
+
+  // 에이전트 서비스 (docs/specs/49) — **BE는 이 코드를 던지지 않는다.** 에이전트(medical-agentic-rag)가
+  // BE에서 응답을 받지 못했을 때(연결 실패·시간 초과) 발신하고 이 문자열을 미러링한다. FE에게 `/api/v1`은
+  // 하나의 API 표면이라 에이전트가 내는 코드도 이 레지스트리가 단일 소스다(§10.2).
+  // 기존 502(`GUIDELINE_SOURCE_UNAVAILABLE`·`GUIDELINE_EMBEDDING_FAILED`)는 도메인 특정이고, 401로 쓰면
+  // BE 순단이 FE의 refresh 실패 → 강제 로그아웃으로 번지며, `INTERNAL_ERROR`(500)는 우리 코드의
+  // 결함이라는 틀린 귀속이다.
+  AGENT_BACKEND_UNAVAILABLE: {
+    status: 502,
+    message: '서버 응답을 받지 못했습니다. 잠시 후 다시 시도해주세요.',
+  },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;
