@@ -9,6 +9,13 @@ on:
         description: '배포할 이미지 태그 (롤백 시 CI 실행 번호 입력, 기본값: latest)'
         required: false
         default: 'latest'
+      # 에이전트 이미지 (docs/specs/49) — medical-agentic-rag CI가 main 머지마다 latest·실행 번호로 올린다.
+      # 에이전트 단독 배포·롤백은 이 dispatch로 한다. 교차 레포 자동 트리거는 두지 않는다 —
+      # 기능이 없는 서비스라 자동화가 지킬 것이 없다.
+      agent_image_tag:
+        description: '배포할 에이전트 이미지 태그 (medical-agentic-rag CI 실행 번호 입력, 기본값: latest)'
+        required: false
+        default: 'latest'
 
 jobs:
   deploy-main:
@@ -59,6 +66,10 @@ jobs:
       GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       APP_IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+      # 에이전트 이미지 태그 (docs/specs/49). main push에서는 latest다.
+      # 에이전트 추적 변수(AGENT_TRACING_ENABLED·LANGSMITH_*·LANGCHAIN_*)는 아직 싣지 않는다 —
+      # 환자 경로 입출력 숨김과 같은 스텝에서 통로를 연다.
+      AGENT_IMAGE_TAG: ${{ github.event.inputs.agent_image_tag || 'latest' }}
 
     steps:
       - name: Checkout
@@ -79,15 +90,16 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
-          envs: POSTGRES_USERNAME, POSTGRES_PASSWORD, REDIS_PASSWORD, AUTH_JWT_SECRET, COOKIE_DOMAIN, OAUTH_WEB_BASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, CRYPTO_ENC_KEYS, CRYPTO_ENC_ACTIVE_VERSION, CRYPTO_HMAC_INDEX_KEY, ALERT_WEBHOOK_URLS, OPENAI_API_KEY, ANTHROPIC_API_KEY, GUIDANCE_STRUCTURE_ENABLED, LLM_ANSWERABILITY_GATE_ENABLED, RETRIEVAL_VOCAB_PREFILTER_ENABLED, DEMO_SEED_ENABLED, GHCR_PAT, GHCR_USER, CERTBOT_EMAIL, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD, DISCORD_WEBHOOK_URL, APP_IMAGE_TAG
+          envs: POSTGRES_USERNAME, POSTGRES_PASSWORD, REDIS_PASSWORD, AUTH_JWT_SECRET, COOKIE_DOMAIN, OAUTH_WEB_BASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, CRYPTO_ENC_KEYS, CRYPTO_ENC_ACTIVE_VERSION, CRYPTO_HMAC_INDEX_KEY, ALERT_WEBHOOK_URLS, OPENAI_API_KEY, ANTHROPIC_API_KEY, GUIDANCE_STRUCTURE_ENABLED, LLM_ANSWERABILITY_GATE_ENABLED, RETRIEVAL_VOCAB_PREFILTER_ENABLED, DEMO_SEED_ENABLED, GHCR_PAT, GHCR_USER, CERTBOT_EMAIL, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD, DISCORD_WEBHOOK_URL, APP_IMAGE_TAG, AGENT_IMAGE_TAG
           script: |
             set -e
             echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             cd ~/deploy
             chmod +x deploy.sh
             export APP_IMAGE_TAG="${APP_IMAGE_TAG:-latest}"
+            export AGENT_IMAGE_TAG="${AGENT_IMAGE_TAG:-latest}"
             # 배포 후 디스크 정리는 deploy.sh 말미가 담당한다(별도 단계 없음):
-            #   ① dangling 이미지 prune ② 미사용 앱 이미지 rmi
+            #   ① dangling 이미지 prune ② 미사용 앱·에이전트 이미지 rmi
             #   ③ containerd 고아 blob prune ④ 디스크·containerd 용량 로깅
             # 배포 로그 끝의 "disk usage" 블록에서 잔재 누적을 확인할 수 있다.
             COMPOSE_FILE=docker/gcp/compose.yml ./deploy.sh

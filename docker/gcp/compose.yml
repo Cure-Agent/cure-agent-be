@@ -1,6 +1,6 @@
 # GCP e2-standard-2(2vCPU/8GB) 단일 서버 통합 구성 (배포 계획 v2)
 # 외부 노출은 nginx(80/443)만 — 나머지는 전부 compose 내부 네트워크 통신.
-# 메모리 배분(mem_limit 합 ≈ 5.9G / 8G): app 2G, postgres 1.5G, redis 512M,
+# 메모리 배분(mem_limit 합 ≈ 6.4G / 8G): app 2G, postgres 1.5G, redis 512M, agent 512M,
 # 모니터링 스택 ≈ 1.8G, nginx·certbot 여유분.
 services:
   postgres:
@@ -132,6 +132,37 @@ services:
       retries: 12
     networks:
       - cure-backend
+      - cure-proxy
+
+  # 에이전트 서비스 (docs/specs/49) — 판단만 하고 데이터·권한은 BE API에 둔다.
+  # **cure-proxy 망에만 붙는다** — DB·Redis로 가는 경로 자체가 없어야 원칙이 구조로 선다.
+  # BE는 내부 주소로 부른다: 공개 주소로 돌면 nginx를 한 번 더 지나며 auth_limit(5r/s)을 모든
+  # 사용자가 에이전트 IP 하나로 나눠 쓴다.
+  # 추적 변수(AGENT_TRACING_ENABLED·LANGSMITH_*·LANGCHAIN_*)는 싣지 않는다 — 운영 추적 통로는
+  # 환자 경로 입출력 숨김과 같은 스텝에서 연다.
+  # nginx.depends_on에 넣지 않는다 — nginx가 요청 시점에 agent를 해석하므로 기동 순서로도 결합하지 않는다.
+  agent:
+    image: ghcr.io/cure-agent/medical-agentic-rag:${AGENT_IMAGE_TAG:-latest}
+    container_name: cure-agent
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      BE_ORIGIN: http://app:3000
+    healthcheck:
+      # liveness — 프로세스 생존만 본다(healthz는 BE를 부르지 않는다). 이미지에 curl이 없어 python으로 본다.
+      # urlopen은 2xx가 아니거나 연결이 안 되면 예외로 끝나 exit 1이 된다.
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/agent/healthz', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
       - cure-proxy
 
   nginx:
