@@ -21,6 +21,7 @@
 | 민감정보 | AES-GCM 필드 암호화 + HMAC blind index |
 | LLM | 포트 + 재시도 + 서킷브레이커 + rate-limit 차단 + 프로바이더 폴백 라우팅 |
 | 환자 추천 | Prescription이 아닌 ClinicalGuidance로 모델링, 의료인 검토 상태 기록 |
+| 에이전트 | 별도 서비스(`medical-agentic-rag`)는 **판단만** 한다 — 데이터·권한은 BE API에 두고 컨테이너는 DB·Redis 망에 붙지 않는다. 브라우저에게는 `/api/v1` 하나이고 nginx가 `/api/v1/agent/`를 요청 시점 해석으로 나눈다 (docs/specs/49) |
 
 ---
 
@@ -289,6 +290,7 @@ export class AuthCookieFactory {
 - **XSS 대응**: 토큰은 HttpOnly 쿠키로만 존재 — JS에서 접근 불가. FE 코드·스토리지에 토큰이 등장하지 않는다.
 - **CSRF 대응**: `SameSite=Lax` + 상태 변경 요청(POST/PATCH/DELETE)에 커스텀 헤더 `X-CSRF-Protection: 1`을 요구하는 `csrf.guard.ts`. 커스텀 헤더는 cross-origin form/단순 요청으로 위조할 수 없다. SSE POST 요청에도 동일 적용. FE는 http.ts와 stream-client가 자동 부착.
 - 로컬 개발: domain 미지정 host-only 쿠키.
+- **에이전트 경로의 쿠키 처분 (docs/specs/49)**: 두 쿠키 모두 `Path=/`라 `/api/v1/agent/` 요청에도 실리지만, 운영 nginx가 에이전트 location에서 Cookie를 **`access_token` 하나로 재작성**한다(access가 없으면 헤더 자체를 뺀다). refresh는 FE가 경로와 무관하게 전담하므로(401 → `/auth/refresh` → 1회 재시도) 에이전트에는 쓸모가 없고, 에이전트가 쓰면 회전으로 브라우저의 refresh가 구 토큰이 되어 다음 FE refresh가 재사용 감지(§4.3) → family 폐기 → 로그아웃이 된다 — 14일 수명 토큰이 서드파티 SDK·추적이 도는 프로세스에 **도달조차 하지 않게** 한다. 에이전트는 받은 Cookie와 `X-CSRF-Protection`(받았을 때만)을 그대로 BE에 넘길 뿐 자격을 만들지 않는다 — 스스로 CSRF 헤더를 붙이면 헤더 없는 교차 출처 요청이 에이전트를 경유해 가드를 통과한다. 이 보증은 **운영 nginx 한 곳**의 것이라, nginx 없는 로컬 개발에서는 에이전트가 refresh_token까지 받는다.
 
 ### 4.2 인증 API
 
@@ -805,6 +807,7 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 - **실시간 장애 알림**: 5xx·LLM 실패·circuit open·refresh 재사용 감지를 Discord/Slack webhook으로 즉시 알림. `ignorable-exception.classifier`로 클라이언트 abort 등 무시 가능 예외는 제외.
 - **로깅**: 전 로그 traceId 바인딩. **프롬프트 원문·환자 데이터는 로그 금지(마스킹)**. `GenerationRun`에 latency·token usage 축적 (Prometheus `/metrics` 노출은 P1).
 - **CI**: lint + test + **gitleaks 시크릿 스캔(1일차부터)** + OpenAPI export·diff 검사.
+- **에이전트 서비스 운영 (docs/specs/49)**: 추적은 에이전트 기동 시 `AGENT_TRACING_ENABLED`(`true`만 발동)가 LangSmith SDK 전역 스위치로 고정한다 — SDK 환경변수는 `LANGSMITH_`·`LANGCHAIN_` 어느 쪽이든 `true` 한 줄로 켜지고 `false`로 끌 수 없어(langsmith 0.11.0 실측) `.env` 한 줄이 조용히 추적을 켠다. **운영 추적 통로(compose·CD)는 아직 열지 않았다** — 환자 경로 입출력 숨김과 같은 스텝에서 열어, 켜는 수단과 숨기는 수단이 같은 날 생기게 한다. 헬스는 프로세스 생존만 보고 BE를 부르지 않는다(BE 장애가 에이전트 재시작·롤백으로 번지지 않게). 배포는 app 헬스 뒤 에이전트 헬스를 기다리고, 실패하면 에이전트만 이전 태그로 되돌린 채 **실패로 끝난다**(`deploy.sh`) — 조용히 성공 처리하면 부속 서비스의 crash loop가 배포 로그에서 사라진다. 에이전트 단독 배포·롤백은 `cd-gcp.yml` dispatch의 `agent_image_tag`로 한다.
 
 ---
 
