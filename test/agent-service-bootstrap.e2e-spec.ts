@@ -430,6 +430,23 @@ describe('docs/specs/49 — agent가 있는 nginx 망', () => {
     }
   });
 
+  it('docs/specs/50 기준 8: /metrics 요청은 경로를 보존해 app에 도달한다', async () => {
+    const response = await sendHttps(requireStartedContainer(nginx, 'nginx'), {
+      method: 'GET',
+      path: '/metrics',
+    });
+    if (response.statusCode !== 200) {
+      throw new Error('/metrics 응답 상태가 200이 아니다');
+    }
+    const received = parseStubResponse(response);
+    if (received.service !== 'app') {
+      throw new Error('/metrics 요청이 도달한 서비스가 app이 아니다');
+    }
+    if (received.path !== '/metrics') {
+      throw new Error('app에 도달한 요청 경로가 /metrics가 아니다');
+    }
+  });
+
   it('기준 23: /api/v1/agent/ 아래 요청은 경로를 보존해 agent에 도달한다', async () => {
     const runningNginx = requireStartedContainer(nginx, 'nginx');
     const healthPath = '/api/v1/agent/healthz';
