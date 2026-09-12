@@ -60,6 +60,30 @@ prometheus.scrape "app" {
 }
 
 // ============================================================
+// 에이전트 메트릭 수집 (FastAPI /metrics — prometheus-client)
+// ============================================================
+// 라우터 접두사(/api/v1/agent) **밖**의 맨 /metrics다. nginx는 그 접두사만 에이전트로
+// 보내므로 접두사 밖은 location /이 app에 가고, 차단 규칙을 더하지 않아도 외부에서 닿지 않는다.
+//
+// 이 블록이 여는 것은 **생존 축 하나**다: up{instance="cure-agent"}가 존재하면 기존
+// InstanceDown(up == 0)이 규칙 수정 없이 에이전트를 덮고, process_resident_memory_bytes를
+// compose의 mem_limit(512m)과 대조할 수 있다. 무엇을 셀지(도메인 지표·HTTP 요청 축)는
+// 여전히 미정이다 — 지금 HTTP 축을 열면 분모가 사실상 자기 헬스체크(10s)와 이 스크레이프(15s)가
+// 되어 #449에서 막 고친 왜곡을 새 서비스에 심는다. (docs/specs/50)
+prometheus.scrape "agent" {
+  targets = [
+    {
+      __address__ = "agent:8000",
+      instance    = "cure-agent",
+      job         = "cure-agent",
+    },
+  ]
+  metrics_path    = "/metrics"
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "15s"
+}
+
+// ============================================================
 // 데이터스토어 메트릭 수집 (postgres_exporter / redis_exporter)
 // ============================================================
 prometheus.scrape "datastores" {
