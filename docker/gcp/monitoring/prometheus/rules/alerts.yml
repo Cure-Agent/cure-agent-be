@@ -41,41 +41,59 @@ groups:
 
   - name: container
     rules:
-      # cAdvisor(docker_only)는 container_restart_count를 노출하지 않는다 —
-      # 시작 시각의 변화로 재시작을 센다 (system-overview 대시보드와 동일 기준)
-      - alert: ContainerRestarting
-        expr: changes(container_start_time_seconds{name=~"cure-.+"}[5m]) > 0
+      # cAdvisor(docker_only)의 container_start_time_seconds는 재시작 시각이 아니라 **생성 시각**이다 —
+      # 제자리 재시작(docker restart)은 값이 그대로고, 배포의 컨테이너 교체는 id가 바뀌어 새 시리즈가 된다.
+      # 그래서 changes()로 재시작을 세던 옛 ContainerRestarting은 두 방향 모두 감지하지 못했다
+      # (2026-09-12 실측: 15일치 발화 0건. cure-grafana는 매 배포 restart되는데도 지표가 07-26 고정이고,
+      # cure-app은 3일간 컨테이너 id 3개로 갈려 시리즈마다 changes()가 0이었다).
+      #
+      # 컨테이너 소실은 InstanceDown(up == 0)이 이미 덮으므로, 여기서는 그 축이 못 보는 **OOM kill**을 본다 —
+      # mem_limit 합이 6.4G/8G인 단일 서버라 메모리 초과는 실재하는 사고 경로다.
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total{name=~"cure-.+"}[5m]) > 0
         for: 0m
         labels:
-          severity: warning
+          severity: critical
         annotations:
-          summary: "Container {{ $labels.name }} restarted"
-          description: "Container {{ $labels.name }} has restarted in the last 5 minutes."
+          summary: "컨테이너 {{ $labels.name }} OOM kill"
+          description: "메모리 한도를 넘겨 커널이 프로세스를 종료했습니다 — mem_limit 또는 사용량을 확인하세요."
 
   # 앱 지표 기반 — 개별 예외 알림은 앱의 ALERT_WEBHOOK_URLS가 즉시 보내고,
   # 여기서는 "추세가 나빠진 상태"를 본다 (일시적 1건으로는 울리지 않는다)
+  #
+  # 두 알림 모두 분모에서 **자기 모니터링 트래픽**을 뺀다. 컴포즈 헬스체크(/health/ready, 10s)와 alloy
+  # 스크레이프(/metrics, 15s), 스캐너 404(unmatched)가 요청의 99.6%를 차지해, 그대로 두면 실사용 요청이
+  # 전부 망가져도 비율이 임계에 닿지 못한다 — 2026-09-12 실측으로 7일 104,206건 중 실사용은 460건(0.44%)
+  # 뿐이었다. 라벨 값은 express가 매칭한 라우트 패턴이고 Prometheus 정규식은 양끝이 고정된다.
   - name: application
     rules:
+      # 스트림도 분모에 남긴다 — 응답이 긴 것은 정상이어도 5xx는 스트림에서도 사고다
       - alert: HighHttpErrorRate
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
-            / sum(rate(http_requests_total[5m])) * 100 > 5
+          sum(rate(http_requests_total{status=~"5..",route!~"/api/v1/health/.*|/api/v1/metrics|unmatched"}[5m]))
+            / sum(rate(http_requests_total{route!~"/api/v1/health/.*|/api/v1/metrics|unmatched"}[5m])) * 100 > 5
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "HTTP 5xx 비율 5% 초과"
-          description: "최근 5분 5xx 비율이 5%를 넘었습니다."
+          summary: "HTTP 5xx 비율 5% 초과 (실사용 경로)"
+          description: "최근 5분 5xx 비율이 5%를 넘었습니다. 헬스체크·메트릭 스크레이프는 분모에서 제외한 값입니다."
 
+      # 스트림은 여기서 빼낸다 — LLM이 답을 다 쓸 때까지 열려 있는 요청이라 초 단위 지연이 정상이고
+      # (실측 p95 9.5초), 같은 축에 섞으면 임계를 스트림에 맞추는 순간 일반 요청의 이상을 못 본다.
+      # 스트림 지연은 첫 토큰 지연(llm_time_to_first_token_seconds, docs/specs/46)과
+      # sse_streams_total·sse_active_streams 축으로 본다.
       - alert: HighHttpLatency
         expr: |
-          histogram_quantile(0.95, sum by(le) (rate(http_request_duration_seconds_bucket[5m]))) > 3
+          histogram_quantile(0.95, sum by(le) (
+            rate(http_request_duration_seconds_bucket{route!~"/api/v1/health/.*|/api/v1/metrics|unmatched|.*stream.*"}[5m])
+          )) > 3
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "HTTP p95 지연 3초 초과"
-          description: "최근 10분간 p95 응답 지연이 3초를 넘었습니다."
+          summary: "HTTP p95 지연 3초 초과 (실사용 비스트림 경로)"
+          description: "최근 10분간 p95 응답 지연이 3초를 넘었습니다. 헬스체크·메트릭 스크레이프·스트림은 분모에서 제외한 값입니다."
 
       - alert: LlmCircuitOpen
         expr: llm_circuit_open == 1
