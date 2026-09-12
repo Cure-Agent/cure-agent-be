@@ -291,27 +291,43 @@ if docker inspect "$PROMETHEUS_CONTAINER" >/dev/null 2>&1; then
     exit 1
   fi
 
+  # 지표를 **변수로 받은 뒤** 판정한다. `wget ... | grep -q`로 쓰면 grep이 일치 즉시 끝나며
+  # wget이 SIGPIPE(141)로 죽고, `set -o pipefail`이 그걸 파이프라인 실패로 삼아 **일치했는데도
+  # 실패로 읽힌다** — 2026-09-12 배포에서 실제로 이 거짓 실패가 배포를 중단시켰다
+  # (grep=0인데 파이프라인=141). 파이프를 없애면 재현되지 않는다.
+  prom_metric() {
+    local name="$1" out
+    out=$(docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/metrics 2>/dev/null || true)
+    awk -v n="$name" '$1 == n { print $2; exit }' <<<"$out"
+  }
+
+  # 판정 기준은 «reload가 성공한 상태인가»가 아니라 «**이번** HUP으로 다시 읽었는가»다 —
+  # prometheus_config_last_reload_successful은 HUP 전에도 1이라, 그것만 보면 HUP이 아무 일도
+  # 하지 않아도 통과한다. 성공 타임스탬프가 HUP 이전 값에서 나아갔는지로 본다(reload가 실패하면
+  # 이 값은 갱신되지 않으므로, 같은 판정 하나가 두 실패 모드를 다 잡는다).
+  RELOAD_TS_BEFORE=$(prom_metric prometheus_config_last_reload_success_timestamp_seconds)
+
   docker kill -s HUP "$PROMETHEUS_CONTAINER" >/dev/null
 
-  # reload는 비동기다 — 성공 지표가 1로 돌아오는지 확인한다. 실패하면 옛 규칙으로 계속 평가하므로
-  # 관측이 조용히 뒤처진다: 배포를 실패로 끝내 사람이 보게 한다.
+  # reload는 비동기다. 확인되지 않으면 옛 규칙으로 계속 평가하므로 관측이 조용히 뒤처진다 —
+  # 배포를 실패로 끝내 사람이 보게 한다.
   RELOAD_OK=""
   for _ in $(seq 1 10); do
-    if docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/metrics 2>/dev/null \
-      | grep -q '^prometheus_config_last_reload_successful 1'; then
+    RELOAD_TS_AFTER=$(prom_metric prometheus_config_last_reload_success_timestamp_seconds)
+    if [[ -n "$RELOAD_TS_AFTER" && "$RELOAD_TS_AFTER" != "$RELOAD_TS_BEFORE" ]]; then
       RELOAD_OK="yes"
       break
     fi
     sleep 2
   done
   if [[ -z "$RELOAD_OK" ]]; then
-    echo "[deploy] ERROR: prometheus reload was not confirmed — old rules are still in effect" >&2
+    echo "[deploy] ERROR: prometheus reload was not confirmed (last success ts unchanged: ${RELOAD_TS_BEFORE:-none}) — old rules are still in effect" >&2
     exit 1
   fi
 
-  LOADED_RULES=$(docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/api/v1/rules 2>/dev/null \
-    | grep -o '"type":"alerting"' | wc -l | tr -d ' ')
-  echo "[deploy] prometheus rules reloaded (alerting rules loaded: $LOADED_RULES)"
+  RULES_JSON=$(docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/api/v1/rules 2>/dev/null || true)
+  LOADED_RULES=$(grep -o '"type":"alerting"' <<<"$RULES_JSON" | wc -l | tr -d ' ' || true)
+  echo "[deploy] prometheus rules reloaded (alerting rules loaded: ${LOADED_RULES:-unknown})"
 fi
 
 # -----------------------------
