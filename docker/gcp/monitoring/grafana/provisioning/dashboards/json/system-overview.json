@@ -213,13 +213,14 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Container Restarts (5m)",
+      "title": "Container Age",
+      "description": "컨테이너가 생성된 뒤 흐른 시간. 0으로 떨어지면 그 컨테이너가 교체된 것이다 — 배포 때는 정상이고, 배포가 없는데 떨어졌다면 사고다. cAdvisor의 container_start_time_seconds는 생성 시각이라 제자리 재시작(docker restart)은 잡지 못한다 — 그래서 옛 'Container Restarts' 패널은 changes()로 늘 0을 그렸다(#449). OOM kill은 ContainerOomKilled 알림이 본다.",
       "datasource": { "type": "prometheus", "uid": "cure-prometheus" },
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
-      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
       "targets": [
         {
-          "expr": "max by(name) (changes(container_start_time_seconds{name=~\"cure-.+\"}[5m]))",
+          "expr": "time() - max by(name) (container_start_time_seconds{name=~\"cure-.+\"})",
           "legendFormat": "{{name}}",
           "refId": "A"
         }

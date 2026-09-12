@@ -9,6 +9,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker/gcp/compose.yml}"
 APP_CONTAINER="cure-app"
 IMAGE_REPO="ghcr.io/cure-agent/cure-agent-app"
 NGINX_CONTAINER="cure-nginx"
+PROMETHEUS_CONTAINER="cure-prometheus"
 # 에이전트 서비스 (docs/specs/49) — 이미지는 medical-agentic-rag CI가 main 머지마다 올린다
 AGENT_CONTAINER="cure-agent"
 AGENT_IMAGE_REPO="ghcr.io/cure-agent/medical-agentic-rag"
@@ -148,31 +149,169 @@ echo "${APP_IMAGE_TAG:-latest}" > "$ROLLBACK_TAG_FILE"
 echo "[deploy] updated rollback tag to: ${APP_IMAGE_TAG:-latest}"
 
 # -----------------------------
-# nginx 설정 반영 — 실행 중 설정이 배포된 파일과 다를 때만 검증 후 재시작 (docs/specs/49)
+# 설정 재적재 ⑴ 파일 단위 마운트 — 실행 중 설정이 배포된 파일과 다른 컨테이너만 검증 후 재시작
+# (docs/specs/49 · #449)
 # -----------------------------
-# api.conf·grafana.conf는 **파일 단위 bind mount**다. CD의 scp가 tar 추출로 파일을 새 inode로 다시
-# 만들면 실행 중인 nginx는 옛 inode를 계속 본다 — `nginx -s reload`(엔트리포인트의 12시간 주기 포함)로는
-# 반영되지 않고, compose도 파일 내용 변화를 재생성 사유로 보지 않는다. 운영 실측(2026-09-12): 09-05에 뜬
-# cure-nginx가 09-10 CD 뒤에도 옛 inode를 보고 있었다. 컨테이너를 다시 시작해야 마운트가 새 파일로 잡힌다.
-# 매 배포 재시작은 전 경로를 잠깐 끊으므로 내용이 달라졌을 때만 한다.
-# 재시작 전에 새 설정을 일회용 컨테이너(같은 볼륨·망)에서 `nginx -t`로 검증한다 — 깨진 설정으로 재시작하면
-# nginx가 뜨지 못해 BE까지 전면 장애다. 검증이 실패하면 옛 설정으로 계속 서비스하고 배포를 실패로 끝낸다.
-nginx_conf_differs() {
-  local src="$1" dst="$2"
-  ! docker exec "$NGINX_CONTAINER" cat "$dst" 2>/dev/null | cmp -s - "$src"
+# 파일 단위 bind mount는 CD의 scp가 tar 추출로 파일을 새 inode로 다시 만들면 컨테이너가 옛 inode를
+# 계속 본다 — reload로는 반영되지 않고(nginx 엔트리포인트의 12시간 주기 포함), compose도 파일 내용
+# 변화를 재생성 사유로 보지 않는다. 컨테이너를 다시 시작해야 마운트가 새 파일로 잡힌다. 운영 실측
+# (2026-09-12): nginx는 #443의 재시작 단계로 일치했지만 prometheus·alertmanager·alloy·loki는 07-26
+# 기동 이후 전부 옛 inode를 보고 있었다. 매 배포 재시작은 불필요한 단절이므로 달라졌을 때만 한다.
+#
+# 비교는 반드시 **컨테이너 시야**로 한다. `docker cp`는 bind mount를 호스트 원본으로 해석해 언제나
+# "같다"고 답하므로 이 드리프트를 감지하지 못한다(운영 호스트 실측: exec=OLD, cp=NEW).
+#   ① docker exec cat — 권한이 필요 없다. cure-loki는 이미지에 sh·cat이 없어 실패한다
+#   ② sudo -n cat /proc/<pid>/root<경로> — 컨테이너의 마운트 네임스페이스를 호스트에서 읽는다.
+#      컨테이너 안 바이너리가 필요 없어 셸 없는 이미지에도 통한다
+# 둘 다 실패하면 판단 근거가 없으므로 **재시작하지 않고 경고만 남긴다** — 근거 없는 재시작은 멀쩡한
+# 컨테이너를 매 배포 끊는다.
+config_differs() {
+  local container="$1" cpath="$2" hpath="$3"
+  local tmp pid
+  tmp=$(mktemp)
+  if ! docker exec "$container" cat "$cpath" >"$tmp" 2>/dev/null; then
+    pid=$(docker inspect -f '{{.State.Pid}}' "$container" 2>/dev/null || true)
+    # shellcheck disable=SC2024  # 리다이렉트 대상은 mktemp가 만든 배포 계정 소유 파일이라 권한이 필요 없다 —
+    # sudo가 필요한 쪽은 /proc/<pid>/root 읽기다
+    if [[ -z "$pid" || "$pid" == "0" ]] || ! sudo -n cat "/proc/$pid/root$cpath" >"$tmp" 2>/dev/null; then
+      rm -f "$tmp"
+      echo "[deploy] WARN: cannot read $cpath from $container — skipping its restart decision" >&2
+      return 1
+    fi
+  fi
+  if cmp -s "$tmp" "$hpath"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  rm -f "$tmp"
+  return 0
 }
 
-if nginx_conf_differs nginx/conf.d/api.conf /etc/nginx/conf.d/default.conf \
-  || nginx_conf_differs nginx/conf.d/grafana.conf /etc/nginx/conf.d/grafana.conf; then
-  echo "[deploy] nginx config changed — validating with nginx -t..."
-  if ! $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint nginx nginx -t; then
-    echo "[deploy] ERROR: new nginx config failed validation — nginx keeps serving the old config" >&2
+# 새 설정을 **일회용 컨테이너**(같은 이미지·마운트)에서 검증한다 — 깨진 설정으로 재시작하면 그 컨테이너가
+# 뜨지 못한다. nginx는 BE까지 전면 장애고, 나머지는 조용한 관측 공백이다(alertmanager가 crash loop인데
+# app 헬스만 봐서 배포가 성공으로 지나간 전례가 있다). `-T`가 stdin을 가져가지 않도록 전부 </dev/null로 막는다.
+validate_config() {
+  case "$1" in
+    nginx)
+      $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint nginx nginx -t </dev/null
+      ;;
+    prometheus)
+      $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint promtool prometheus \
+        check config /etc/prometheus/prometheus.yml </dev/null
+      ;;
+    alertmanager)
+      # 엔트리포인트와 같은 sed로 렌더한 뒤 검증한다 — 템플릿 그대로는 webhook_url 자리가
+      # ${DISCORD_WEBHOOK_URL} 문자열이라 URL로 통과하지 못한다
+      $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint /bin/sh alertmanager \
+        -c 'sed -e "s|\${DISCORD_WEBHOOK_URL}|$DISCORD_WEBHOOK_URL|g" /etc/alertmanager/alertmanager.yml.tpl > /tmp/amcheck.yml && amtool check-config /tmp/amcheck.yml' </dev/null
+      ;;
+    alloy)
+      $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint alloy alloy \
+        validate --stability.level=generally-available /etc/alloy/config.alloy </dev/null
+      ;;
+    loki)
+      $DC -f "$COMPOSE_FILE" run --rm -T --no-deps --entrypoint /usr/bin/loki loki \
+        -config.file=/etc/loki/loki.yml -verify-config </dev/null
+      ;;
+    *)
+      echo "[deploy] ERROR: no validator defined for service: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+# 컨테이너 | 컨테이너 안 경로 | 호스트 파일(APP_DIR 기준) | compose 서비스
+CONFIG_MOUNTS=(
+  "${NGINX_CONTAINER}|/etc/nginx/conf.d/default.conf|nginx/conf.d/api.conf|nginx"
+  "${NGINX_CONTAINER}|/etc/nginx/conf.d/grafana.conf|nginx/conf.d/grafana.conf|nginx"
+  "${PROMETHEUS_CONTAINER}|/etc/prometheus/prometheus.yml|docker/gcp/monitoring/prometheus/prometheus.yml|prometheus"
+  "cure-alertmanager|/etc/alertmanager/alertmanager.yml.tpl|docker/gcp/monitoring/alertmanager/alertmanager.yml|alertmanager"
+  "cure-alloy|/etc/alloy/config.alloy|docker/gcp/monitoring/alloy/config.alloy|alloy"
+  "cure-loki|/etc/loki/loki.yml|docker/gcp/monitoring/loki/loki.yml|loki"
+)
+
+echo "[deploy] checking mounted config drift..."
+CHANGED_SERVICES=""
+for entry in "${CONFIG_MOUNTS[@]}"; do
+  IFS='|' read -r cm_container cm_cpath cm_hpath cm_service <<<"$entry"
+  if config_differs "$cm_container" "$cm_cpath" "$cm_hpath"; then
+    echo "[deploy] config changed: $cm_hpath ($cm_container)"
+    case " $CHANGED_SERVICES " in
+      *" $cm_service "*) ;;
+      *) CHANGED_SERVICES="$CHANGED_SERVICES $cm_service" ;;
+    esac
+  fi
+done
+
+if [[ -n "${CHANGED_SERVICES// /}" ]]; then
+  for svc in $CHANGED_SERVICES; do
+    echo "[deploy] validating new config for $svc..."
+    if ! validate_config "$svc"; then
+      echo "[deploy] ERROR: new $svc config failed validation — $svc keeps serving the old config" >&2
+      exit 1
+    fi
+    echo "[deploy] restarting $svc to remount the changed config..."
+    $DC -f "$COMPOSE_FILE" restart "$svc"
+  done
+else
+  echo "[deploy] all mounted configs unchanged — no restart"
+fi
+
+# -----------------------------
+# 설정 재적재 ⑵ Prometheus 알림 규칙 (#449)
+# -----------------------------
+# 규칙은 **디렉토리 마운트**라 컨테이너 안 내용이 이미 최신이다 — 위의 내용 비교로는 영원히 "같다"가
+# 나오고, 그래서 07-26 기동 이후 추가된 알림 8개가 배포를 거듭해도 적재되지 않았다(2026-09-12 실측:
+# 파일 13개 / 적재 5개). 위 단계가 보는 것은 «마운트가 옛 파일에 고정됐는가»이고, 여기서 보는 것은
+# «프로세스가 다시 읽었는가»다. 그래서 조건 없이 매 배포 재적재한다.
+#
+# 재시작이 아니라 SIGHUP인 이유: 다운타임이 없고, 규칙이 깨져 있어도 Prometheus가 **옛 규칙을 유지한 채
+# 살아남는다**(실측 — reload 실패 시 prometheus_config_last_reload_successful 0, 컨테이너는 running).
+# 재시작이었다면 crash loop다. 위 단계가 prometheus.yml 드리프트로 이미 재시작했다면 부팅 때 새로
+# 읽었으므로 여기의 HUP은 무해한 중복이다.
+if docker inspect "$PROMETHEUS_CONTAINER" >/dev/null 2>&1; then
+  echo "[deploy] reloading prometheus rules..."
+
+  # SIGHUP은 기동 중 핸들러가 붙기 전에 닿으면 기본 동작(종료)이 된다 — ready를 먼저 확인한다
+  PROM_READY=""
+  for _ in $(seq 1 15); do
+    if docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/-/ready >/dev/null 2>&1; then
+      PROM_READY="yes"
+      break
+    fi
+    sleep 2
+  done
+  if [[ -z "$PROM_READY" ]]; then
+    echo "[deploy] ERROR: prometheus did not become ready within 30s — skipping reload and failing the deploy" >&2
     exit 1
   fi
-  echo "[deploy] restarting nginx to remount the changed config..."
-  $DC -f "$COMPOSE_FILE" restart nginx
-else
-  echo "[deploy] nginx config unchanged — no restart"
+
+  if ! docker exec "$PROMETHEUS_CONTAINER" sh -c 'promtool check rules /etc/prometheus/rules/*.yml'; then
+    echo "[deploy] ERROR: prometheus rules failed validation — not reloading (old rules stay in effect)" >&2
+    exit 1
+  fi
+
+  docker kill -s HUP "$PROMETHEUS_CONTAINER" >/dev/null
+
+  # reload는 비동기다 — 성공 지표가 1로 돌아오는지 확인한다. 실패하면 옛 규칙으로 계속 평가하므로
+  # 관측이 조용히 뒤처진다: 배포를 실패로 끝내 사람이 보게 한다.
+  RELOAD_OK=""
+  for _ in $(seq 1 10); do
+    if docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/metrics 2>/dev/null \
+      | grep -q '^prometheus_config_last_reload_successful 1'; then
+      RELOAD_OK="yes"
+      break
+    fi
+    sleep 2
+  done
+  if [[ -z "$RELOAD_OK" ]]; then
+    echo "[deploy] ERROR: prometheus reload was not confirmed — old rules are still in effect" >&2
+    exit 1
+  fi
+
+  LOADED_RULES=$(docker exec "$PROMETHEUS_CONTAINER" wget -qO- http://localhost:9090/api/v1/rules 2>/dev/null \
+    | grep -o '"type":"alerting"' | wc -l | tr -d ' ')
+  echo "[deploy] prometheus rules reloaded (alerting rules loaded: $LOADED_RULES)"
 fi
 
 # -----------------------------
