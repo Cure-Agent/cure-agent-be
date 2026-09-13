@@ -27,6 +27,21 @@ describe('contract: OpenAPI 스펙 동기화', () => {
     await app?.close();
   });
 
+  it('docs/specs/51 기준 117: 비어 있지 않은 공개 계약에 내부 경로가 없다', () => {
+    const spec: unknown = JSON.parse(readFileSync(SPEC_PATH, 'utf8'));
+    if (typeof spec !== 'object' || spec === null || Array.isArray(spec) || !('paths' in spec)) {
+      throw new Error('커밋된 OpenAPI 문서에 paths가 없다');
+    }
+    const paths: unknown = spec.paths;
+    if (typeof paths !== 'object' || paths === null || Array.isArray(paths)) {
+      throw new Error('커밋된 OpenAPI의 paths가 객체가 아니다');
+    }
+
+    const pathKeys = Object.keys(paths);
+    expect(pathKeys.length).toBeGreaterThan(0);
+    expect(pathKeys.filter((path) => path.startsWith('/api/v1/internal/'))).toEqual([]);
+  });
+
   it('커밋된 스펙 = 코드 재생성본 (diff = 0)', () => {
     expect(existsSync(SPEC_PATH)).toBe(true);
 

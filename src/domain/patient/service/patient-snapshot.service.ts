@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { ServiceException } from '../../../global/common/exception/service.exception';
 import { AesGcmUtil } from '../../../global/security/crypto/aes-gcm.util';
+import { PatientRow } from '../persistence/patient.schema';
 import { PatientRepository } from '../repository/patient.repository';
 import { PatientService } from './patient.service';
 
@@ -62,7 +63,16 @@ export class PatientSnapshotService {
   ): Promise<CaptureWithProfileResult> {
     const row = await this.repository.findById(scope, patientId);
     if (!row) throw new ServiceException('NOT_FOUND');
+    return this.captureRow(scope, row);
+  }
 
+  /**
+   * 이미 읽은 행으로 스냅샷을 고정한다 — 호출자가 그 행을 **잠근 채** 읽었을 때 쓴다.
+   *
+   * 에이전트 환자 도구(docs/specs/51)는 라벨 해석·스냅샷·턴 고정을 한 tx에서 환자 행을 공유 잠금한
+   * 채로 한다. 여기서 id로 다시 읽으면 잠근 읽기와 고정된 내용이 같은 읽기라는 보증이 흐려진다.
+   */
+  async captureRow(scope: PatientScope, row: PatientRow): Promise<CaptureWithProfileResult> {
     const decrypted = this.patientService.decryptFields(row);
     const payload: PatientSnapshotPayload = {
       patientId: row.id,
@@ -88,5 +98,15 @@ export class PatientSnapshotService {
       payloadEncrypted: this.aesGcm.encrypt(JSON.stringify(payload)),
     });
     return { snapshotId, payload };
+  }
+
+  /** 고정된 스냅샷의 복호화 페이로드 — 스코프 밖이거나 없으면 null */
+  async readPayload(
+    scope: PatientScope,
+    snapshotId: string,
+  ): Promise<PatientSnapshotPayload | null> {
+    const snapshot = await this.repository.findSnapshotById(scope, snapshotId);
+    if (!snapshot) return null;
+    return JSON.parse(this.aesGcm.decrypt(snapshot.payloadEncrypted)) as PatientSnapshotPayload;
   }
 }

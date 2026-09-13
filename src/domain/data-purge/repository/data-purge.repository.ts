@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, count, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
+import { agentTurns } from '../../agent-turn/persistence/agent-turn.schema';
 import {
   clinicalGuidances,
   guidanceReviews,
@@ -23,7 +24,7 @@ import { patientProfileSnapshots, patients } from '../../patient/persistence/pat
  * 파기 대상 산출과 FK 역순 물리 삭제 (docs/specs/34).
  *
  * **도메인을 가로지르는 유일한 리포지토리다.** 대화 계열(messages·citations·runs·feedbacks·
- * guidances·reviews)과 환자 계열(snapshots)을 **한 트랜잭션의 역순**으로 지워야 하므로
+ * guidances·reviews·agent_turns)과 환자 계열(snapshots)을 **한 트랜잭션의 역순**으로 지워야 하므로
  * conversation·patient 리포지토리로 쪼개면 순서 보장이 호출자에게 흩어진다.
  */
 @Injectable()
@@ -218,7 +219,10 @@ export class DataPurgeRepository {
   /**
    * 대화 계열 물리 삭제 (기준 15·16). FK가 전부 NO ACTION이라 **역순이 아니면 실패한다**:
    * guidance_reviews → clinical_guidances → message_citations → generation_runs →
-   * answer_feedbacks → messages → conversations.
+   * answer_feedbacks → agent_turns → messages → conversations.
+   *
+   * `agent_turns`(docs/specs/51)는 두 메시지를 가리키고 환자 스냅샷도 가리킨다 — 여기서 먼저 지워야
+   * 메시지 삭제가 서고, 뒤이은 환자 파기(`purgePatients`)의 스냅샷 삭제도 선다.
    */
   async purgeConversations(conversationIds: string[]): Promise<void> {
     if (conversationIds.length === 0) return;
@@ -245,6 +249,14 @@ export class DataPurgeRepository {
       await conn.delete(messageCitations).where(inArray(messageCitations.messageId, messageIds));
       await conn.delete(generationRuns).where(inArray(generationRuns.messageId, messageIds));
       await conn.delete(answerFeedbacks).where(inArray(answerFeedbacks.messageId, messageIds));
+      await conn
+        .delete(agentTurns)
+        .where(
+          or(
+            inArray(agentTurns.messageId, messageIds),
+            inArray(agentTurns.userMessageId, messageIds),
+          ),
+        );
       await conn.delete(messages).where(inArray(messages.id, messageIds));
     }
 

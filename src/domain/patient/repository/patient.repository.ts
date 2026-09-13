@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, ilike, isNull, lt } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, lt, or } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
-import { conversations } from '../../conversation/persistence/conversation.schema';
+import { agentTurns } from '../../agent-turn/persistence/agent-turn.schema';
+import { conversations, messages } from '../../conversation/persistence/conversation.schema';
 import { PatientRow, patientProfileSnapshots, patients } from '../persistence/patient.schema';
 import { PatientScope } from '../service/patient-snapshot.service';
 
@@ -93,6 +94,20 @@ export class PatientRepository {
     await this.txManager.conn.insert(patientProfileSnapshots).values(row);
   }
 
+  async findSnapshotById(
+    scope: PatientScope,
+    id: string,
+  ): Promise<typeof patientProfileSnapshots.$inferSelect | null> {
+    const rows = await this.txManager.conn
+      .select()
+      .from(patientProfileSnapshots)
+      .where(
+        and(eq(patientProfileSnapshots.id, id), eq(patientProfileSnapshots.clinicId, scope.clinicId)),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   /** 스코프 안에 존재하는가 — **파기 예약된 행도 존재로 센다** (대화 쪽과 같은 이유) */
   async existsInScope(scope: PatientScope, id: string): Promise<boolean> {
     const rows = await this.txManager.conn
@@ -110,13 +125,35 @@ export class PatientRepository {
    * import하므로 역방향 주입은 DI 순환이다. 스키마 객체 import는 순환을 만들지 않고, 이 쓰기는
    * 「환자를 지운다」는 단일 유스케이스의 한 트랜잭션에 속한다.
    *
+   * **「그 환자의 대화」는 두 갈래다** (docs/specs/51 기준 118):
+   * ⑴ `patient_id`가 그 환자인 대화(PATIENT_GUIDANCE) ⑵ 그 환자의 스냅샷을 고정한 **에이전트 턴이 있는**
+   * 대화. 에이전트 턴은 `patient_id` 없는 GUIDELINE_QA 대화에 얹혀 ⑴로는 찾을 수 없다. ⑵를 빼면 그
+   * 기록을 옮긴 답변이 남고, 스냅샷을 FK로 가리키는 턴이 살아 있어 유예 뒤 환자 파기가 실패한다 —
+   * §34가 가이던스에 연쇄를 택한 이유와 같다. 대가로 같은 대화의 다른 턴도 함께 지워진다.
+   *
    * WHERE의 `deleted_at IS NULL`이 **먼저 삭제된 대화의 시각을 지켜준다** (기준 10).
    */
   async softDeleteConversationsByPatient(patientId: string, deletedAt: Date): Promise<void> {
-    await this.txManager.conn
+    const conn = this.txManager.conn;
+    const agentConversations = conn
+      .select({ id: messages.conversationId })
+      .from(agentTurns)
+      .innerJoin(
+        patientProfileSnapshots,
+        eq(patientProfileSnapshots.id, agentTurns.patientSnapshotId),
+      )
+      .innerJoin(messages, eq(messages.id, agentTurns.messageId))
+      .where(eq(patientProfileSnapshots.patientId, patientId));
+
+    await conn
       .update(conversations)
       .set({ deletedAt })
-      .where(and(eq(conversations.patientId, patientId), isNull(conversations.deletedAt)));
+      .where(
+        and(
+          isNull(conversations.deletedAt),
+          or(eq(conversations.patientId, patientId), inArray(conversations.id, agentConversations)),
+        ),
+      );
   }
 
   /**

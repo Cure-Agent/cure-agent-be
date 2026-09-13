@@ -39,6 +39,7 @@ import {
 } from '../../../infrastructure/llm/translation/translator.port';
 import {
   RETRIEVAL_TOP_K,
+  RetrievalFilters,
   RetrievalService,
   RetrievalStageNotice,
   RetrievedEvidence,
@@ -59,7 +60,7 @@ import {
   toCitationDto,
   toMessageDto,
 } from '../mapper/conversation.mapper';
-import { MessageRow } from '../persistence/conversation.schema';
+import { ConversationRow, MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
 import { SseStream } from '../../../global/common/sse/sse-stream';
 import { deriveConversationTitle } from './conversation-title.util';
@@ -115,6 +116,63 @@ interface GuidanceContext {
   profile: PatientSnapshotPayload;
 }
 
+/** 턴 수락의 입력 — 채팅 스트림과 에이전트 수락(docs/specs/51)이 다른 것은 뒤의 셋뿐이다 */
+export interface TurnAcceptance {
+  content: string;
+  clientRequestId: string;
+  responseLang: SupportedLang;
+  /** 채팅은 대화 타입에서 정해지고, 에이전트 수락은 경로가 정해지기 전이라 NULL이다 */
+  answerKind: MessageRow['answerKind'];
+  /** 첫 질문으로 자동 제목을 붙이는가 — `applyAutoTitle` 참조 */
+  autoTitle: boolean;
+  /** 두 메시지와 같은 tx에 얹을 행 (에이전트 턴) */
+  withinTransaction?: (accepted: AcceptedTurn) => Promise<void>;
+}
+
+export interface AcceptedTurn {
+  userMessageId: string;
+  assistantMessageId: string;
+}
+
+/** 답변 파이프라인의 입력 — 이미 수락된 턴 하나를 끝까지 흘려 저장한다 */
+export interface AnswerStreamArgs extends AcceptedTurn {
+  principal: ClinicianPrincipal;
+  conversation: ConversationRow;
+  question: string;
+  /** SSE `requestId`의 원천 — 그 턴 USER 메시지의 `clientRequestId`다 */
+  clientRequestId: string;
+  responseLang: SupportedLang;
+  filters?: RetrievalFilters;
+  res: Response;
+  clientSignal: AbortSignal;
+  /**
+   * `message.accepted`를 보내는가. 에이전트 지침 도구는 보내지 않는다 — 브라우저에는 에이전트의
+   * 수락이 이미 보냈다(docs/specs/51 기준 78).
+   */
+  announceAcceptance: boolean;
+}
+
+/** 근거 파이프라인(게이트 ③까지)의 입력 (docs/specs/51) */
+export interface EvidenceStreamArgs {
+  query: string;
+  /** 턴 스냅샷의 진단명 — 번역 **뒤에** 검색 입력에 덧붙인다. 스냅샷이 없으면 비어 있다 */
+  diagnoses: string[];
+  clientRequestId: string;
+  responseLang: SupportedLang;
+  res: Response;
+  clientSignal: AbortSignal;
+}
+
+/** 검색·게이트 ①~③의 결과 — 답변 파이프라인과 근거 파이프라인이 같은 판정을 쓴다 */
+interface RetrievalOutcome {
+  /** 실제로 검색에 넣은 문자열 — 언제나 한국어다(docs/specs/42), 진단명이 붙었으면 그 뒤까지 */
+  searchQuestion: string;
+  evidenceRows: RetrievedEvidence[];
+  abstainReason: AbstainReason | null;
+  /** 이 검색이 실제로 탄 정책 — 리랭크 성공 여부에 따라 갈린다 (docs/specs/29 기준 7) */
+  retrievalPolicyVersion: string;
+}
+
 /**
  * SSE 스트리밍 오케스트레이터 (architecture.md §8 계약 전체).
  * message.accepted → retrieval.* → answer.delta(seq) → completed | abstained | error
@@ -152,26 +210,59 @@ export class ConversationStreamService {
     );
     if (!conversation) throw new ServiceException('NOT_FOUND');
 
-    if (await this.repository.existsByClientRequestId(dto.clientRequestId)) {
-      throw new ServiceException('DUPLICATE_CLIENT_REQUEST');
-    }
-
     /** 답변을 쓸 언어 (docs/specs/42). 미지정은 ko이며 그 경로는 오늘과 동일하다(기준 3) */
     const responseLang: SupportedLang = dto.responseLang ?? 'ko';
 
+    const accepted = await this.acceptTurn(conversation, {
+      content: dto.content,
+      clientRequestId: dto.clientRequestId,
+      responseLang,
+      answerKind:
+        conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
+      autoTitle: conversation.type === 'GUIDELINE_QA',
+    });
+
+    await this.streamAnswer({
+      ...accepted,
+      principal,
+      conversation,
+      question: dto.content,
+      clientRequestId: dto.clientRequestId,
+      responseLang,
+      filters: dto.filters,
+      res,
+      clientSignal,
+      announceAcceptance: true,
+    });
+  }
+
+  /**
+   * 턴 수락 — 질문과 `STREAMING` 답변 행을 LLM보다 먼저 저장한다 (§8).
+   *
+   * 채팅 스트림과 에이전트 수락(docs/specs/51)이 **같은 규칙**을 탄다: `clientRequestId` 중복이 LLM
+   * 비용 전에 막히고, 여기서 만든 `assistantMessageId`가 끊김 복구의 기준점이 된다. 호출자마다
+   * 다른 것은 답변 종류·자동 제목 여부·같은 tx에 얹을 행뿐이다.
+   */
+  async acceptTurn(conversation: ConversationRow, input: TurnAcceptance): Promise<AcceptedTurn> {
+    if (await this.repository.existsByClientRequestId(input.clientRequestId)) {
+      throw new ServiceException('DUPLICATE_CLIENT_REQUEST');
+    }
+
     // 시간순 계약(id asc = 생성순, §5.7): 같은 ms 내 순서 보장을 위해 monotonic ULID 사용
-    const userMessageId = monotonicUlid();
-    const assistantMessageId = monotonicUlid();
+    const accepted: AcceptedTurn = {
+      userMessageId: monotonicUlid(),
+      assistantMessageId: monotonicUlid(),
+    };
     try {
       await this.txManager.run(async () => {
         await this.repository.insertMessage({
-          id: userMessageId,
-          conversationId,
+          id: accepted.userMessageId,
+          conversationId: conversation.id,
           role: 'USER',
-          content: dto.content,
+          content: input.content,
           status: 'COMPLETED',
           answerKind: null,
-          clientRequestId: dto.clientRequestId,
+          clientRequestId: input.clientRequestId,
           /**
            * 질문 행도 그 교환의 언어를 말한다 (docs/specs/44 기준 23).
            *
@@ -179,22 +270,21 @@ export class ConversationStreamService {
            * 표시 언어의 원천**이고 「각 블록이 자기 언어로 선다」가 계약이다. 영어로 물은
            * 질문 행이 기본값 `ko`로 남으면 그 교환에 대해 사실이 아닌 값을 말하게 된다.
            */
-          responseLang,
+          responseLang: input.responseLang,
         });
         await this.repository.insertMessage({
-          id: assistantMessageId,
-          conversationId,
+          id: accepted.assistantMessageId,
+          conversationId: conversation.id,
           role: 'ASSISTANT',
           content: '',
           status: 'STREAMING',
-          answerKind:
-            conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
+          answerKind: input.answerKind,
           clientRequestId: null,
           // 재조회가 요청 없이 언어를 아는 유일한 축 (docs/specs/42 기준 10·11)
-          responseLang,
+          responseLang: input.responseLang,
         });
         // 목록 최근 대화순의 기준점 — 답변 실패로 끝나도 "대화한" 사실은 남으므로 수락 시점에 올린다
-        await this.repository.touchLastMessageAt(conversationId);
+        await this.repository.touchLastMessageAt(conversation.id);
 
         /**
          * 첫 질문으로 대화 제목을 1회 확정한다 (기본 제목인 대화에만 적중 — applyAutoTitle).
@@ -208,11 +298,13 @@ export class ConversationStreamService {
          * AES-GCM으로 암호화 저장하는 항목이 자연어로 섞인다. title은 평문 text 컬럼이자
          * ILIKE 검색 대상이라, 그대로 옮기면 암호화 경계를 제목 컬럼으로 우회하는 셈이 된다.
          * (환자 이름·차트번호는 애초에 저장하지 않는다 — 식별자는 비식별 caseLabel뿐이다.)
+         *
+         * **에이전트 수락도 제외한다** (docs/specs/51 기준 77) — 경로가 정해지기 전이라 같은 이유로
+         * 질문에 환자 기록이 섞였는지 모른다. 지침 경로로 정해지면 지침 도구가 같은 규칙으로 붙인다.
          */
-        if (conversation.type === 'GUIDELINE_QA') {
-          const autoTitle = deriveConversationTitle(dto.content);
-          if (autoTitle) await this.repository.applyAutoTitle(conversationId, autoTitle);
-        }
+        if (input.autoTitle) await this.applyAutoTitle(conversation, input.content);
+
+        await input.withinTransaction?.(accepted);
       });
     } catch (error) {
       // 동시 요청 경합: unique 제약이 최종 방어선
@@ -221,9 +313,32 @@ export class ConversationStreamService {
       }
       throw error;
     }
+    return accepted;
+  }
+
+  /**
+   * 첫 질문으로 자동 제목을 붙인다 — 기본 제목인 GUIDELINE_QA 대화에만 적중한다.
+   * 판정이 조건부 UPDATE에 있어 매 턴 불려도 첫 한 번만 성립한다(`repository.applyAutoTitle`).
+   */
+  async applyAutoTitle(conversation: ConversationRow, question: string): Promise<void> {
+    if (conversation.type !== 'GUIDELINE_QA') return;
+    const autoTitle = deriveConversationTitle(question);
+    if (autoTitle) await this.repository.applyAutoTitle(conversation.id, autoTitle);
+  }
+
+  /**
+   * 답변 파이프라인 — 검색·게이트·생성·저장 (§8 계약 전체).
+   *
+   * 채팅 스트림과 에이전트 지침 도구(docs/specs/51)가 **같은 경로**를 탄다. 지침 도구의 결과·실패·
+   * 끊김이 채팅과 같은 규칙으로 그 턴에 저장되는 것이 이 공유의 요점이다 — 둘로 갈리면 생성 이력·
+   * 인용의 출처가 경로마다 달라진다.
+   */
+  async streamAnswer(args: AnswerStreamArgs): Promise<void> {
+    const { principal, conversation, userMessageId, assistantMessageId, clientSignal, responseLang } =
+      args;
 
     // ── 이후는 SSE 계약 (§8) ──
-    const sse = new SseStream(res);
+    const sse = new SseStream(args.res);
     const traceId = this.traceContext.traceId;
 
     // 진행 중 스트림 수(sse_active_streams)로 커넥션 누수를 감지한다
@@ -237,14 +352,16 @@ export class ConversationStreamService {
     let ragOutcome: RagAnswerOutcome | null = 'answered';
 
     try {
-      sse.send({
-        eventType: 'message.accepted',
-        requestId: dto.clientRequestId,
-        userMessageId,
-        assistantMessageId,
-      });
+      if (args.announceAcceptance) {
+        sse.send({
+          eventType: 'message.accepted',
+          requestId: args.clientRequestId,
+          userMessageId,
+          assistantMessageId,
+        });
+      }
 
-      sse.send({ eventType: 'retrieval.started', requestId: dto.clientRequestId });
+      sse.send({ eventType: 'retrieval.started', requestId: args.clientRequestId });
 
       /**
        * 진행 단계를 화면에 알린다 (docs/specs/46).
@@ -258,126 +375,14 @@ export class ConversationStreamService {
         sse.send({ eventType: 'retrieval.progress', ...notice });
       };
 
-      /**
-       * 검색 입력을 한국어로 정규화한다 (docs/specs/42).
-       *
-       * **검색은 언제나 한국어로 돈다** — 키워드 arm이 pg_trgm 문자 n-gram이라(§31) 영문 질의는
-       * 두 arm 중 하나가 통째로 죽고, 기권률 56%인 검색이 영문에서 더 나빠진다.
-       *
-       * 번역 여부는 `responseLang`이 아니라 **입력 언어**가 정한다: 영문 UI에서 예시 질의문
-       * (한국어 원문)을 눌러도 그 문자열은 이미 한국어라 번역할 이유가 없고, 그래야 §41 기준 27의
-       * 「표시 문장 = 전송 문장」과 어긋나지 않는다. 한국어 입력이면 이 분기가 통째로 no-op이라
-       * 검색에 넘어가는 문자열이 오늘과 바이트 단위로 같다(기준 1·2).
-       *
-       * SSE가 열린 뒤에 번역하는 이유는 실패를 **error 이벤트**로 내야 하기 때문이다(기준 7a) —
-       * 여기서 던지면 handleStreamFailure가 LlmProviderError를 LLM_UNAVAILABLE로 분류한다.
-       */
-      let searchQuestion = dto.content;
-      if (detectQueryLanguage(dto.content) !== 'ko') {
-        try {
-          searchQuestion = await this.translator.translate(dto.content, 'ko');
-        } catch (error) {
-          // 폴백이 없다 — 원문으로 검색하면 arm 하나를 잃은 채 조용히 나쁜 답을 낸다 (기준 7b)
-          throw new LlmProviderError(`질의 번역 실패: ${String(error)}`, { retryable: true });
-        }
-      }
-      /**
-       * 하이브리드가 켜져 있으면 두 arm의 합집합을 후보로 연다 (docs/specs/31) —
-       * 임베딩이 후보에조차 못 넣던 문항을 자구 일치가 데려온다. 꺼져 있으면 §29 그대로다.
-       * 리랭크가 켜져 있으면 후보를 넓게 연다(K=30) — 순서는 리랭커가 다시 세운다 (docs/specs/29)
-       */
-      const hybridActive = this.retrievalService.hybridEnabled;
-      const rerankActive = this.retrievalService.rerankEnabled;
-      const retrieved = hybridActive
-        ? await this.retrievalService.searchHybrid(
-            searchQuestion,
-            dto.filters,
-            undefined,
-            sendProgress,
-          )
-        : rerankActive
-          ? await this.retrievalService.search(
-              searchQuestion,
-              dto.filters,
-              this.retrievalService.rerankCandidates,
-              sendProgress,
-            )
-          : await this.retrievalService.search(
-              searchQuestion,
-              dto.filters,
-              undefined,
-              sendProgress,
-            );
-
-      /**
-       * 게이트 ① 거리 (docs/specs/28) — **후보 최소 거리만 본다.** 통과하면 나머지에 컷 밖
-       * 청크가 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28).
-       * 거리 기권이면 리랭커는 호출되지 않는다 — 확실히 먼 질문에 리랭크 비용을 쓰지 않는다.
-       *
-       * 하이브리드에서는 첫 행이 최소 거리가 아닐 수 있다(융합 순서는 RRF다). 최소값은 벡터 arm
-       * top-1과 같으므로(전 코퍼스 최소) 이 판정은 §28과 같은 의미를 유지한다.
-       */
-      const minDistance = retrieved.reduce(
-        (min, row) => Math.min(min, row.distance),
-        Number.POSITIVE_INFINITY,
-      );
-      let abstainReason: AbstainReason | null =
-        retrieved.length === 0
-          ? 'no_candidates'
-          : minDistance > this.retrievalService.distanceCutoff
-            ? 'beyond_cutoff'
-            : null;
-
-      /**
-       * 게이트 ② 리랭크 → ③ 점수 (docs/specs/29). 실패는 검색 순위 폴백이다 —
-       * 리랭커는 품질 향상 계층이지 가용성 의존성이 아니다. 점수 기권은 거리 기권과
-       * 같은 사유(beyond_cutoff)로 통합한다: 사용자에게는 「관련 근거를 찾지 못했다」는
-       * 같은 사실이고, 내부 원인은 로그가 구분한다.
-       */
-      let evidenceRows = retrieved.slice(0, RETRIEVAL_TOP_K);
-      let retrievalPolicyVersion = hybridActive
-        ? this.retrievalService.hybridPolicyVersion()
-        : this.retrievalService.policyVersion;
-      if (!abstainReason && rerankActive) {
-        const rerankStartedAt = process.hrtime.bigint();
-        const elapsedSec = (): number =>
-          Number(process.hrtime.bigint() - rerankStartedAt) / 1e9;
-        try {
-          const result = await this.reranker.rerank(
-            dto.content,
-            retrieved.map((row) => ({
-              chunkId: row.chunk.id,
-              content: row.chunk.content,
-              guidelineTitle: row.guideline.title,
-            })),
-          );
-          this.metrics.recordRerank('reranked', elapsedSec());
-          if (result.top1Relevance < this.retrievalService.rerankScoreCutoff) {
-            abstainReason = 'beyond_cutoff';
-          } else {
-            const byChunkId = new Map(retrieved.map((row) => [row.chunk.id, row]));
-            const reranked = result.order
-              .map((chunkId) => byChunkId.get(chunkId))
-              .filter((row): row is RetrievedEvidence => row !== undefined)
-              .slice(0, RETRIEVAL_TOP_K);
-            if (reranked.length > 0) {
-              evidenceRows = reranked;
-              retrievalPolicyVersion = hybridActive
-                ? this.retrievalService.hybridPolicyVersion(this.reranker.model)
-                : this.retrievalService.rerankedPolicyVersion(this.reranker.model);
-            }
-          }
-        } catch (error) {
-          this.metrics.recordRerank('fallback', elapsedSec());
-          this.logger.warn(`[${traceId}] 리랭크 실패 — 코사인 순위 폴백: ${String(error)}`);
-        }
-        /**
-         * 성공·점수 컷 기권·호출 실패 폴백이 **모두 여기로 온다** (docs/specs/46 기준 7·14) —
-         * 단계는 일어났고 결과만 갈린다. 결말별로 보낼지를 정하면 「보낸 진행 = 일어난 일」이
-         * 결말 축과 뒤섞여, 폴백한 요청의 화면이 리랭크를 건너뛴 것처럼 보인다.
-         */
-        sendProgress({ stage: 'reranked' });
-      }
+      const { searchQuestion, evidenceRows, abstainReason, retrievalPolicyVersion } =
+        await this.retrieveEvidence({
+          question: args.question,
+          diagnoses: [],
+          filters: args.filters,
+          sendProgress,
+          traceId,
+        });
 
       /**
        * 답변 시작 (docs/specs/47 기준 1~6).
@@ -400,45 +405,7 @@ export class ConversationStreamService {
         sse.send({ eventType: 'answer.started', evidenceCount: evidenceRows.length });
       }
 
-      /**
-       * 근거 상세에 번역을 붙인다 (docs/specs/42 기준 12b). 한국어 경로는 조회 자체를 건너뛰어
-       * 오늘과 같은 질의 수를 유지한다 — 번역 기능이 한국어 사용자의 지연을 늘리지 않는다.
-       */
-      const chunkTranslations =
-        abstainReason || responseLang === 'ko'
-          ? new Map()
-          : await this.repository.mapChunkTranslations(
-              evidenceRows.map((row) => row.chunk.id),
-              responseLang,
-            );
-
-      /**
-       * 근거를 **1건당 한 프레임**으로 보낸다 (docs/specs/47 기준 7~15).
-       *
-       * 꼬리 지연 자체는 소켓 계층의 성질이라 없앨 수 없다 — 우리가 바꿀 수 있는 것은 **일찍
-       * 도착한 바이트가 완결된 프레임인가**뿐이다. 32KB 한 덩이면 75%가 도착해 있어도 근거를 한
-       * 건도 그리지 못하지만, 6.4KB씩 쪼개면 그 안에 3~4건이 완결된 채로 들어 있다.
-       *
-       * `index`는 화면의 재배치 키가 아니라 검산용이고, 순서는 발신 순서가 곧 리랭크 순위다.
-       * `total`을 매 프레임에 싣는 이유는 마지막 프레임이 늦어도 화면이 「몇 건 중 몇 건」을
-       * 말할 수 있어야 하기 때문이다. 마지막 1~2건이 여전히 늦는 것은 이 계약이 없애는 것이
-       * 아니다 — 약속은 **점진 렌더**이지 지연 제거가 아니다.
-       */
-      if (!abstainReason) {
-        const total = evidenceRows.length;
-        evidenceRows.forEach((row, index) => {
-          sse.send({
-            eventType: 'retrieval.evidence',
-            index,
-            total,
-            // 오늘 배열 원소를 만들던 그 매퍼다 — 형태가 갈리면 근거 화면이 둘로 나뉜다
-            evidence: toEvidenceDetail(
-              { ...row, translation: chunkTranslations.get(row.chunk.id) ?? null },
-              responseLang,
-            ),
-          });
-        });
-      }
+      await this.sendEvidenceFrames(sse, abstainReason ? [] : evidenceRows, responseLang);
 
       /**
        * `evidence`를 싣지 않는다 (docs/specs/47 기준 11) — 남기면 32KB 프레임이 그대로라 꼬리가
@@ -472,7 +439,7 @@ export class ConversationStreamService {
       // PATIENT_GUIDANCE: 생성 직전 프로필을 immutable 스냅샷으로 고정하고 (§4.5, §9)
       // 복호화 프로필을 LLM 질문 컨텍스트에 합성한다. abstain 경로는 위에서 이미 이탈했다
       let guidanceContext: GuidanceContext | null = null;
-      let question = dto.content;
+      let question = args.question;
       if (conversation.type === 'PATIENT_GUIDANCE') {
         if (!conversation.patientId) throw new ServiceException('INTERNAL_ERROR');
         const captured = await this.patientSnapshotService.captureWithProfile(
@@ -484,7 +451,7 @@ export class ConversationStreamService {
           snapshotId: captured.snapshotId,
           profile: captured.payload,
         };
-        question = composeGuidanceQuestion(captured.payload, dto.content);
+        question = composeGuidanceQuestion(captured.payload, args.question);
       }
 
       // 게이트 ④ 생성 (docs/specs/40) — 발화하면 답변이 아니라 기권으로 끝난다
@@ -499,7 +466,7 @@ export class ConversationStreamService {
         traceId,
         guidanceContext,
         responseLang,
-        originalQuestion: dto.content,
+        originalQuestion: args.question,
         searchQuestion,
       });
     } catch (error) {
@@ -513,6 +480,266 @@ export class ConversationStreamService {
       this.metrics.sseStreamEnded(sseOutcome);
       if (ragOutcome !== null) this.metrics.recordAnswerOutcome(ragOutcome);
     }
+  }
+
+  /**
+   * 근거 파이프라인 — 검색·게이트 ③까지 흘리고 **저장하지 않는다** (docs/specs/51).
+   *
+   * 에이전트 복합 경로의 근거 도구다. ①~③은 「관련 있나」이고 ④ 「답할 수 있나」는 답을 쓰는 쪽만
+   * 판정할 수 있어(§40) 생성과 ④는 에이전트가 원문 근거 + 환자 기록으로 한 번에 한다.
+   *
+   * **턴을 바꾸지 않는다** — 그 턴을 닫는 주체는 에이전트의 완결 하나다. 그래서 실패는 `error`
+   * 이벤트로만 알리고, 끊겨도 `CANCELLED`로 정리하지 않는다(답변 파이프라인의 실패 정리를 타지 않는다).
+   * 게이트 결과는 `evidence.gated`로 근거 프레임보다 **앞에** 보낸다 — 에이전트가 그것을
+   * `answer.started`로 바꿔 첫 근거보다 먼저 흘려야 §47 순서가 선다.
+   */
+  async streamEvidence(args: EvidenceStreamArgs): Promise<void> {
+    const sse = new SseStream(args.res);
+    const traceId = this.traceContext.traceId;
+
+    this.metrics.sseStreamStarted();
+    let sseOutcome: SseOutcome = 'completed';
+
+    try {
+      sse.send({ eventType: 'retrieval.started', requestId: args.clientRequestId });
+
+      const retrieval = await this.retrieveEvidence({
+        question: args.query,
+        diagnoses: args.diagnoses,
+        sendProgress: (notice) => sse.send({ eventType: 'retrieval.progress', ...notice }),
+        traceId,
+      });
+
+      sse.send({
+        eventType: 'evidence.gated',
+        abstainReason: retrieval.abstainReason,
+        // 뒤따를 근거 프레임 수 — 기권이면 프레임이 없으므로 0이다
+        evidenceCount: retrieval.abstainReason ? 0 : retrieval.evidenceRows.length,
+        // 에이전트가 완결의 generation에 그대로 싣는다 — 합성이 딛은 검색의 재현성 축(§5.7)
+        retrievalPolicyVersion: retrieval.retrievalPolicyVersion,
+        searchQuestion: retrieval.searchQuestion,
+      });
+
+      await this.sendEvidenceFrames(
+        sse,
+        retrieval.abstainReason ? [] : retrieval.evidenceRows,
+        args.responseLang,
+      );
+      sse.send({ eventType: 'retrieval.completed' });
+    } catch (error) {
+      sseOutcome = args.clientSignal.aborted ? 'aborted' : 'failed';
+      if (!args.clientSignal.aborted) {
+        const code = classifyStreamFailure(error);
+        this.logger.error(`[${traceId}] 근거 도구 실패(${code}): ${String(error)}`);
+        sse.send({
+          eventType: 'error',
+          code,
+          message: ErrorCodes[code].message,
+          retryable: RETRYABLE_STREAM_FAILURES.has(code),
+          traceId,
+        });
+      }
+    } finally {
+      // 검색에는 끊김을 확인하는 지점이 없어 끝까지 돈다 — 그래도 결말은 사용자 이탈로 센다
+      if (sseOutcome === 'completed' && args.clientSignal.aborted) sseOutcome = 'aborted';
+      sse.end();
+      this.metrics.sseStreamEnded(sseOutcome);
+    }
+  }
+
+  /**
+   * 검색 → 게이트 ① 거리 → ② 리랭크 → ③ 점수 (docs/specs/28·29·31).
+   *
+   * 답변 파이프라인과 근거 파이프라인(docs/specs/51)이 **같은 판정**을 쓴다 — 복합 경로의 「관련
+   * 있나」가 채팅과 갈리면 같은 질문이 경로마다 다르게 기권한다.
+   */
+  private async retrieveEvidence(args: {
+    /** 검색 입력의 원천 — 채팅은 질문 원문, 근거 도구는 에이전트가 라벨을 지운 질문이다 */
+    question: string;
+    /** 번역 뒤에 덧붙일 진단명 — 채팅은 비어 있다 */
+    diagnoses: string[];
+    filters?: RetrievalFilters;
+    sendProgress: (notice: StreamProgressNotice) => void;
+    traceId: string;
+  }): Promise<RetrievalOutcome> {
+    const { sendProgress, traceId } = args;
+
+    /**
+     * 검색 입력을 한국어로 정규화한다 (docs/specs/42).
+     *
+     * **검색은 언제나 한국어로 돈다** — 키워드 arm이 pg_trgm 문자 n-gram이라(§31) 영문 질의는
+     * 두 arm 중 하나가 통째로 죽고, 기권률 56%인 검색이 영문에서 더 나빠진다.
+     *
+     * 번역 여부는 `responseLang`이 아니라 **입력 언어**가 정한다: 영문 UI에서 예시 질의문
+     * (한국어 원문)을 눌러도 그 문자열은 이미 한국어라 번역할 이유가 없고, 그래야 §41 기준 27의
+     * 「표시 문장 = 전송 문장」과 어긋나지 않는다. 한국어 입력이면 이 분기가 통째로 no-op이라
+     * 검색에 넘어가는 문자열이 오늘과 바이트 단위로 같다(기준 1·2).
+     *
+     * SSE가 열린 뒤에 번역하는 이유는 실패를 **error 이벤트**로 내야 하기 때문이다(기준 7a) —
+     * 여기서 던지면 handleStreamFailure가 LlmProviderError를 LLM_UNAVAILABLE로 분류한다.
+     */
+    let searchQuestion = args.question;
+    if (detectQueryLanguage(args.question) !== 'ko') {
+      try {
+        searchQuestion = await this.translator.translate(args.question, 'ko');
+      } catch (error) {
+        // 폴백이 없다 — 원문으로 검색하면 arm 하나를 잃은 채 조용히 나쁜 답을 낸다 (기준 7b)
+        throw new LlmProviderError(`질의 번역 실패: ${String(error)}`, { retryable: true });
+      }
+    }
+    /**
+     * 턴 스냅샷의 진단명을 **번역 뒤에** 덧붙인다 (docs/specs/51).
+     *
+     * 복합 질문은 자연스럽게 병명을 생략한다(「CASE-001에게 침 치료해도 돼?」) — 그대로 검색하면 병명
+     * 없는 「침 치료」로 흩어진다. 번역 앞에 붙이면 한글 진단명이 §42 언어 판정(한글 비율 0.2)을 흔들어
+     * 짧은 영문 질문이 한국어로 오판되고 번역을 건너뛴다. 채팅은 진단명이 없어 no-op이다.
+     */
+    searchQuestion = appendDiagnoses(searchQuestion, args.diagnoses);
+    /**
+     * 리랭커는 번역문이 아니라 **사용자가 쓴 질문**을 본다(§29 그대로). 근거 도구에는 같은 진단명을
+     * 붙여 준다 — 병명이 빠진 질문으로는 「이 환자에게 관련 있나」를 잴 수 없다. 채팅은 원문 그대로다.
+     */
+    const rerankQuestion = appendDiagnoses(args.question, args.diagnoses);
+
+    /**
+     * 하이브리드가 켜져 있으면 두 arm의 합집합을 후보로 연다 (docs/specs/31) —
+     * 임베딩이 후보에조차 못 넣던 문항을 자구 일치가 데려온다. 꺼져 있으면 §29 그대로다.
+     * 리랭크가 켜져 있으면 후보를 넓게 연다(K=30) — 순서는 리랭커가 다시 세운다 (docs/specs/29)
+     */
+    const hybridActive = this.retrievalService.hybridEnabled;
+    const rerankActive = this.retrievalService.rerankEnabled;
+    const retrieved = hybridActive
+      ? await this.retrievalService.searchHybrid(
+          searchQuestion,
+          args.filters,
+          undefined,
+          sendProgress,
+        )
+      : rerankActive
+        ? await this.retrievalService.search(
+            searchQuestion,
+            args.filters,
+            this.retrievalService.rerankCandidates,
+            sendProgress,
+          )
+        : await this.retrievalService.search(searchQuestion, args.filters, undefined, sendProgress);
+
+    /**
+     * 게이트 ① 거리 (docs/specs/28) — **후보 최소 거리만 본다.** 통과하면 나머지에 컷 밖
+     * 청크가 있어도 유지한다: per-chunk 필터는 실측에서 top-5 정답 청크를 잘랐다(spec 28).
+     * 거리 기권이면 리랭커는 호출되지 않는다 — 확실히 먼 질문에 리랭크 비용을 쓰지 않는다.
+     *
+     * 하이브리드에서는 첫 행이 최소 거리가 아닐 수 있다(융합 순서는 RRF다). 최소값은 벡터 arm
+     * top-1과 같으므로(전 코퍼스 최소) 이 판정은 §28과 같은 의미를 유지한다.
+     */
+    const minDistance = retrieved.reduce(
+      (min, row) => Math.min(min, row.distance),
+      Number.POSITIVE_INFINITY,
+    );
+    let abstainReason: AbstainReason | null =
+      retrieved.length === 0
+        ? 'no_candidates'
+        : minDistance > this.retrievalService.distanceCutoff
+          ? 'beyond_cutoff'
+          : null;
+
+    /**
+     * 게이트 ② 리랭크 → ③ 점수 (docs/specs/29). 실패는 검색 순위 폴백이다 —
+     * 리랭커는 품질 향상 계층이지 가용성 의존성이 아니다. 점수 기권은 거리 기권과
+     * 같은 사유(beyond_cutoff)로 통합한다: 사용자에게는 「관련 근거를 찾지 못했다」는
+     * 같은 사실이고, 내부 원인은 로그가 구분한다.
+     */
+    let evidenceRows = retrieved.slice(0, RETRIEVAL_TOP_K);
+    let retrievalPolicyVersion = hybridActive
+      ? this.retrievalService.hybridPolicyVersion()
+      : this.retrievalService.policyVersion;
+    if (!abstainReason && rerankActive) {
+      const rerankStartedAt = process.hrtime.bigint();
+      const elapsedSec = (): number => Number(process.hrtime.bigint() - rerankStartedAt) / 1e9;
+      try {
+        const result = await this.reranker.rerank(
+          rerankQuestion,
+          retrieved.map((row) => ({
+            chunkId: row.chunk.id,
+            content: row.chunk.content,
+            guidelineTitle: row.guideline.title,
+          })),
+        );
+        this.metrics.recordRerank('reranked', elapsedSec());
+        if (result.top1Relevance < this.retrievalService.rerankScoreCutoff) {
+          abstainReason = 'beyond_cutoff';
+        } else {
+          const byChunkId = new Map(retrieved.map((row) => [row.chunk.id, row]));
+          const reranked = result.order
+            .map((chunkId) => byChunkId.get(chunkId))
+            .filter((row): row is RetrievedEvidence => row !== undefined)
+            .slice(0, RETRIEVAL_TOP_K);
+          if (reranked.length > 0) {
+            evidenceRows = reranked;
+            retrievalPolicyVersion = hybridActive
+              ? this.retrievalService.hybridPolicyVersion(this.reranker.model)
+              : this.retrievalService.rerankedPolicyVersion(this.reranker.model);
+          }
+        }
+      } catch (error) {
+        this.metrics.recordRerank('fallback', elapsedSec());
+        this.logger.warn(`[${traceId}] 리랭크 실패 — 코사인 순위 폴백: ${String(error)}`);
+      }
+      /**
+       * 성공·점수 컷 기권·호출 실패 폴백이 **모두 여기로 온다** (docs/specs/46 기준 7·14) —
+       * 단계는 일어났고 결과만 갈린다. 결말별로 보낼지를 정하면 「보낸 진행 = 일어난 일」이
+       * 결말 축과 뒤섞여, 폴백한 요청의 화면이 리랭크를 건너뛴 것처럼 보인다.
+       */
+      sendProgress({ stage: 'reranked' });
+    }
+
+    return { searchQuestion, evidenceRows, abstainReason, retrievalPolicyVersion };
+  }
+
+  /**
+   * 근거를 **1건당 한 프레임**으로 보낸다 (docs/specs/47 기준 7~15).
+   *
+   * 꼬리 지연 자체는 소켓 계층의 성질이라 없앨 수 없다 — 우리가 바꿀 수 있는 것은 **일찍
+   * 도착한 바이트가 완결된 프레임인가**뿐이다. 32KB 한 덩이면 75%가 도착해 있어도 근거를 한
+   * 건도 그리지 못하지만, 6.4KB씩 쪼개면 그 안에 3~4건이 완결된 채로 들어 있다.
+   *
+   * `index`는 화면의 재배치 키가 아니라 검산용이고, 순서는 발신 순서가 곧 리랭크 순위다.
+   * `total`을 매 프레임에 싣는 이유는 마지막 프레임이 늦어도 화면이 「몇 건 중 몇 건」을
+   * 말할 수 있어야 하기 때문이다. 마지막 1~2건이 여전히 늦는 것은 이 계약이 없애는 것이
+   * 아니다 — 약속은 **점진 렌더**이지 지연 제거가 아니다.
+   */
+  private async sendEvidenceFrames(
+    sse: SseStream,
+    rows: RetrievedEvidence[],
+    responseLang: SupportedLang,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    /**
+     * 근거 상세에 번역을 붙인다 (docs/specs/42 기준 12b). 한국어 경로는 조회 자체를 건너뛰어
+     * 오늘과 같은 질의 수를 유지한다 — 번역 기능이 한국어 사용자의 지연을 늘리지 않는다.
+     */
+    const chunkTranslations =
+      responseLang === 'ko'
+        ? new Map()
+        : await this.repository.mapChunkTranslations(
+            rows.map((row) => row.chunk.id),
+            responseLang,
+          );
+
+    const total = rows.length;
+    rows.forEach((row, index) => {
+      sse.send({
+        eventType: 'retrieval.evidence',
+        index,
+        total,
+        // 오늘 배열 원소를 만들던 그 매퍼다 — 형태가 갈리면 근거 화면이 둘로 나뉜다
+        evidence: toEvidenceDetail(
+          { ...row, translation: chunkTranslations.get(row.chunk.id) ?? null },
+          responseLang,
+        ),
+      });
+    });
   }
 
   private async generateAnswer(args: {
@@ -602,7 +829,7 @@ export class ConversationStreamService {
         messageId: assistantMessageId,
         evidenceChunkId: row.chunk.id,
         marker,
-        quote: truncate(row.chunk.content, QUOTE_LIMIT),
+        quote: truncateQuote(row.chunk.content),
       }));
 
     // 구조화는 영속화 tx **밖**에서 한다 — 외부 호출을 tx 안에 두면 커넥션을 상한(20s)만큼 붙잡는다
@@ -833,7 +1060,8 @@ export class ConversationStreamService {
     });
   }
 
-  private async loadMessageDto(messageId: string, principal: ClinicianPrincipal) {
+  /** 저장된 메시지를 재조회 DTO로 — 스트림 종결 이벤트와 에이전트 완결 응답이 같은 매퍼를 탄다 */
+  async loadMessageDto(messageId: string, principal: ClinicianPrincipal) {
     const found = await this.repository.findMessageInScope(
       { clinicId: principal.clinicId },
       messageId,
@@ -849,8 +1077,19 @@ export class ConversationStreamService {
   }
 }
 
+/** 인용 발췌 — 채팅 답변과 에이전트 완결(docs/specs/51)이 같은 규칙으로 만든다 */
+export function truncateQuote(content: string): string {
+  return truncate(content, QUOTE_LIMIT);
+}
+
 function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}…`;
+}
+
+/** 진단명을 공백으로 이어 붙인다 — 빈 항목은 버리고, 없으면 원래 문자열 그대로다 */
+function appendDiagnoses(base: string, diagnoses: string[]): string {
+  const names = diagnoses.map((name) => name.trim()).filter((name) => name.length > 0);
+  return names.length === 0 ? base : `${base} ${names.join(' ')}`;
 }
 
 function estimateTokens(text: string): number {

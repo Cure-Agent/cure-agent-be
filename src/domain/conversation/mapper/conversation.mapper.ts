@@ -2,7 +2,11 @@ import { AnswerCitationResponseDto } from '../dto/response/answer-citation.respo
 import { ConversationDetailResponseDto } from '../dto/response/conversation-detail.response.dto';
 import { ConversationSummaryResponseDto } from '../dto/response/conversation-summary.response.dto';
 import { MessageResponseDto } from '../dto/response/message.response.dto';
-import { ConversationRow, MessageRow } from '../persistence/conversation.schema';
+import {
+  ConversationRow,
+  MessageAbstainReason,
+  MessageRow,
+} from '../persistence/conversation.schema';
 import { CitationDetailRow } from '../repository/conversation.repository';
 import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
 import { AbstainReason } from '../../../global/observability/metrics/metrics.service';
@@ -35,6 +39,38 @@ export const ABSTAIN_REASON_MESSAGE: Record<SupportedLang, Record<AbstainReason,
       'The guideline evidence found is not sufficient to answer this question.',
   },
 };
+
+/** 에이전트만 기록하는 기권 사유 (docs/specs/51) — BE 게이트는 내지 않는다 */
+export type AgentAbstainReason = Exclude<MessageAbstainReason, AbstainReason>;
+
+/**
+ * 에이전트 기권 사유의 문장 (docs/specs/51).
+ *
+ * **위 표를 넓히지 않고 나눈다** — 위 표는 BE 게이트 사유의 문구이고 spec 42가 세 문구를 잠갔으며,
+ * SSE `answer.abstained.reason`도 그 표를 읽는다. 이 둘은 BE 스트림이 내지 않으므로 재조회 렌더
+ * (`toMessageDto`)에만 쓰인다. 문장이 다음 행동을 담는 것은 위 표와 같다 — 범위 밖은 「무엇을 물을
+ * 수 있나」를, 환자 미특정은 「라벨을 정확히 적어라」를 말한다.
+ */
+export const AGENT_ABSTAIN_REASON_MESSAGE: Record<
+  SupportedLang,
+  Record<AgentAbstainReason, string>
+> = {
+  ko: {
+    out_of_scope: '임상 지침이나 환자 한 명의 기록에 관한 질문에만 답할 수 있습니다.',
+    patient_unresolved:
+      '질문에서 환자를 한 명으로 특정하지 못했습니다. 케이스 라벨을 정확히 적어 주세요.',
+  },
+  en: {
+    out_of_scope:
+      "Only questions about clinical guidelines or a single patient's record can be answered.",
+    patient_unresolved:
+      'No single patient could be identified from the question. Please include the exact case label.',
+  },
+};
+
+function abstainReasonSentence(lang: SupportedLang, reason: MessageAbstainReason): string {
+  return { ...ABSTAIN_REASON_MESSAGE[lang], ...AGENT_ABSTAIN_REASON_MESSAGE[lang] }[reason];
+}
 
 export function toConversationSummary(
   row: ConversationRow,
@@ -127,10 +163,10 @@ export function toMessageDto(
     // 실으면 화면이 빈 안내를 그린다. §42가 stale 번역에 쓴 규율과 같다.
     ...(row.abstainReason
       ? {
-          abstainReason:
-            ABSTAIN_REASON_MESSAGE[(row.responseLang ?? 'ko') as SupportedLang][
-              row.abstainReason
-            ],
+          abstainReason: abstainReasonSentence(
+            (row.responseLang ?? 'ko') as SupportedLang,
+            row.abstainReason,
+          ),
         }
       : {}),
     citations,

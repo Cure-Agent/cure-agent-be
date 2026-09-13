@@ -13,5 +13,7 @@ import { ConversationService } from './service/conversation.service';
   imports: [RetrievalModule, LlmModule, PatientModule, ClinicalGuidanceModule],
   controllers: [ConversationController, FeedbackController],
   providers: [ConversationService, ConversationStreamService, ConversationRepository],
+  // 에이전트 턴(docs/specs/51)이 수락과 파이프라인을 채팅과 나눠 쓴다
+  exports: [ConversationStreamService, ConversationRepository],
 })
 export class ConversationModule {}
