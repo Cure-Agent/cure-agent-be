@@ -62,6 +62,58 @@ wait_healthy() {
 }
 
 # -----------------------------
+# nginx upstream 재해석 — app 재생성으로 바뀐 IP를 반영한다 (#463)
+# -----------------------------
+# nginx의 `location /`은 **정적** `proxy_pass http://app:3000`이라 기동 시점에 해석한 IP를 영구
+# 캐시한다(에이전트 경로만 resolver + 변수로 요청 시점에 푼다 — docs/specs/49). 그런데 아래
+# `up -d --force-recreate app`은 **매 배포** app을 재생성하고, compose는 컨테이너를 병렬로 지우고
+# 다시 만들므로 같은 망(cure-proxy)의 app·agent가 IP를 주고받는다(로컬 실측: 컨테이너 추가 없이
+# `--force-recreate app agent` 20회 중 13회 교환). 그러면 nginx는 옛 IP로 붙어 **BE 전 경로가 502**다.
+# 2026-09-12 배포에서 실제로 났고(upstream이 alloy였다) `nginx -s reload` 한 줄로 복구됐다.
+#
+# 이 단계가 없으면 아무도 모른다: `wait_healthy`는 컨테이너 안 127.0.0.1을 보고 alloy는 app을
+# 직접 긁으므로(둘 다 nginx를 지나지 않는다) 배포는 성공으로 끝나고 `up{cure-app}`도 1을 유지한다.
+#
+# 재시작이 아니라 reload인 이유는 무중단이기 때문이다. conf 마운트가 아직 옛 inode일 수 있으나
+# 그건 뒤의 「설정 재적재 ⑴」이 재시작으로 처리하며, 여기서 옛 conf를 다시 읽어도 **해석되는 IP는
+# 새것**이라 목적을 달성한다. 두 단계가 겹쳐도 무해하다.
+# `nginx -t`로 먼저 막는 이유: 문법이 깨진 상태에서 reload하면 nginx가 옛 설정을 유지한 채 살아남아
+# 조용히 실패한다 — 그러면 IP도 낡은 채로 남는다.
+#
+# **호출 지점이 둘인 이유**: app은 정상 경로에서 한 번, 롤백 경로에서 또 한 번 재생성된다. 롤백에서
+# 부르지 않으면 되돌린 app이 healthy인데도 에지가 계속 502다 — 장애가 진행 중인 바로 그 순간에.
+# 롤백 경로는 `lenient`로 부른다: 이미 실패로 끝날 배포라 reload 실패가 **원래 실패 사유를 덮지**
+# 않아야 한다.
+reload_nginx() {
+  local mode="${1:-strict}"
+  if ! docker inspect "$NGINX_CONTAINER" >/dev/null 2>&1; then
+    echo "[deploy] WARN: $NGINX_CONTAINER not found — skipping nginx reload" >&2
+    return 0
+  fi
+
+  echo "[deploy] reloading nginx to re-resolve app upstream..."
+  if ! docker exec "$NGINX_CONTAINER" nginx -t >/dev/null 2>&1; then
+    echo "[deploy] ERROR: nginx config test failed — not reloading (edge may serve a stale upstream)" >&2
+    docker exec "$NGINX_CONTAINER" nginx -t || true
+    if [[ "$mode" == "strict" ]]; then
+      return 1
+    fi
+    return 0
+  fi
+
+  if ! docker exec "$NGINX_CONTAINER" nginx -s reload; then
+    echo "[deploy] ERROR: nginx reload failed — the edge may still proxy to the old app IP" >&2
+    if [[ "$mode" == "strict" ]]; then
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "[deploy] nginx reloaded"
+  return 0
+}
+
+# -----------------------------
 # 롤백용 현재 이미지 태그 저장
 # -----------------------------
 CURRENT_TAG=$($DC -f "$COMPOSE_FILE" images app --format '{{.Tag}}' 2>/dev/null || true)
@@ -137,6 +189,10 @@ else
     else
       echo "[deploy] CRITICAL: rollback to $PREV_TAG also failed!" >&2
     fi
+
+    # 롤백도 app을 재생성했으므로 nginx가 다시 해석해야 한다 — 그러지 않으면 되돌린 app이
+    # healthy인데도 에지가 계속 502다. 배포는 어차피 실패로 끝나므로 실패 사유를 덮지 않게 lenient다.
+    reload_nginx lenient || true
   else
     echo "[deploy] no previous tag found, skipping rollback" >&2
   fi
@@ -147,6 +203,12 @@ fi
 # 배포 성공: 현재 태그를 롤백 대상으로 확정 저장
 echo "${APP_IMAGE_TAG:-latest}" > "$ROLLBACK_TAG_FILE"
 echo "[deploy] updated rollback tag to: ${APP_IMAGE_TAG:-latest}"
+
+# app이 방금 재생성됐으므로 nginx가 upstream을 다시 해석해야 한다 (#463 — 정의는 위 reload_nginx).
+# 여기는 strict다: 에지가 낡은 IP를 물고 있으면 그 배포는 성공이 아니다.
+if ! reload_nginx; then
+  exit 1
+fi
 
 # -----------------------------
 # 설정 재적재 ⑴ 파일 단위 마운트 — 실행 중 설정이 배포된 파일과 다른 컨테이너만 검증 후 재시작
