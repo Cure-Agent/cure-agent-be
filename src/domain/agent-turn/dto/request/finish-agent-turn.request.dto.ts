@@ -17,7 +17,12 @@ import {
 import { agentRoute, type AgentRoute } from '../../persistence/agent-turn.schema';
 
 /** 완결이 닫을 수 있는 상태 — `STREAMING`으로 되돌리는 완결은 없다 */
-export const AGENT_TURN_FINISH_STATUSES = ['COMPLETED', 'ABSTAINED', 'FAILED', 'CANCELLED'] as const;
+export const AGENT_TURN_FINISH_STATUSES = [
+  'COMPLETED',
+  'ABSTAINED',
+  'FAILED',
+  'CANCELLED',
+] as const;
 export type AgentTurnFinishStatus = (typeof AGENT_TURN_FINISH_STATUSES)[number];
 
 /** 답변 본문의 마커 n → 근거 id. quote는 BE가 채팅과 같은 규칙으로 만든다 */
