@@ -21,7 +21,7 @@
 | 민감정보 | AES-GCM 필드 암호화 + HMAC blind index |
 | LLM | 포트 + 재시도 + 서킷브레이커 + rate-limit 차단 + 프로바이더 폴백 라우팅 |
 | 환자 추천 | Prescription이 아닌 ClinicalGuidance로 모델링, 의료인 검토 상태 기록 |
-| 에이전트 | 별도 서비스(`medical-agentic-rag`)는 **판단만** 한다 — 데이터·권한은 BE API에 두고 컨테이너는 DB·Redis 망에 붙지 않는다. 브라우저에게는 `/api/v1` 하나이고 nginx가 `/api/v1/agent/`를 요청 시점 해석으로 나눈다 (docs/specs/49) |
+| 에이전트 | 별도 서비스(`medical-agentic-rag`)는 **판단만** 한다 — 데이터·권한은 BE API에 두고 컨테이너는 DB·Redis 망에 붙지 않는다. 브라우저에게는 `/api/v1` 하나이고 nginx가 `/api/v1/agent/`를 요청 시점 해석으로 나눈다 (docs/specs/49). 질문을 **지침·환자·복합·기타**로 나눠 **턴 수락 → 경로 도구 → 완결**로 BE에 저장하며, 도구·완결은 내부 전용 `/api/v1/internal/`(운영 nginx 404·OpenAPI 제외)이다 (docs/specs/51) |
 
 ---
 
@@ -459,6 +459,10 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 **공유 규약 (docs/specs/35)**: 대화는 **작성자 개인 소유가 아니라 클리닉 공유 자산**이다. 같은 클리닉의 구성원은 서로의 대화를 읽고, 이어 질문하고, 이름을 바꾸고, 삭제한다 — 조회·변경 스코프가 §4.4대로 `clinicId`이기 때문이다. 작성자(`conversations.clinicianId`)는 계속 기록되지만 접근 판정에는 쓰이지 않는다. 클리닉 경계는 그대로여서 타 클리닉 대화는 여전히 404다. 피드백만은 구성원별로 남는다(`uq_answer_feedbacks_message_clinician` — 한 메시지에 구성원 각자 1건).
 
+**에이전트 턴 (docs/specs/51)**: 에이전트 답변은 **GUIDELINE_QA 대화에 얹힌 턴**이다 — 대화 타입을 늘리지 않아 공개 계약이 그대로이고, 경로(`GUIDELINE`·`PATIENT`·`COMPOSITE`·`OTHER`)·분류기 버전·환자 스냅샷은 `agent_turns`에만 있다. 저장 계약은 **수락 → 경로 도구 → 완결**이다: 수락이 질문과 `STREAMING` 답변 행을 LLM보다 먼저 만들어 인증·스코프·CSRF·`clientRequestId` 중복이 분류 비용 전에 판정되고 §8 복구 기준점이 채팅과 같이 선다. **턴을 닫는 주체는 경로마다 하나다** — 지침은 지침 도구가 채팅 파이프라인으로(`GUIDELINE_ANSWER`·자동 제목까지 채팅과 같다), 환자·복합·기타는 에이전트의 완결이 닫는다. 그래서 환자·근거 도구는 턴 상태를 바꾸지 않고, `STREAMING`이 아닌 턴에 온 도구·완결은 `AGENT_TURN_CLOSED`(409)다. 도구·완결 API는 사용자 쿠키로 인증하므로 **공개하면 구성원이 공유 대화에 「AI 답변」과 인용을 지어낼 수 있다** — 운영 nginx가 `/api/v1/internal/`을 404로 막고(에이전트는 `app:3000`으로 nginx를 거치지 않는다) OpenAPI에서 뺀다. 이 차단은 nginx 한 곳의 보증이라 로컬 개발에서는 열려 있다. PATIENT_GUIDANCE 대화는 받지 않는다 — 환자 고정·참고안 검토 흐름은 BE 채팅의 몫이다.
+
+**에이전트 턴의 삭제 연쇄 (docs/specs/51)**: 환자 삭제는 그 환자의 스냅샷을 고정한 **에이전트 턴이 있는 대화도** 같은 tx에서 파기 예약한다. 에이전트 턴은 `patient_id` 없는 대화에 얹혀 위 연쇄를 타지 못하는데, 스냅샷을 FK로 가리키는 턴을 살아 있는 대화에 남기면 기록을 옮긴 답변이 남고 유예 뒤 환자 파기가 실패한다 — 가이던스에 연쇄를 택한 이유와 같다. **대가로 같은 대화의 지침 턴도 함께 지워진다**(턴 단위 삭제는 메시지 소프트 삭제가 모든 조회로 번져 택하지 않았다). 환자 도구는 스냅샷을 고정하는 동안 환자 행을 공유 잠금하고 환자 삭제는 행 갱신이 연쇄보다 먼저라, 고정과 삭제가 겹쳐도 연쇄가 방금 고정된 턴을 놓치지 않는다. 파기는 `agent_turns` → 메시지 → 스냅샷 순이다.
+
 **과거 답변 재현성**: 텍스트만 보관하지 않는다. 당시 사용된 다음 정보를 함께 고정한다 — 인용 지침 버전, Evidence chunk ID, 환자 프로필 snapshot ID, 프롬프트 버전, 검색 정책 버전, 모델·생성 설정. 지침이나 환자 정보가 변경돼도 "당시 왜 이 답이 나왔는지" 재현할 수 있어야 한다.
 
 **공통**: 전 목록 API는 불투명 base64url 커서 + `PageMetaDto`. **totalCount 없음이 확정 사양** — 화면에 "총 N건"을 표시하지 않는다.
@@ -605,6 +609,25 @@ type ConversationStreamEventDto =
 5. LLM 응답 타임아웃(권장 60~120s) 초과 시 `error(code: LLM_TIMEOUT, retryable: true)` 발행 후 `FAILED` 처리.
 6. `error` 이벤트의 `code`는 원인별로 나뉜다 — 상류 소진은 `LLM_UNAVAILABLE`, 전체 상한 초과는 `LLM_TIMEOUT`, 도메인 계약 위반은 해당 코드, 그 외(DB·영속화 결함)는 `INTERNAL_ERROR`다. `retryable`은 상류 장애(`LLM_UNAVAILABLE`·`LLM_TIMEOUT`)에만 `true`다 — 우리 쪽 결함은 재시도해도 같은 결과이기 때문이다.
 
+### 에이전트 스트림 (docs/specs/51)
+
+브라우저가 보는 스트림은 에이전트 엔드포인트 `POST /api/v1/agent/conversations/{id}/messages/stream` **하나**이고, 위 이벤트 계약을 그대로 쓰되 `agent.progress`(에이전트 전용, `stage` 규약은 §46과 같다 — 모르는 stage는 무시)가 더해진다. 계약 원본은 에이전트 레포이며 FE 소비·OpenAPI 병합은 아직 없다.
+
+```
+공통  message.accepted → agent.progress{stage:routed, route}
+지침  ◀ 지침 도구 그대로: retrieval.started → … → answer.completed | answer.abstained | error
+환자  agent.progress{stage:patient_loaded} → answer.delta*(에이전트 LLM) → [완결] → answer.completed
+복합  agent.progress{stage:patient_loaded} → ◀ 근거 도구: retrieval.* (evidence.gated 통과 → answer.started)
+      → retrieval.evidence×N → retrieval.completed → answer.delta*(판정 뒤) → [완결] → answer.completed | answer.abstained
+기타  [완결] → answer.abstained                (환자·복합의 라벨 해석 실패도 같다)
+```
+
+BE 내부 SSE는 둘이고 **종결 의미가 달라** 엔드포인트를 나눈다:
+
+- **지침 도구**(`…/turns/{id}/guideline-answer`)는 채팅 파이프라인에서 `message.accepted`만 뺀 것이다 — 결과·실패·끊김을 채팅과 같은 규칙으로 **그 턴에 저장**한다(끊김은 위 복구 계약 4의 `CANCELLED`).
+- **근거 도구**(`…/turns/{id}/guideline-evidence`)는 게이트 ③에서 멈추고 **저장하지 않는다.** ④ 「답할 수 있나」는 답을 쓰는 쪽만 판정할 수 있어(§40) 생성·④는 에이전트가 원문 근거 + 환자 기록으로 한 번에 한다. 게이트 결과는 `evidence.gated`(`abstainReason`·`evidenceCount`·`retrievalPolicyVersion`·`searchQuestion`)로 근거 프레임보다 **앞에** 오고 에이전트가 이를 `answer.started`로 바꿔 §47 순서를 세운다. 실패하거나 끊겨도 **턴을 바꾸지 않고** `error` 이벤트로만 알린다 — 그 턴을 닫는 것은 에이전트의 완결이다.
+- **복합 검색 입력은 BE가 조립한다** — 라벨을 지운 질문을 §42대로 한국어로 정규화한 **뒤에** 턴 스냅샷의 진단명을 덧붙인다. 복합 질문은 병명을 생략하므로(「CASE-001에게 침 치료해도 돼?」) 그대로면 검색이 흩어지고, 번역 앞에 붙이면 한글 진단명이 §42 언어 판정을 흔들어 짧은 영문 질문이 번역을 건너뛴다. 리랭커는 채팅처럼 사용자가 쓴 질문을 보되 같은 진단명을 붙여 받는다.
+
 ### 잡 진행 스트림 (docs/specs/22)
 
 전건 지침 파이프라인 잡의 진행은 별도 계약을 쓴다. `GET /admin/guideline-jobs/{jobId}/stream`.
@@ -645,7 +668,8 @@ type GuidelineJobStreamEventDto =
 | GuidelineJobEntity | PipelineRun N건의 부모. `triggeredBy`(MANUAL/SCHEDULE)로 주체를 구분하며 **크론이 만든 잡은 `requestedBy`가 NULL**이다 (docs/specs/26) |
 | ConversationEntity | **접근 스코프는 `clinicId`**(클리닉 공유)이고, `clinicianId`는 작성자 기록일 뿐 접근 판정에 쓰지 않는다 (§5.7, docs/specs/35) |
 | MessageEntity | `status`에 **`CANCELLED`**를 포함한다 — 좀비 STREAMING 메시지를 남기지 않기 위함이다 (§7) |
-| GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **LLM 호출마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다. 「답변마다」가 아닌 이유는 생성 게이트 기권(§8-④, docs/specs/40)도 LLM을 부르고 토큰을 쓰기 때문이다 — 과잉 기권을 문항 단위로 조사하려면 그 호출의 프롬프트·정책 버전이 남아야 한다 |
+| GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **LLM 호출마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다. 「답변마다」가 아닌 이유는 생성 게이트 기권(§8-④, docs/specs/40)도 LLM을 부르고 토큰을 쓰기 때문이다 — 과잉 기권을 문항 단위로 조사하려면 그 호출의 프롬프트·정책 버전이 남아야 한다. **`retrievalPolicyVersion`이 NULL이면 「검색하지 않은 생성」**(에이전트 환자 경로)이다 — 에이전트 합성의 run은 에이전트가 완결로 싣는다 (docs/specs/51) |
+| AgentTurnEntity | 에이전트가 수락한 턴 (docs/specs/51). **이 행이 있는 ASSISTANT 메시지만** 내부 도구·완결이 다룬다 — 채팅이 만든 답변과 가르는 유일한 표지다. `route`는 분류기 판정 원문이 아니라 실행 경로 표를 거친 경로이고 경로가 정해지기 전(수락 직후)에는 NULL이다. `patientSnapshotId`는 환자 도구가 고정한 스냅샷이며 **환자 삭제 연쇄가 대화를 찾는 축**이다(§5.7). 한 턴은 스냅샷 하나만 고정한다 — 재시도는 같은 스냅샷을 돌려준다 |
 
 전 테이블에 `base-columns` 공통 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
 
@@ -805,12 +829,13 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 ## 14. 관측·운영
 
 - **실시간 장애 알림**: 5xx·LLM 실패·circuit open·refresh 재사용 감지를 Discord/Slack webhook으로 즉시 알림. `ignorable-exception.classifier`로 클라이언트 abort 등 무시 가능 예외는 제외.
-- **로깅**: 전 로그 traceId 바인딩. **프롬프트 원문·환자 데이터는 로그 금지(마스킹)**. `GenerationRun`에 latency·token usage 축적 (Prometheus `/metrics` 노출은 P1).
+- **로깅**: 전 로그 traceId 바인딩. **프롬프트 원문·환자 데이터는 로그 금지(마스킹)**. `GenerationRun`에 latency·token usage 축적 (Prometheus `/metrics` 노출은 P1). 명시적 예외는 에이전트 분류기 입력 하나다 — 아래 「에이전트 추적 숨김」.
 - **CI**: lint + test + **gitleaks 시크릿 스캔(1일차부터)** + OpenAPI export·diff 검사.
 - **설정 재적재 (#449)**: 운영 설정은 두 종류이고 반영 경로가 다르다. ⑴ **파일 단위 bind mount**(nginx conf 2종·prometheus.yml·alertmanager.yml·config.alloy·loki.yml)는 CD의 scp가 tar 추출로 새 inode를 만들면 컨테이너가 옛 파일에 고정된다 — `deploy.sh`가 **컨테이너 시야**로 내용을 비교해 달라진 서비스만 이미지 내장 검증기를 통과시킨 뒤 재시작한다. 비교에 `docker cp`를 쓰면 안 된다: bind mount를 호스트 원본으로 해석해 언제나 "같다"고 답한다(실측). 셸 없는 이미지(loki)는 `sudo cat /proc/<pid>/root<경로>`로 읽는다. ⑵ **디렉토리 마운트**(prometheus rules)는 내용이 늘 최신이라 ⑴의 비교로는 영원히 "같다"가 나온다 — 여기서 뒤처지는 것은 파일이 아니라 **프로세스**이고(07-26 기동 이후 추가된 알림 8개가 배포를 거듭해도 미적재였다), 매 배포 `promtool check rules` 뒤 **SIGHUP**으로 재적재한다. 재시작이 아닌 이유는 규칙이 깨져도 옛 규칙을 유지한 채 살아남기 때문이다(재시작이면 crash loop).
 - **알림 설계 원칙 (#449)**: ⑴ 비율·분위수 알림의 분모에서 **자기 모니터링 트래픽을 뺀다** — 컴포즈 헬스체크(10s)와 alloy 스크레이프(15s)가 요청의 99.6%라(7일 104,206건 중 실사용 460건) 그대로 두면 실사용이 전부 망가져도 임계에 닿지 못한다. ⑵ **스트림은 HTTP 지연과 같은 축에서 재지 않는다** — LLM이 답을 다 쓸 때까지 열려 있어 초 단위가 정상이다(실측 p95 9.5초). 스트림은 첫 토큰 지연(`llm_time_to_first_token_seconds`, docs/specs/46)·`sse_*`가 본다. ⑶ cAdvisor의 `container_start_time_seconds`는 재시작 시각이 아니라 **생성 시각**이다 — 제자리 재시작은 값이 불변이고 배포 교체는 새 시리즈가 되므로 `changes()`로 재시작을 셀 수 없다. 컨테이너 소실은 `InstanceDown`이 덮고, 그 축이 못 보는 OOM kill만 따로 본다.
 - **에이전트 생존 관측 (docs/specs/50)**: alloy가 `cure-proxy` 망에 합류해 `agent:8000`의 `/metrics`를 긁는다(`instance`·`job` = `cure-agent`). 얻는 것은 **생존 축 하나**다 — `up{instance="cure-agent"}`가 생기면 `InstanceDown`(`up == 0`, 라벨 셀렉터 없음)이 **규칙 변경 0줄로** 에이전트를 덮고, `process_resident_memory_bytes`를 `mem_limit` 512MiB와 대조할 수 있다. 수집기가 대상 tier로 가는 것은 위 alloy·`cure-backend`와 같은 선례다: 반대로 에이전트를 monitoring·backend 망에 넣으면 외부 트래픽을 받는 서비스에 모니터링 스택 접근을 주거나 DB 경로가 생겨 §49의 격리가 무너진다. 메트릭 경로가 에이전트 접두사(`/api/v1/agent/`) **밖**인 것도 같은 이유다 — 접두사 안에 두면 nginx가 통째로 프록시해 외부에 공개된다(BE `/api/v1/metrics`를 nginx에서 404로 막은 이유와 같다). **무엇을 셀지는 아직 정하지 않았다**: 노출은 프로세스·런타임 지표(`process_*`·`python_*`)뿐이고 도메인 지표·HTTP 요청 축은 기능이 붙어 실사용 요청이 생긴 뒤에 연다(지금 열면 분모가 자기 헬스체크다 — 위 「알림 설계 원칙」 ⑴). 배포는 **에이전트 이미지가 먼저 착지**해야 한다 — 스크레이프 대상이 먼저 등록되면 alloy가 404를 받아 `up=0`이 되고 3분 뒤 거짓 `InstanceDown`이 울린다.
-- **에이전트 서비스 운영 (docs/specs/49)**: 추적은 에이전트 기동 시 `AGENT_TRACING_ENABLED`(`true`만 발동)가 LangSmith SDK 전역 스위치로 고정한다 — SDK 환경변수는 `LANGSMITH_`·`LANGCHAIN_` 어느 쪽이든 `true` 한 줄로 켜지고 `false`로 끌 수 없어(langsmith 0.11.0 실측) `.env` 한 줄이 조용히 추적을 켠다. **운영 추적 통로(compose·CD)는 아직 열지 않았다** — 환자 경로 입출력 숨김과 같은 스텝에서 열어, 켜는 수단과 숨기는 수단이 같은 날 생기게 한다. 헬스는 프로세스 생존만 보고 BE를 부르지 않는다(BE 장애가 에이전트 재시작·롤백으로 번지지 않게). 배포는 app 헬스 뒤 에이전트 헬스를 기다리고, 실패하면 에이전트만 이전 태그로 되돌린 채 **실패로 끝난다**(`deploy.sh`) — 조용히 성공 처리하면 부속 서비스의 crash loop가 배포 로그에서 사라진다. 에이전트 단독 배포·롤백은 `cd-gcp.yml` dispatch의 `agent_image_tag`로 한다.
+- **에이전트 서비스 운영 (docs/specs/49)**: 추적은 에이전트 기동 시 `AGENT_TRACING_ENABLED`(`true`만 발동)가 LangSmith SDK 전역 스위치로 고정한다 — SDK 환경변수는 `LANGSMITH_`·`LANGCHAIN_` 어느 쪽이든 `true` 한 줄로 켜지고 `false`로 끌 수 없어(langsmith 0.11.0 실측) `.env` 한 줄이 조용히 추적을 켠다. **운영 추적 통로는 환자 경로 입출력 숨김과 같은 스텝에서 열었다**(docs/specs/51) — compose가 `AGENT_TRACING_ENABLED`·`LANGSMITH_API_KEY`를 통과시키고 CD가 전자를 저장소 변수·후자를 시크릿으로 넘긴다. **기본 꺼짐**이고, 켜려면 시크릿을 등록하고 변수 한 줄을 넣은 뒤 재배포한다(킬스위치를 vars에 둔 §33·§40·§45 선례). SDK 스위치는 여전히 싣지 않는다. 에이전트 LLM은 BE와 같은 `OPENAI_API_KEY`·기본 모델이다 — 키를 나누면 로테이션 지점만 둘이 된다. 헬스는 프로세스 생존만 보고 BE를 부르지 않는다(BE 장애가 에이전트 재시작·롤백으로 번지지 않게). 배포는 app 헬스 뒤 에이전트 헬스를 기다리고, 실패하면 에이전트만 이전 태그로 되돌린 채 **실패로 끝난다**(`deploy.sh`) — 조용히 성공 처리하면 부속 서비스의 crash loop가 배포 로그에서 사라진다. 에이전트 단독 배포·롤백은 `cd-gcp.yml` dispatch의 `agent_image_tag`로 한다.
+- **에이전트 추적 숨김 (docs/specs/51)**: **경로가 환자·복합으로 정해진 뒤의 실행은 전부 숨김 클라이언트로 돈다 — 분류기와 지침 경로는 보인다.** 숨길 실행을 목록으로 고르면 빠진다(환자 도구 출력만 숨기면 같은 기록이 합성 프롬프트로 다시 실린다). 숨김 클라이언트는 입출력을 비우고 메타데이터는 허용목록(토큰 수·모델·노드·traceId)만, 오류는 예외 클래스만 남긴다 — `error` 필드가 `hide_*`를 거치지 않고 함수형 `hide_metadata`는 anonymizer가 있으면 무시되는 실측 함정을 한 anonymizer로 닫는다. **access 토큰은 경로와 무관하게 runtime context로만** 넘긴다(`configurable`은 숨김과 무관하게 메타데이터로 샌다, 실측). **분류기 입력(질문 원문)이 트레이스에 남는 것은 위 「프롬프트 원문 로그 금지」의 명시적 예외다** — 경로가 정해지기 전이라 숨길 기준이 없고, 오분류를 트레이스에서 바로 보기 위해서다. 대가로 추적이 켜진 동안 질문(질문에 적은 환자 상태 포함)이 LangSmith SaaS 미국 리전에 base trace 14일간 남는다. 숨김의 계약 원본과 검증은 에이전트 레포다.
 
 ---
 

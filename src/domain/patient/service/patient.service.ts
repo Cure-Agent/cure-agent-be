@@ -156,6 +156,9 @@ export class PatientService {
     // 파기 예약이 되고, 퍼지가 대화를 먼저 지운다는 불변식이 깨진다.
     await this.txManager.run(async () => {
       const deletedAt = new Date();
+      // **환자 행 갱신이 연쇄보다 먼저다.** 에이전트 환자 도구는 환자 행을 공유 잠금한 채 스냅샷을
+      // 턴에 고정하므로(docs/specs/51), 이 UPDATE가 그 고정의 커밋을 기다린 뒤에야 아래 연쇄 문장이
+      // 시작된다 — 도중에 고정된 턴의 대화도 연쇄가 본다. 순서를 뒤집으면 그 대화가 빠진다.
       await this.repository.softDelete(scope, patientId, deletedAt);
       // 이미 삭제된 대화의 시각은 그 WHERE절이 지켜준다 (기준 10)
       await this.repository.softDeleteConversationsByPatient(patientId, deletedAt);

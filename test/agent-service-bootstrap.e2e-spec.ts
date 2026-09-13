@@ -1,4 +1,4 @@
-// docs/specs/49 수용 기준 23~39 동결 테스트 — 구현 중 수정 금지
+// docs/specs/49 수용 기준 23~36·38·39 · docs/specs/50 기준 8 · docs/specs/51 기준 121~126 동결 테스트 — 구현 중 수정 금지
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request as requestHttps } from 'node:https';
@@ -23,10 +23,18 @@ const STUB_SERVER_SCRIPT = `
 const http = require('http');
 const name = process.env.STUB_NAME;
 const port = Number(process.env.STUB_PORT);
+const receivedRequests = [];
 
 http
   .createServer((req, res) => {
+    receivedRequests.push(req.method + ' ' + req.url);
     req.on('end', () => {
+      if (name === 'app' && req.method === 'GET' && req.url === '/__stub/received') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(receivedRequests));
+        return;
+      }
+
       let cookieHeaderLines = 0;
       for (let index = 0; index < req.rawHeaders.length; index += 2) {
         if (req.rawHeaders[index].toLowerCase() === 'cookie') {
@@ -371,18 +379,6 @@ describe('docs/specs/49 — 운영 compose 불변식', () => {
     expect(environment.get('BE_ORIGIN')).toBe('http://app:3000');
   });
 
-  it('기준 37: agent 환경에는 운영 추적 활성화 키가 없다', () => {
-    const services = readComposeServices();
-    expect(services.agent).toBeDefined();
-
-    const agent = requireRecord(services.agent, 'services.agent');
-    const environment = normalizeEnvironment(agent.environment);
-    const environmentKeys = [...environment.keys()];
-    expect(environment.has('AGENT_TRACING_ENABLED')).toBe(false);
-    expect(environmentKeys.filter((key) => key.startsWith('LANGSMITH_'))).toEqual([]);
-    expect(environmentKeys.filter((key) => key.startsWith('LANGCHAIN_'))).toEqual([]);
-  });
-
   it('기준 38: agent healthcheck는 agent healthz 경로를 본다', () => {
     const services = readComposeServices();
     expect(services.agent).toBeDefined();
@@ -400,6 +396,45 @@ describe('docs/specs/49 — 운영 compose 불변식', () => {
     const nginx = requireRecord(services.nginx, 'services.nginx');
     const dependencies = normalizeNameSet(nginx.depends_on, 'services.nginx.depends_on');
     expect(dependencies.has('agent')).toBe(false);
+  });
+});
+
+describe('docs/specs/51 — 운영 구성이 추적·LLM 통로를 연다', () => {
+  it('docs/specs/51 기준 123: agent 환경에 AGENT_TRACING_ENABLED 키가 있다', () => {
+    const services = readComposeServices();
+    expect(services.agent).toBeDefined();
+
+    const agent = requireRecord(services.agent, 'services.agent');
+    const environment = normalizeEnvironment(agent.environment);
+    expect(environment.has('AGENT_TRACING_ENABLED')).toBe(true);
+  });
+
+  it('docs/specs/51 기준 124: agent 환경에 LANGSMITH_API_KEY 키가 있다', () => {
+    const services = readComposeServices();
+    expect(services.agent).toBeDefined();
+
+    const agent = requireRecord(services.agent, 'services.agent');
+    const environment = normalizeEnvironment(agent.environment);
+    expect(environment.has('LANGSMITH_API_KEY')).toBe(true);
+  });
+
+  it('docs/specs/51 기준 125: agent 환경에 OPENAI_API_KEY 키가 있다', () => {
+    const services = readComposeServices();
+    expect(services.agent).toBeDefined();
+
+    const agent = requireRecord(services.agent, 'services.agent');
+    const environment = normalizeEnvironment(agent.environment);
+    expect(environment.has('OPENAI_API_KEY')).toBe(true);
+  });
+
+  it('docs/specs/51 기준 126: agent 환경에 SDK 추적 스위치 키가 없다', () => {
+    const services = readComposeServices();
+    expect(services.agent).toBeDefined();
+
+    const agent = requireRecord(services.agent, 'services.agent');
+    const environment = normalizeEnvironment(agent.environment);
+    expect(environment.has('LANGSMITH_TRACING')).toBe(false);
+    expect(environment.has('LANGCHAIN_TRACING_V2')).toBe(false);
   });
 });
 
@@ -444,6 +479,83 @@ describe('docs/specs/49 — agent가 있는 nginx 망', () => {
     }
     if (received.path !== '/metrics') {
       throw new Error('app에 도달한 요청 경로가 /metrics가 아니다');
+    }
+  });
+
+  it('docs/specs/51 기준 121: 내부 완결·수락 요청은 각각 404다', async () => {
+    const runningNginx = requireStartedContainer(nginx, 'nginx');
+    const responses: HttpsResponse[] = [];
+    for (const path of [
+      '/api/v1/internal/agent/turns/x/finish',
+      '/api/v1/internal/agent/conversations/x/turns',
+    ]) {
+      responses.push(
+        await sendHttps(runningNginx, {
+          method: 'POST',
+          path,
+          headers: {
+            Cookie: 'access_token=access-121; refresh_token=refresh-121',
+            'X-CSRF-Protection': 'csrf-probe-121',
+          },
+        }),
+      );
+    }
+    expect(responses.map((response) => response.statusCode)).toEqual([404, 404]);
+  });
+
+  it('docs/specs/51 기준 122: 일반 API는 app 수신 기록에 있고 내부 요청은 없다', async () => {
+    const runningNginx = requireStartedContainer(nginx, 'nginx');
+    const readReceivedRequests = async (): Promise<string[]> => {
+      const response = await sendHttps(runningNginx, {
+        method: 'GET',
+        path: '/__stub/received',
+      });
+      expect(response.statusCode).toBe(200);
+      const received: unknown = JSON.parse(response.body);
+      if (!Array.isArray(received)) {
+        throw new Error('app 수신 기록이 배열이 아니다');
+      }
+      return received.map((entry: unknown) => {
+        if (typeof entry !== 'string') {
+          throw new Error('app 수신 기록 항목이 문자열이 아니다');
+        }
+        return entry;
+      });
+    };
+
+    // 이전 테스트의 기록으로 양성 대조가 통과하지 않도록 이번 요청의 증가를 확인한다.
+    const generalPath = '/api/v1/patients';
+    const generalRequest = `GET ${generalPath}`;
+    const before = await readReceivedRequests();
+    const generalResponse = await sendHttps(runningNginx, {
+      method: 'GET',
+      path: generalPath,
+    });
+    expect(parseStubResponse(generalResponse).service).toBe('app');
+    const positiveControl = await readReceivedRequests();
+    expect(positiveControl).toContain(generalRequest);
+    expect(positiveControl.filter((entry) => entry === generalRequest).length).toBe(
+      before.filter((entry) => entry === generalRequest).length + 1,
+    );
+
+    const internalPaths = [
+      '/api/v1/internal/agent/turns/spec51-122/finish',
+      '/api/v1/internal/agent/conversations/spec51-122/turns',
+    ];
+    for (const path of internalPaths) {
+      await sendHttps(runningNginx, {
+        method: 'POST',
+        path,
+        headers: {
+          Cookie: 'access_token=access-122; refresh_token=refresh-122',
+          'X-CSRF-Protection': 'csrf-probe-122',
+        },
+      });
+    }
+
+    const received = await readReceivedRequests();
+    for (const path of internalPaths) {
+      expect(received).not.toContain(`POST ${path}`);
     }
   });
 

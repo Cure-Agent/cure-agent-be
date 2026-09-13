@@ -30,14 +30,20 @@ export const messageStatus = pgEnum('message_status', [
 ]);
 export const answerKind = pgEnum('answer_kind', ['GUIDELINE_ANSWER', 'CLINICAL_GUIDANCE']);
 /**
- * 기권 사유 (docs/specs/43). 값 집합의 원본은 `AbstainReason`
+ * 기권 사유 (docs/specs/43). 앞의 셋은 BE 게이트가 내는 사유로 원본이 `AbstainReason`
  * (`global/observability/metrics/metrics.service.ts`)이며 여기는 그 DB 표현이다.
+ *
+ * 뒤의 둘은 **에이전트가 완결로 기록하는 사유**다 (docs/specs/51) — BE 게이트는 내지 않으므로
+ * 메트릭 축(`AbstainReason`)에 섞지 않고 저장 표현에만 둔다.
  */
 export const abstainReason = pgEnum('abstain_reason', [
   'no_candidates',
   'beyond_cutoff',
   'insufficient_evidence',
+  'out_of_scope',
+  'patient_unresolved',
 ]);
+export type MessageAbstainReason = (typeof abstainReason.enumValues)[number];
 export const feedbackRating = pgEnum('feedback_rating', ['HELPFUL', 'NOT_HELPFUL']);
 
 export const conversations = pgTable(
@@ -166,7 +172,8 @@ export const generationRuns = pgTable('generation_runs', {
    */
   originalQuestion: text('original_question'),
   searchQuestion: text('search_question'),
-  retrievalPolicyVersion: text('retrieval_policy_version').notNull(),
+  /** NULL은 「검색하지 않은 생성」이다 — 에이전트 환자 경로 (docs/specs/51) */
+  retrievalPolicyVersion: text('retrieval_policy_version'),
   latencyMs: integer('latency_ms').notNull(),
   tokenUsage: jsonb('token_usage').$type<{ inputTokens: number; outputTokens: number }>(),
   traceId: text('trace_id').notNull(),

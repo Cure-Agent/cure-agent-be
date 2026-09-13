@@ -325,6 +325,41 @@ export class ConversationRepository {
       .where(and(eq(messages.id, id), eq(messages.status, 'STREAMING')));
   }
 
+  /**
+   * 에이전트 완결의 종결 (docs/specs/51) — **STREAMING일 때만** 닫고 닫았는지를 돌려준다.
+   *
+   * 판정을 UPDATE의 WHERE에 싣는 이유는 `updateMessageIfStreaming`과 같다: 조회 뒤 갱신하면 그 사이에
+   * 다른 완결이 닫은 턴을 덮는다. 0행이면 호출자가 `AGENT_TURN_CLOSED`로 끝낸다.
+   */
+  async closeStreamingMessage(
+    id: string,
+    patch: Pick<MessageRow, 'status' | 'content' | 'abstainReason'>,
+  ): Promise<boolean> {
+    const rows = await this.txManager.conn
+      .update(messages)
+      .set(patch)
+      .where(and(eq(messages.id, id), eq(messages.status, 'STREAMING')))
+      .returning({ id: messages.id });
+    return rows.length > 0;
+  }
+
+  /**
+   * 답변 종류를 정한다 — 에이전트 턴은 경로가 정해지기 전이라 NULL로 수락되고, 지침 경로로 정해지면
+   * 채팅의 지침 답변과 같은 `GUIDELINE_ANSWER`가 된다 (docs/specs/51 기준 80).
+   */
+  async setAnswerKind(id: string, answerKind: MessageRow['answerKind']): Promise<void> {
+    await this.txManager.conn.update(messages).set({ answerKind }).where(eq(messages.id, id));
+  }
+
+  /** 인용 대상 청크 — 에이전트 완결이 근거 id의 실재를 확인하고 quote를 만든다 (docs/specs/51) */
+  async findEvidenceChunks(ids: string[]): Promise<Pick<EvidenceChunkRow, 'id' | 'content'>[]> {
+    if (ids.length === 0) return [];
+    return this.txManager.conn
+      .select({ id: evidenceChunks.id, content: evidenceChunks.content })
+      .from(evidenceChunks)
+      .where(inArray(evidenceChunks.id, ids));
+  }
+
   // ── citations / runs / feedback ──────────────────────
 
   async insertCitations(
