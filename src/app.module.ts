@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { AgentTurnModule } from './domain/agent-turn/agent-turn.module';
 import { AuthModule } from './domain/auth/auth.module';
 import { ClinicianModule } from './domain/clinician/clinician.module';
 import { ConversationModule } from './domain/conversation/conversation.module';
@@ -69,6 +70,8 @@ import { HealthModule } from './health/health.module';
     ConversationModule,
     PatientModule,
     ClinicalGuidanceModule,
+    // 에이전트 턴 (docs/specs/51) — 에이전트 서비스만 부르는 내부 전용 API
+    AgentTurnModule,
     // 개정 감지 크론 트리거 (docs/specs/26) — GuidelineModule 뒤에 온다
     SchedulerModule,
     // RAG 평가 (docs/specs/27) — 컨트롤러 없음. scripts/eval-rag.ts와 e2e가 소비한다

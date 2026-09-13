@@ -130,6 +130,14 @@ export const ErrorCodes = {
     status: 502,
     message: '서버 응답을 받지 못했습니다. 잠시 후 다시 시도해주세요.',
   },
+  // 에이전트 턴 (docs/specs/51) — 내부 도구·완결이 이미 `STREAMING`이 아닌 턴에 도착했다.
+  // **에이전트만 받는 코드다**(내부 전용 API라 FE에 닿지 않는다).
+  // `DUPLICATE_CLIENT_REQUEST`는 수락 시점의 요청 중복이라 뜻이 다르고, `NOT_FOUND`로 뭉개면
+  // 「수락하지 않은 메시지」와 구분되지 않아 에이전트가 원인(이미 닫힌 턴 vs 잘못된 id)을 가를 수 없다.
+  AGENT_TURN_CLOSED: {
+    status: 409,
+    message: '이미 종료된 답변입니다.',
+  },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type ErrorCode = keyof typeof ErrorCodes;
