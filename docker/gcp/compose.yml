@@ -87,6 +87,9 @@ services:
       # 안 된다. 만료된 토큰은 이미 교환이 거부되므로 이 값은 재사용 감지 꼬리의 길이다.
       DATA_PURGE_SESSION_RETENTION_DAYS: ${DATA_PURGE_SESSION_RETENTION_DAYS:-30}
       DATA_PURGE_BATCH_SIZE: ${DATA_PURGE_BATCH_SIZE:-200}
+      # 한 틱에서 돌 배치 수 상한 (이슈 #473). 배치가 꽉 차면 이어 돌므로 틱당 처리량은
+      # BATCH_SIZE × 이 값이다 — 200 × 50 = 축당 10,000건.
+      DATA_PURGE_MAX_BATCHES_PER_TICK: ${DATA_PURGE_MAX_BATCHES_PER_TICK:-50}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # 참고안 구조화 킬스위치 (docs/specs/33 기준 8). 'false'만 발동한다.
