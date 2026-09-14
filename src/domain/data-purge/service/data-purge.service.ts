@@ -18,7 +18,10 @@ export interface PurgeOutcome {
   patients: number;
   /** 물리 삭제한 refresh 세션 수 (docs/specs/39) */
   sessions: number;
-  /** 배치 상한으로 이번 틱에서 남긴 뿌리 행 수 — 다음 틱이 가져간다 (기준 21) */
+  /**
+   * 이번 틱이 시작할 때 있던 후보 중 못 지운 뿌리 행 수 — 다음 틱이 가져간다 (기준 21).
+   * 배치 상한·락 연장 실패로 남긴 것과, 대화 행이 남아 보류된 환자(이슈 #473)를 모두 포함한다.
+   */
   deferred: number;
   /** 락을 얻지 못해 아무것도 하지 않았는가 (기준 20 — fail-closed) */
   skipped: boolean;
@@ -75,51 +78,99 @@ export class DataPurgeService {
         Date.now() - this.config.sessionRetentionDays * MS_PER_DAY,
       );
       const limit = this.config.batchSize;
+      const maxBatches = this.config.maxBatchesPerTick;
 
-      const [total, conversationIds, patientIds, clinicIds, sessionIds] = await Promise.all([
-        this.repository.countPurgeable(cutoff, sessionCutoff),
-        this.repository.findPurgeableConversationIds(cutoff, limit),
-        this.repository.findPurgeablePatientIds(cutoff, limit),
-        this.repository.findPurgeableClinicIds(cutoff, limit),
-        this.repository.findPurgeableSessionIds(sessionCutoff, limit),
-      ]);
+      // 총수는 틱 시작 시 1회만 센다 — deferred는 「이 틱이 시작할 때 있던 것 중 못 지운 수」다.
+      const total = await this.repository.countPurgeable(cutoff, sessionCutoff);
+      const purged = { conversations: 0, patients: 0, clinics: 0, sessions: 0 };
 
-      // 대화를 먼저 지운다 — 환자의 deletedAt은 그 환자 대화의 것보다 항상 같거나 늦으므로
-      // 두 목록이 같은 틱에 잡히면 가이던스가 먼저 사라져 있어야 스냅샷·환자가 지워진다.
-      // 클리닉 파기는 마지막이다 — 그 안에서 대화·환자를 clinic_id 기준으로 다시 훑으므로
-      // 앞 두 단계가 남긴 것이 있어도 함께 정리된다 (docs/specs/36).
-      await this.txManager.run(async () => {
-        await this.repository.purgeConversations(conversationIds);
-        await this.repository.purgePatients(patientIds);
-        await this.repository.purgeClinics(clinicIds);
-        // 세션은 참조 FK가 0개인 잎이라 **순서와 무관하다**. 같은 tx에 두는 것은 한 틱의 실패가
-        // 부분 반영을 남기지 않게 하려는 기존 계약의 계승이다. 클리닉 파기(§36 ④)가 같은 행을
-        // 이미 지웠어도 id 기준 DELETE라 충돌하지 않는다 — 두 경로는 공존한다.
-        await this.repository.purgeSessions(sessionIds);
-      });
+      /**
+       * 배치를 **틱 안에서 반복**한다 (이슈 #473). 어느 축이든 뽑힌 수가 상한과 같으면 뒤에 더 있을
+       * 수 있으므로 이어 돈다. 배치마다 별도 트랜잭션이다 — 한 배치의 실패가 앞 배치를 되돌리지
+       * 않고, 한 트랜잭션의 크기는 여전히 상한으로 묶인다. 락은 배치 사이에 연장하며, 연장이
+       * 실패하면 fail-closed로 멈춘다(§26 규약 — 락 없이 도는 것은 락을 두지 않은 것과 같다).
+       */
+      let batches = 0;
+      let stopReason: string | null = null;
+      // 첫 배치는 반드시 돌고 상한 검사는 뒤에 온다 — maxBatchesPerTick이 없던 호출자(옛 유닛
+      // 하네스)도 단일 배치 동작을 그대로 얻는다.
+      for (;;) {
+        if (batches > 0) {
+          const extended = await this.lock.extend(
+            DATA_PURGE_LOCK_KEY,
+            token,
+            this.config.lockTtlMs,
+          );
+          if (!extended) {
+            stopReason = '락 연장 실패';
+            break;
+          }
+        }
 
-      // 클리닉 미반영분도 센다 — 조용한 절단 금지(기준 21). `?? 0`은 클리닉 축이 없던
-      // 시절의 호출자(부분 mock 포함)에서도 NaN이 되지 않게 하는 방어다.
-      const deferred =
-        total.conversations -
-        conversationIds.length +
-        (total.patients - patientIds.length) +
-        ((total.clinics ?? 0) - clinicIds.length) +
-        ((total.sessions ?? 0) - sessionIds.length);
-      if (deferred > 0) {
-        // 조용한 절단 금지 — 남긴 수를 남겨야 「다 지웠다」로 오독되지 않는다
-        this.logger.warn(`배치 상한(${limit})으로 ${deferred}건을 다음 틱으로 남긴다`);
+        const [conversationIds, patientIds, clinicIds, sessionIds] = await Promise.all([
+          this.repository.findPurgeableConversationIds(cutoff, limit),
+          this.repository.findPurgeablePatientIds(cutoff, limit),
+          this.repository.findPurgeableClinicIds(cutoff, limit),
+          this.repository.findPurgeableSessionIds(sessionCutoff, limit),
+        ]);
+
+        // 대화를 먼저 지운다 — 환자 후보는 자기 대화 행이 남아 있으면 이미 제외돼 있으므로
+        // (리포지토리), 여기 순서는 같은 배치 안의 FK 역순을 지키는 것이다.
+        // 클리닉 파기는 마지막이다 — 그 안에서 대화·환자를 clinic_id 기준으로 다시 훑으므로
+        // 앞 두 단계가 남긴 것이 있어도 함께 정리된다 (docs/specs/36).
+        await this.txManager.run(async () => {
+          await this.repository.purgeConversations(conversationIds);
+          await this.repository.purgePatients(patientIds);
+          await this.repository.purgeClinics(clinicIds);
+          // 세션은 참조 FK가 0개인 잎이라 **순서와 무관하다**. 클리닉 파기(§36 ④)가 같은 행을
+          // 이미 지웠어도 id 기준 DELETE라 충돌하지 않는다 — 두 경로는 공존한다.
+          await this.repository.purgeSessions(sessionIds);
+        });
+
+        purged.conversations += conversationIds.length;
+        purged.patients += patientIds.length;
+        purged.clinics += clinicIds.length;
+        purged.sessions += sessionIds.length;
+        batches += 1;
+
+        const anyFull =
+          conversationIds.length >= limit ||
+          patientIds.length >= limit ||
+          clinicIds.length >= limit ||
+          sessionIds.length >= limit;
+        if (!anyFull) break;
+        if (!(batches < maxBatches)) {
+          stopReason = `틱당 배치 상한(${maxBatches})`;
+          break;
+        }
       }
 
-      this.metrics?.recordDataPurge('conversation', 'purged', conversationIds.length);
-      this.metrics?.recordDataPurge('patient', 'purged', patientIds.length);
-      this.metrics?.recordDataPurge('clinic', 'purged', clinicIds.length);
-      this.metrics?.recordDataPurge('session', 'purged', sessionIds.length);
+      // 못 지운 수 — 배치 상한으로 남긴 것과 대화가 남아 건너뛴 환자를 모두 포함한다(기준 21,
+      // 조용한 절단 금지). 클리닉 파기가 총수에 잡힌 대화·환자를 함께 지우면 음수가 될 수 있어
+      // 0에서 자른다. `?? 0`은 클리닉·세션 축이 없던 시절의 호출자(부분 mock 포함) 방어다.
+      const deferred = Math.max(
+        0,
+        total.conversations -
+          purged.conversations +
+          (total.patients - purged.patients) +
+          ((total.clinics ?? 0) - purged.clinics) +
+          ((total.sessions ?? 0) - purged.sessions),
+      );
+      if (deferred > 0) {
+        this.logger.warn(
+          `${stopReason ?? '대화가 남은 환자 보류'}로 ${deferred}건을 다음 틱으로 남긴다 (배치 ${batches}회)`,
+        );
+      }
+
+      this.metrics?.recordDataPurge('conversation', 'purged', purged.conversations);
+      this.metrics?.recordDataPurge('patient', 'purged', purged.patients);
+      this.metrics?.recordDataPurge('clinic', 'purged', purged.clinics);
+      this.metrics?.recordDataPurge('session', 'purged', purged.sessions);
 
       return {
-        conversations: conversationIds.length,
-        patients: patientIds.length,
-        sessions: sessionIds.length,
+        conversations: purged.conversations,
+        patients: purged.patients,
+        sessions: purged.sessions,
         deferred,
         skipped: false,
       };
