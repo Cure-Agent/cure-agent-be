@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, lt, notExists, or } from 'drizzle-orm';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { agentTurns } from '../../agent-turn/persistence/agent-turn.schema';
 import {
@@ -42,12 +42,33 @@ export class DataPurgeRepository {
     return rows.map((row) => row.id);
   }
 
-  /** 유예가 지난 환자 id — 컷오프는 앱 계층이 계산해 넘긴다 (기준 14) */
+  /**
+   * 유예가 지난 환자 id — 컷오프는 앱 계층이 계산해 넘긴다 (기준 14).
+   *
+   * **그 환자를 가리키는 대화 행이 하나라도 남아 있으면 제외한다** (이슈 #473). 대화·환자 후보는
+   * 축마다 상한(batchSize)까지 따로 뽑히므로, 대화 후보가 상한을 넘으면 「환자는 뽑혔는데 그 환자의
+   * 대화는 밀린」 조합이 나온다. 그 상태로 `purgePatients`를 부르면 남은 대화의 가이던스가
+   * 스냅샷·환자를 FK로 붙들어 트랜잭션 전체가 롤백되고, 다음 틱도 같은 후보를 뽑아 같은 자리에서
+   * 실패한다 — 파기 전체가 영구 정지한다. 대화는 환자보다 먼저(같거나 이른 deletedAt) 삭제되므로
+   * 대화가 먼저 빠져나간 뒤의 배치에서 이 환자가 자연히 잡힌다. 건너뛴 수는 호출자가 deferred로 센다.
+   */
   async findPurgeablePatientIds(cutoff: Date, limit: number): Promise<string[]> {
-    const rows = await this.txManager.conn
+    const conn = this.txManager.conn;
+    const rows = await conn
       .select({ id: patients.id })
       .from(patients)
-      .where(and(isNotNull(patients.deletedAt), lt(patients.deletedAt, cutoff)))
+      .where(
+        and(
+          isNotNull(patients.deletedAt),
+          lt(patients.deletedAt, cutoff),
+          notExists(
+            conn
+              .select({ id: conversations.id })
+              .from(conversations)
+              .where(eq(conversations.patientId, patients.id)),
+          ),
+        ),
+      )
       .orderBy(patients.deletedAt)
       .limit(limit);
     return rows.map((row) => row.id);

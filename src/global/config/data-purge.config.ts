@@ -33,7 +33,7 @@ export const dataPurgeConfig = registerAs('dataPurge', () => ({
   sessionRetentionDays: Number(process.env.DATA_PURGE_SESSION_RETENTION_DAYS ?? 30),
   /** 락 TTL — 대상 산출 구간에 맞춘 값이며 삭제 소요와 무관하다 (§26 규약) */
   lockTtlMs: Number(process.env.DATA_PURGE_LOCK_TTL_MS ?? 60_000),
-  /** 한 틱에 파기할 뿌리 행 수 상한. 초과분은 다음 틱으로 남기고 남긴 수를 로그로 남긴다 */
+  /** 한 배치에 파기할 뿌리 행 수 상한(축당). 배치가 꽉 차면 같은 틱에서 다음 배치를 이어 돈다 */
   batchSize: Number(process.env.DATA_PURGE_BATCH_SIZE ?? 200),
   /**
    * 한 틱에서 돌 수 있는 배치 수 상한 (이슈 #473). 어느 축이든 뽑힌 수가 `batchSize`와 같으면

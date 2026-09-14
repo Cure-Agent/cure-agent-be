@@ -11,6 +11,14 @@ end
 return 0
 `;
 
+/** 내가 건 락일 때만 TTL을 늘린다 — 대조와 PEXPIRE가 한 원자 단위여야 한다 */
+const EXTEND_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`;
+
 /**
  * TTL 기반 분산 락 (docs/specs/26).
  *
@@ -45,11 +53,20 @@ export class RedisLock {
   }
 
   /**
-   * 내가 건 락의 TTL을 연장한다 — 토큰이 일치할 때만. 연장됐으면 true, 아니면 false.
-   * (이슈 #473 스텁 — 구현 전)
+   * 내가 건 락의 TTL을 연장한다 — 토큰이 일치할 때만 (이슈 #473).
+   *
+   * 긴 작업을 배치로 쪼개 도는 호출자가 배치 사이에 부른다. `false`는 「내 락이 아니다」(TTL이
+   * 지나 남이 잡았거나 사라졌다)와 Redis 장애를 구분하지 않는다 — 어느 쪽이든 호출자는
+   * fail-closed로 다음 배치를 돌지 않아야 한다. 이미 끝난 배치는 각자 커밋돼 있으므로 잃는 것이 없다.
    */
-  async extend(_key: string, _token: string, _ttlMs: number): Promise<boolean> {
-    return false;
+  async extend(key: string, token: string, ttlMs: number): Promise<boolean> {
+    try {
+      const result = await this.client.eval(EXTEND_SCRIPT, 1, key, token, String(ttlMs));
+      return result === 1;
+    } catch (error) {
+      this.logger.warn(`락 연장 실패(${key}): ${String(error)}`);
+      return false;
+    }
   }
 
   /**
