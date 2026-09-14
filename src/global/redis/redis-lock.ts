@@ -45,6 +45,14 @@ export class RedisLock {
   }
 
   /**
+   * 내가 건 락의 TTL을 연장한다 — 토큰이 일치할 때만. 연장됐으면 true, 아니면 false.
+   * (이슈 #473 스텁 — 구현 전)
+   */
+  async extend(_key: string, _token: string, _ttlMs: number): Promise<boolean> {
+    return false;
+  }
+
+  /**
    * 토큰이 일치할 때만 해제한다 — 해제 실패는 삼킨다(TTL이 결국 푼다).
    *
    * GET·DEL을 나눠 하면 그 사이에 TTL이 지나 **다른 실행이 잡은 락을 지울 수 있다.**
