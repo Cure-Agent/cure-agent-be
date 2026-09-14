@@ -43,6 +43,7 @@ NestJS Request/Response DTO + Controller decorator
 - **OpenAPI 문서**: 두 레포 사이의 공식 계약.
 - **FE generated 타입**: OpenAPI에서 자동 생성된 소비 코드. FE에 수동 DTO(`interfaces/response/*`)를 만들지 않는다.
 - **Entity**: DB·도메인 내부 모델. OpenAPI에 노출하지 않는다.
+- **문서 전용 경로(의도적 예외, docs/specs/52)**: 브라우저가 부르는 에이전트 엔드포인트 `POST /api/v1/agent/conversations/{id}/messages/stream`은 BE가 서빙하지 않지만 BE OpenAPI에 실린다 — nginx가 같은 오리진에서 `/api/v1/agent/`를 에이전트로 보내므로 FE에게는 한 API이고, FE는 수기 DTO 없이 생성 타입으로 본문을 조립한다. 요청 스키마는 `AcceptAgentTurnRequestDto`(에이전트 요청 모델과 같은 모양)이며, 에이전트 pydantic 모델과의 어긋남은 기계가 잡지 못한다(어긋나면 에이전트가 422를 낸다). 경로는 `openapi-document.factory.ts`가 스캔 결과에 덧붙이고, contract 테스트가 존재·요청 스키마·실패 코드와 「BE 앱은 404」를 같이 단언한다.
 
 운영 규칙:
 
@@ -402,7 +403,8 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 | 검색 대상 지침 조회 | GET /guidelines |
 | 새 대화 생성 | POST /conversations |
 | 기존 대화 조회 | GET /conversations/{id} |
-| 질문 및 스트리밍 | POST /conversations/{id}/messages/stream |
+| 질문 및 스트리밍 (일반 대화 GUIDELINE_QA) | POST /api/v1/agent/conversations/{id}/messages/stream — 에이전트가 서빙, BE OpenAPI엔 문서 전용(§1·§8, docs/specs/52) |
+| 질문 및 스트리밍 (환자 고정 대화 PATIENT_GUIDANCE) | POST /conversations/{id}/messages/stream |
 | 인용 원문 조회 | GET /evidence/{evidenceId} |
 | 답변 평가 | POST /messages/{messageId}/feedback |
 
@@ -611,7 +613,7 @@ type ConversationStreamEventDto =
 
 ### 에이전트 스트림 (docs/specs/51)
 
-브라우저가 보는 스트림은 에이전트 엔드포인트 `POST /api/v1/agent/conversations/{id}/messages/stream` **하나**이고, 위 이벤트 계약을 그대로 쓰되 `agent.progress`(에이전트 전용, `stage` 규약은 §46과 같다 — 모르는 stage는 무시)가 더해진다. 계약 원본은 에이전트 레포이며 FE 소비·OpenAPI 병합은 아직 없다.
+브라우저가 보는 스트림은 에이전트 엔드포인트 `POST /api/v1/agent/conversations/{id}/messages/stream` **하나**이고, 위 이벤트 계약을 그대로 쓰되 `agent.progress`(에이전트 전용, `stage` 규약은 §46과 같다 — 모르는 stage는 무시)가 더해진다. 계약 원본은 에이전트 레포이고, BE OpenAPI가 이 경로를 **문서 전용**으로 실어(§1 예외, docs/specs/52) FE가 생성 타입으로 소비한다 — GUIDELINE_QA 대화의 전송은 무조건 이 경로이며 되돌림은 FE 재배포다. 기다리는 동안 화면은 `agent.progress`의 `routed`·`patient_loaded`를 문구로만 말하고 phase는 바꾸지 않는다.
 
 ```
 공통  message.accepted → agent.progress{stage:routed, route}
