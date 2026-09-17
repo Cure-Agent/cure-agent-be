@@ -1,0 +1,211 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1700" viewBox="0 0 2560 1700" font-family="Apple SD Gothic Neo, Pretendard, Noto Sans KR, sans-serif">
+<defs>
+<filter id="sh" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.08"/></filter>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#94A3B8"/></marker>
+<marker id="arr_s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker>
+</defs>
+<rect width="2560" height="1700" fill="#F5F6FA"/>
+<text x="56" y="118" font-size="56" fill="#111827" font-weight="700">CureAgent 프롬프트 엔지니어링 아키텍처</text>
+<text x="56" y="170" font-size="26" fill="#6B7280">질의 한 건이 통과하는 프롬프트와, 그 프롬프트를 고치기 위한 프롬프트  —  운영 8 · 평가 7 · 기각 4</text>
+<rect x="2326" y="128" width="178" height="40" rx="20" fill="white" stroke="#D1D5DB"/>
+<circle cx="2348" cy="148" r="8" fill="#334155"/>
+<text x="2366" y="156" font-size="22" fill="#111827">코드가 집행</text>
+<rect x="2085" y="128" width="227" height="40" rx="20" fill="white" stroke="#D1D5DB"/>
+<circle cx="2107" cy="148" r="8" fill="#D97706"/>
+<text x="2125" y="156" font-size="22" fill="#111827">평가 · 오프라인</text>
+<rect x="1846" y="128" width="225" height="40" rx="20" fill="white" stroke="#D1D5DB"/>
+<circle cx="1868" cy="148" r="8" fill="#0E9F9F"/>
+<text x="1886" y="156" font-size="22" fill="#111827">AGENT (Python)</text>
+<rect x="1643" y="128" width="189" height="40" rx="20" fill="white" stroke="#D1D5DB"/>
+<circle cx="1665" cy="148" r="8" fill="#6D5DF6"/>
+<text x="1683" y="156" font-size="22" fill="#111827">BE (NestJS)</text>
+<rect x="56" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="56" y="270" width="300" height="10" rx="5" fill="#0E9F9F"/>
+<circle cx="102" cy="332" r="24" fill="#0E9F9F"/>
+<text x="102" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">1</text>
+<rect x="233" y="314" width="95" height="36" rx="18" fill="#0E9F9F" fill-opacity="0.12"/>
+<text x="280.5" y="339" font-size="20" fill="#0E9F9F" font-weight="600" text-anchor="middle">AGENT</text>
+<circle cx="206.0" cy="420" r="44" fill="#0E9F9F" fill-opacity="0.10"/>
+<path d="M184.0 420 h16 M200.0 420 L214.0 404 M200.0 420 h14 M200.0 420 L214.0 436" fill="none" stroke="#0E9F9F" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="220.0" cy="404" r="6" fill="#0E9F9F"/><circle cx="220.0" cy="420" r="6" fill="#0E9F9F"/><circle cx="220.0" cy="436" r="6" fill="#0E9F9F"/>
+<text x="206.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">질의 라우팅</text>
+<text x="84" y="570" font-size="21" fill="#111827" font-weight="600">CLASSIFIER_PROMPT</text>
+<text x="84" y="600" font-size="19" fill="#6B7280">지침·환자·복합·기타</text>
+<text x="84" y="630" font-size="19" fill="#6B7280">네 갈래로 분류</text>
+<text x="84" y="682" font-size="21" fill="#111827" font-weight="600">strict json_schema</text>
+<text x="84" y="712" font-size="19" fill="#6B7280">route + patient_labels</text>
+<line x1="84" y1="758" x2="328" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="84" y="794" font-size="19" fill="#0E9F9F" font-weight="600">agent-route-v1</text>
+<text x="84" y="824" font-size="18" fill="#6B7280">라벨 규칙은 프롬프트가</text>
+<text x="84" y="852" font-size="18" fill="#6B7280">아니라 실행 경로 표가 쥔다</text>
+<line x1="360" y1="420" x2="410" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="414" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="414" y="270" width="300" height="10" rx="5" fill="#6D5DF6"/>
+<circle cx="460" cy="332" r="24" fill="#6D5DF6"/>
+<text x="460" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">2</text>
+<rect x="624" y="314" width="62" height="36" rx="18" fill="#6D5DF6" fill-opacity="0.12"/>
+<text x="655.0" y="339" font-size="20" fill="#6D5DF6" font-weight="600" text-anchor="middle">BE</text>
+<circle cx="564.0" cy="420" r="44" fill="#6D5DF6" fill-opacity="0.10"/>
+<rect x="540.0" y="398" width="30" height="24" rx="6" fill="none" stroke="#6D5DF6" stroke-width="3.5"/><path d="M546.0 422 v8 l9 -8" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linejoin="round"/><rect x="558.0" y="418" width="30" height="24" rx="6" fill="none" stroke="#6D5DF6" stroke-width="3.5"/><path d="M582.0 442 v8 l-9 -8" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linejoin="round"/>
+<text x="564.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">질의·인용 번역</text>
+<text x="442" y="570" font-size="21" fill="#111827" font-weight="600">영문 질의 → 검색어</text>
+<text x="442" y="600" font-size="19" fill="#6B7280">처방명·수치를 바꾸지 않고</text>
+<text x="442" y="630" font-size="19" fill="#6B7280">번역문만 출력</text>
+<text x="442" y="682" font-size="21" fill="#111827" font-weight="600">용어집 동봉</text>
+<text x="442" y="712" font-size="19" fill="#6B7280">답변 생성과 같은 목록</text>
+<line x1="442" y1="758" x2="686" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="442" y="794" font-size="19" fill="#6D5DF6" font-weight="600">TERMBASE 공유</text>
+<text x="442" y="824" font-size="18" fill="#6B7280">같은 카드 안에서 어휘가</text>
+<text x="442" y="852" font-size="18" fill="#6B7280">갈리면 근거로 안 읽힌다</text>
+<line x1="718" y1="420" x2="768" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="772" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="772" y="270" width="300" height="10" rx="5" fill="#6D5DF6"/>
+<circle cx="818" cy="332" r="24" fill="#6D5DF6"/>
+<text x="818" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">3</text>
+<rect x="897" y="314" width="147" height="36" rx="18" fill="#6D5DF6" fill-opacity="0.12"/>
+<text x="970.5" y="339" font-size="20" fill="#6D5DF6" font-weight="600" text-anchor="middle">BE · AGENT</text>
+<circle cx="922.0" cy="420" r="44" fill="#6D5DF6" fill-opacity="0.10"/>
+<path d="M898.0 404 h26 M898.0 420 h18 M898.0 436 h10" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linecap="round"/><path d="M940.0 438 v-34 m-9 10 l9 -10 9 10" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="922.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">LLM 리랭커</text>
+<text x="800" y="570" font-size="21" fill="#111827" font-weight="600">SYSTEM_PROMPT</text>
+<text x="800" y="600" font-size="19" fill="#6B7280">후보 30개(발췌 300자)를</text>
+<text x="800" y="630" font-size="19" fill="#6B7280">한 번에 주고 상위 5개</text>
+<text x="800" y="682" font-size="21" fill="#111827" font-weight="600">json_object</text>
+<text x="800" y="712" font-size="19" fill="#6B7280">ranking + top1Relevance</text>
+<line x1="800" y1="758" x2="1044" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="800" y="794" font-size="19" fill="#6D5DF6" font-weight="600">검색 게이트</text>
+<text x="800" y="824" font-size="18" fill="#6B7280">top1Relevance &lt; 9면 기권</text>
+<text x="800" y="852" font-size="18" fill="#6B7280">파싱 실패는 코사인 폴백</text>
+<line x1="1076" y1="420" x2="1126" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="1130" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="1130" y="270" width="300" height="10" rx="5" fill="#6D5DF6"/>
+<circle cx="1176" cy="332" r="24" fill="#6D5DF6"/>
+<text x="1176" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">4</text>
+<rect x="1340" y="314" width="62" height="36" rx="18" fill="#6D5DF6" fill-opacity="0.12"/>
+<text x="1371.0" y="339" font-size="20" fill="#6D5DF6" font-weight="600" text-anchor="middle">BE</text>
+<circle cx="1280.0" cy="420" r="44" fill="#6D5DF6" fill-opacity="0.10"/>
+<path d="M1280.0 396 l7 15 15 2 -11 10 3 15 -14 -8 -14 8 3 -15 -11 -10 15 -2z" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1280.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">답변 생성</text>
+<text x="1158" y="570" font-size="21" fill="#111827" font-weight="600">규칙 1 · 2</text>
+<text x="1158" y="600" font-size="19" fill="#6B7280">근거 밖 임상 항목 금지</text>
+<text x="1158" y="630" font-size="19" fill="#6B7280">[n]은 직접 지지에만</text>
+<text x="1158" y="682" font-size="21" fill="#111827" font-weight="600">규칙 5 · 6</text>
+<text x="1158" y="712" font-size="19" fill="#6B7280">언어 분기 · 마크다운 금지</text>
+<line x1="1158" y1="758" x2="1402" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="1158" y="794" font-size="19" fill="#6D5DF6" font-weight="600">qa-v6 / qa-v6-en</text>
+<text x="1158" y="824" font-size="18" fill="#6B7280">생성 기록에 남아 전후를</text>
+<text x="1158" y="852" font-size="18" fill="#6B7280">같은 평가셋으로 잰다</text>
+<line x1="1434" y1="420" x2="1484" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="1488" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="1488" y="270" width="300" height="10" rx="5" fill="#6D5DF6"/>
+<circle cx="1534" cy="332" r="24" fill="#6D5DF6"/>
+<text x="1534" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">5</text>
+<rect x="1698" y="314" width="62" height="36" rx="18" fill="#6D5DF6" fill-opacity="0.12"/>
+<text x="1729.0" y="339" font-size="20" fill="#6D5DF6" font-weight="600" text-anchor="middle">BE</text>
+<circle cx="1638.0" cy="420" r="44" fill="#6D5DF6" fill-opacity="0.10"/>
+<path d="M1638.0 396 l20 8 v14 c0 13 -9 22 -20 26 -11 -4 -20 -13 -20 -26 v-14z" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linejoin="round"/><path d="M1631.0 415 a7 7 0 1 1 7 8 v4" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linecap="round"/><circle cx="1638.0" cy="434" r="2.6" fill="#6D5DF6"/>
+<text x="1638.0" y="515" font-size="27" fill="#111827" font-weight="700" text-anchor="middle">답변 가능성 게이트</text>
+<text x="1516" y="570" font-size="21" fill="#111827" font-weight="600">규칙 3</text>
+<text x="1516" y="600" font-size="19" fill="#6B7280">거부 산문 대신 판정으로</text>
+<text x="1516" y="630" font-size="19" fill="#6B7280">비교·다면은 기권이 아니다</text>
+<text x="1516" y="682" font-size="21" fill="#111827" font-weight="600">flag-first 스키마</text>
+<text x="1516" y="712" font-size="19" fill="#6B7280">필드 선언 순서가 계약</text>
+<line x1="1516" y1="758" x2="1760" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="1516" y="794" font-size="19" fill="#6D5DF6" font-weight="600">insufficient_evidence</text>
+<text x="1516" y="824" font-size="18" fill="#6B7280">판정이 본문보다 먼저 도착</text>
+<text x="1516" y="852" font-size="18" fill="#6B7280">기권 문구는 코드 템플릿</text>
+<line x1="1792" y1="420" x2="1842" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="1846" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="1846" y="270" width="300" height="10" rx="5" fill="#6D5DF6"/>
+<circle cx="1892" cy="332" r="24" fill="#6D5DF6"/>
+<text x="1892" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">6</text>
+<rect x="2056" y="314" width="62" height="36" rx="18" fill="#6D5DF6" fill-opacity="0.12"/>
+<text x="2087.0" y="339" font-size="20" fill="#6D5DF6" font-weight="600" text-anchor="middle">BE</text>
+<circle cx="1996.0" cy="420" r="44" fill="#6D5DF6" fill-opacity="0.10"/>
+<rect x="1974.0" y="396" width="44" height="48" rx="6" fill="none" stroke="#6D5DF6" stroke-width="3.5"/><path d="M1983.0 409 l5 5 9 -10 M1983.0 429 l5 5 9 -10" fill="none" stroke="#6D5DF6" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1996.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">참고안 구조화</text>
+<text x="1874" y="570" font-size="21" fill="#111827" font-weight="600">규칙 2 · 3</text>
+<text x="1874" y="600" font-size="19" fill="#6B7280">근거 마커 + 프로필 필드</text>
+<text x="1874" y="630" font-size="19" fill="#6B7280">두 다리 없으면 폐기</text>
+<text x="1874" y="682" font-size="21" fill="#111827" font-weight="600">규칙 4 · 5</text>
+<text x="1874" y="712" font-size="19" fill="#6B7280">3값 판정 · 수치 계산 금지</text>
+<line x1="1874" y1="758" x2="2118" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="1874" y="794" font-size="19" fill="#6D5DF6" font-weight="600">guidance-v2</text>
+<text x="1874" y="824" font-size="18" fill="#6B7280">적용/주의/해당없음 집행은</text>
+<text x="1874" y="852" font-size="18" fill="#6B7280">도메인 검증기가 한다</text>
+<line x1="2150" y1="420" x2="2200" y2="420" stroke="#94A3B8" stroke-width="3.5" marker-end="url(#arr)"/>
+<rect x="2204" y="270" width="300" height="600" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="2204" y="270" width="300" height="10" rx="5" fill="#0E9F9F"/>
+<circle cx="2250" cy="332" r="24" fill="#0E9F9F"/>
+<text x="2250" y="341" font-size="24" fill="white" font-weight="700" text-anchor="middle">7</text>
+<rect x="2381" y="314" width="95" height="36" rx="18" fill="#0E9F9F" fill-opacity="0.12"/>
+<text x="2428.5" y="339" font-size="20" fill="#0E9F9F" font-weight="600" text-anchor="middle">AGENT</text>
+<circle cx="2354.0" cy="420" r="44" fill="#0E9F9F" fill-opacity="0.10"/>
+<circle cx="2346.0" cy="407" r="9" fill="none" stroke="#0E9F9F" stroke-width="3.5"/><path d="M2330.0 436 c0 -10 7 -17 16 -17 5 0 9 2 12 5" fill="none" stroke="#0E9F9F" stroke-width="3.5" stroke-linecap="round"/><rect x="2358.0" y="414" width="20" height="26" rx="4" fill="none" stroke="#0E9F9F" stroke-width="3.5"/><path d="M2364.0 422 h8 M2364.0 430 h8" fill="none" stroke="#0E9F9F" stroke-width="3.5" stroke-linecap="round"/>
+<text x="2354.0" y="515" font-size="30" fill="#111827" font-weight="700" text-anchor="middle">환자·복합 합성</text>
+<text x="2232" y="570" font-size="21" fill="#111827" font-weight="600">환자 경로</text>
+<text x="2232" y="600" font-size="19" fill="#6B7280">기록만 근거로 전하고</text>
+<text x="2232" y="630" font-size="19" fill="#6B7280">가부는 판단하지 않는다</text>
+<text x="2232" y="682" font-size="21" fill="#111827" font-weight="600">복합 경로</text>
+<text x="2232" y="712" font-size="19" fill="#6B7280">기록 × 지침의 접점만</text>
+<line x1="2232" y1="758" x2="2476" y2="758" stroke="#D1D5DB" stroke-width="2"/>
+<text x="2232" y="794" font-size="19" fill="#0E9F9F" font-weight="600">agent-patient-v2</text>
+<text x="2232" y="824" font-size="18" fill="#6B7280">복합은 판정+본문 구조화로</text>
+<text x="2232" y="852" font-size="18" fill="#6B7280">BE 기권 경로에 합류</text>
+<text x="56" y="238" font-size="24" fill="#334155" font-weight="700">운영 경로 — 질의 한 건이 지나는 프롬프트</text>
+<text x="56" y="922" font-size="24" fill="#334155" font-weight="700">오프라인 — 프롬프트를 고치고, 고칠지 말지를 정하는 프롬프트</text>
+<rect x="56" y="950" width="1500" height="400" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="56" y="950" width="1500" height="10" rx="5" fill="#D97706"/>
+<text x="92" y="1016" font-size="28" fill="#111827" font-weight="700">평가하는 프롬프트</text>
+<text x="92" y="1052" font-size="20" fill="#6B7280">생성기와 심판을 같이 바꾸면 전후 비교가 오염된다 — 심판은 따로 서고, 따로 동결한다</text>
+<text x="92.0" y="1116" font-size="21" fill="#D97706" font-weight="600">groundedness 심판  ·  BE</text>
+<text x="92.0" y="1150" font-size="19" fill="#6B7280">답변을 주장 단위로 갈라</text>
+<text x="92.0" y="1180" font-size="19" fill="#6B7280">supported·miscited·unsupported</text>
+<text x="92.0" y="1210" font-size="19" fill="#6B7280">면책·한계 고지는 비주장 처리</text>
+<text x="92.0" y="1240" font-size="19" fill="#6B7280">루브릭 v3에서 채점 동결</text>
+<line x1="544.0" y1="1080" x2="544.0" y2="1254" stroke="#D1D5DB" stroke-width="2"/>
+<text x="568.0" y="1116" font-size="21" fill="#D97706" font-weight="600">평가셋 역생성  ·  BE</text>
+<text x="568.0" y="1150" font-size="19" fill="#6B7280">답변 가능 문항 · 기권 문항을</text>
+<text x="568.0" y="1180" font-size="19" fill="#6B7280">각각 다른 프롬프트로 생성</text>
+<text x="568.0" y="1210" font-size="19" fill="#6B7280">앞 회차를 실어 주제 중복 차단</text>
+<text x="568.0" y="1240" font-size="19" fill="#6B7280">후보 → 사람 검수 → 승격</text>
+<line x1="1020.0" y1="1080" x2="1020.0" y2="1254" stroke="#D1D5DB" stroke-width="2"/>
+<text x="1044.0" y="1116" font-size="21" fill="#D97706" font-weight="600">에이전트 평가단  ·  AGENT</text>
+<text x="1044.0" y="1150" font-size="19" fill="#6B7280">JUDGE_SYSTEM — 키포인트 채점</text>
+<text x="1044.0" y="1180" font-size="19" fill="#6B7280">LABEL_SYSTEM — 근거 청크 라벨링</text>
+<text x="1044.0" y="1210" font-size="19" fill="#6B7280">환자·복합 경로 전용 심판 2종</text>
+<text x="1044.0" y="1240" font-size="19" fill="#6B7280">등급 규칙은 코드가 강제</text>
+<line x1="92" y1="1276" x2="1520" y2="1276" stroke="#D1D5DB" stroke-width="2"/>
+<text x="92" y="1312" font-size="19" fill="#111827" font-weight="600">루브릭 보정 → 구·신 교차 채점 → 동결 : 평가 기준 변경과 시스템 변경을 분리한다</text>
+<rect x="1604" y="950" width="900" height="400" rx="24" fill="white" filter="url(#sh)"/>
+<rect x="1604" y="950" width="900" height="10" rx="5" fill="#334155"/>
+<text x="1640" y="1016" font-size="28" fill="#111827" font-weight="700">기각된 프롬프트</text>
+<text x="1640" y="1052" font-size="20" fill="#6B7280">에이전틱 RAG 개입 4종 · 5회 반복 ablation</text>
+<text x="1640.0" y="1116" font-size="21" fill="#334155" font-weight="600">실험 레포에서만 살아 있다</text>
+<text x="1640.0" y="1150" font-size="19" fill="#6B7280">DECOMPOSER — 질의 분해</text>
+<text x="1640.0" y="1180" font-size="19" fill="#6B7280">EVALUATOR — 근거 충분성 판정</text>
+<text x="1640.0" y="1210" font-size="19" fill="#6B7280">QUERY_GENERATOR — 재검색 질의</text>
+<text x="1640.0" y="1240" font-size="19" fill="#6B7280">ANSWERER 축 열거 변형 −0.083</text>
+<line x1="1640" y1="1276" x2="2468" y2="1276" stroke="#D1D5DB" stroke-width="2"/>
+<text x="1640" y="1312" font-size="19" fill="#111827" font-weight="600">검색 경로는 현행 유지, 생성 게이트만 프로덕션으로 ⑤</text>
+<path d="M2054 940 V 928 H 1638.0 V 880" fill="none" stroke="#334155" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arr_s)"/>
+<text x="1664.0" y="918" font-size="19" fill="#334155" font-weight="600">생성 게이트만 프로덕션으로 채택</text>
+<text x="56" y="1392" font-size="24" fill="#334155" font-weight="700">프롬프트를 텍스트가 아니라 계약으로 만드는 축</text>
+<rect x="56.0" y="1420" width="800.0" height="200" rx="20" fill="white" stroke="#D1D5DB"/>
+<rect x="56.0" y="1448" width="6" height="30" rx="3" fill="#334155"/>
+<text x="82.0" y="1472" font-size="23" fill="#111827" font-weight="700">버전이 기록에 남는다</text>
+<text x="82.0" y="1520" font-size="19" fill="#6B7280">qa-v6 · guidance-v2 · agent-route-v1 · agent-composite-v2가</text>
+<text x="82.0" y="1552" font-size="19" fill="#6B7280">GenerationRun에 실려 「왜 이 답이었나」를 재현한다.</text>
+<text x="82.0" y="1584" font-size="19" fill="#6B7280">언어가 다르면 규칙 한 줄이 달라 -en으로 따로 잰다.</text>
+<rect x="880.0" y="1420" width="800.0" height="200" rx="20" fill="white" stroke="#D1D5DB"/>
+<rect x="880.0" y="1448" width="6" height="30" rx="3" fill="#334155"/>
+<text x="906.0" y="1472" font-size="23" fill="#111827" font-weight="700">판정은 산문이 아니라 스키마다</text>
+<text x="906.0" y="1520" font-size="19" fill="#6B7280">기권·적용 판단을 structured outputs로 받아 시스템이 읽는다.</text>
+<text x="906.0" y="1552" font-size="19" fill="#6B7280">flag-first 필드 순서가 계약이라 증분 파서가 플래그를</text>
+<text x="906.0" y="1584" font-size="19" fill="#6B7280">본문보다 먼저 읽고, TTFT는 구조화 이전과 같다.</text>
+<rect x="1704.0" y="1420" width="800.0" height="200" rx="20" fill="white" stroke="#D1D5DB"/>
+<rect x="1704.0" y="1448" width="6" height="30" rx="3" fill="#334155"/>
+<text x="1730.0" y="1472" font-size="23" fill="#111827" font-weight="700">집행은 프롬프트 밖에 둔다</text>
+<text x="1730.0" y="1520" font-size="19" fill="#6B7280">3값 판정은 도메인 검증기가, 기권 문구는 코드 템플릿이,</text>
+<text x="1730.0" y="1552" font-size="19" fill="#6B7280">인용은 본문에 등장한 마커만 영속화가 강제한다.</text>
+<text x="1730.0" y="1584" font-size="19" fill="#6B7280">프롬프트가 어긋나면 폴백률이 튀어 관측에 잡힌다.</text>
+</svg>
