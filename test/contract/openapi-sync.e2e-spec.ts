@@ -142,6 +142,22 @@ describe('contract: OpenAPI 스펙 동기화', () => {
     expect(committed).toEqual(regenerated);
   });
 
+  it('docs/specs/53 기준 22: 커밋본과 재생성본의 메시지 공개 계약에 스냅샷 필드가 없다', () => {
+    const committed: unknown = JSON.parse(readFileSync(SPEC_PATH, 'utf8'));
+    const regenerated: unknown = JSON.parse(JSON.stringify(buildOpenApiDocument(app)));
+    for (const spec of [committed, regenerated]) {
+      const document = requireObject(spec, '문서');
+      const components = requireObject(document.components, 'components');
+      const schemas = requireObject(components.schemas, 'components.schemas');
+      const dto = requireObject(schemas.MessageResponseDto, 'MessageResponseDto');
+      const properties = requireObject(dto.properties, 'MessageResponseDto.properties');
+      expect(properties).toHaveProperty('id');
+      expect(properties).toHaveProperty('role');
+      expect(properties).not.toHaveProperty('patientSnapshotId');
+      expect(properties).not.toHaveProperty('patientProfileSnapshotId');
+    }
+  });
+
   it('스펙 기본 계약: /api/v1 prefix + 쿠키 인증 스키마', () => {
     const spec = JSON.parse(readFileSync(SPEC_PATH, 'utf8'));
     const paths = Object.keys(spec.paths);

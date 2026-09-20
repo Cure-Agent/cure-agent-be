@@ -1,0 +1,3 @@
+ALTER TABLE "messages" ADD COLUMN "patient_snapshot_id" text;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_patient_snapshot_id_patient_profile_snapshots_id_fk" FOREIGN KEY ("patient_snapshot_id") REFERENCES "public"."patient_profile_snapshots"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_messages_patient_snapshot" ON "messages" USING btree ("patient_snapshot_id") WHERE "messages"."patient_snapshot_id" IS NOT NULL;

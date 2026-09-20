@@ -4,7 +4,7 @@ English | [한국어](README.ko.md)
 
 > A production-oriented clinical RAG backend for evidence-grounded Korean medicine decision support.
 
-CureAgent turns 87 clinical-guideline PDFs into 7,154 searchable evidence chunks, retrieves and
+CureAgent turns 63 clinical-guideline PDFs into 7,154 searchable evidence chunks, retrieves and
 reranks the most relevant passages, and streams answers with source-linked citations. Its safety
 path is evaluated against 229 questions—including 44 deliberately unanswerable cases—and abstains
 when the available evidence cannot support an answer. The system also includes multi-provider LLM
@@ -16,8 +16,10 @@ routing, production observability, and failure recovery.
 
 ## Key Features
 
-- **Hybrid retrieval** — runs pgvector cosine search and `pg_trgm` character n-gram search in
-  parallel, fuses both arms with Reciprocal Rank Fusion, and applies LLM reranking.
+- **Hybrid retrieval** — runs pgvector cosine search and a keyword arm in parallel, fuses both arms
+  with Reciprocal Rank Fusion, and applies LLM reranking. The keyword arm selects candidates with a
+  BM25 budget over an inverted vocabulary index, then ranks them by `pg_trgm` character n-gram
+  similarity.
 - **Citation-grounded generation** — constrains answers to retrieved guideline evidence and maps
   inline `[n]` markers to the source URL, section path, and supporting quote.
 - **Layered abstention and safety gates** — combines a vector-distance gate, reranker relevance
@@ -50,32 +52,45 @@ Redis 7 · SSE · OpenAPI · Prometheus · Jest + Testcontainers · Docker
 
 ## Evaluation
 
-The offline evaluation uses a production-corpus snapshot rather than synthetic retrieval fixtures.
+The offline evaluation uses a production-corpus snapshot rather than synthetic retrieval fixtures,
+and runs the deployed policy (`hybrid-rrf60-top30x2-bm2575-cut0.48-score9-v6` with the `qa-v6`
+generation prompt).
 
 | Scope                                  |                Size |
 | -------------------------------------- | ------------------: |
-| Clinical-guideline source documents    |             87 PDFs |
+| Clinical-guideline documents surveyed  |             87 PDFs |
+| Ingested into the searchable corpus    |             63 PDFs |
 | Indexed evidence corpus                | 7,154 active chunks |
 | Evaluation questions                   |           229 total |
 | Answerable / expected-abstention split |            185 / 44 |
 
 Representative results:
 
-| Metric                    | Result |
-| ------------------------- | -----: |
-| Hybrid candidate coverage | 100.0% |
-| Reranked Recall@5         |  97.3% |
-| Reranked MRR@5            |  0.925 |
-| Abstention recall         |  93.2% |
-| Over-abstention rate      |   0.0% |
-| Claim-level support rate  |  91.8% |
+| Metric                                    |    Result |
+| ----------------------------------------- | --------: |
+| Hybrid candidate coverage                 |    100.0% |
+| Keyword-arm Recall@30                     |    100.0% |
+| Reranked Recall@5                         |     98.9% |
+| Reranked MRR@5                            |     0.942 |
+| Out-of-scope questions answered (leakage) |    0 / 44 |
+| Answerable questions answered             | 185 / 185 |
+| Claim-level support rate                  |     91.8% |
+
+Abstention is reported end to end, because the layered gates only compose at the end. At the deployed
+relevance cutoff the retrieval-stage gates abstain on 41 of the 44 out-of-scope questions (93.2%
+abstention recall) and the generation-stage answerability gate catches the remaining 3, so none is
+answered; no answerable question is abstained (0.0% over-abstention). Retrieval-stage abstention
+recall is counted before the generation gate, which makes it an upper bound on leakage rather than
+the safety result itself.
 
 Retrieval and abstention results come from the
-[2026-08-25 policy run](docs/rag-eval/2026-08-25-cut-sweep-run2.md); claim support comes from the
-[qa-v5 groundedness run](docs/rag-eval/2026-08-03-groundedness-qa-v5.md). The 229-question set also
-informed cutoff selection, so these are diagnostic policy metrics—not an independent held-out
-generalization benchmark. See [all evaluation reports](docs/rag-eval/) for prompts, failure cases,
-distribution sweeps, and limitations.
+[2026-09-10 policy run](docs/rag-eval/2026-09-10-keyword-candidate-budget-v6.md); claim support comes
+from the [qa-v5 groundedness run](docs/rag-eval/2026-08-03-groundedness-qa-v5.md), measured under the
+preceding generation prompt. The 229-question set also informed cutoff selection, so these are
+diagnostic policy metrics—not an independent held-out generalization benchmark, and on the
+44-question abstention axis repeated runs of one configuration move by one to two questions. See
+[all evaluation reports](docs/rag-eval/) for prompts, failure cases, distribution sweeps, and
+limitations.
 
 ## Getting Started
 
