@@ -12,6 +12,7 @@ import {
 import { baseColumns } from '../../../global/database/base-columns';
 import { clinicians } from '../../clinician/persistence/clinician.schema';
 import { evidenceChunks } from '../../guideline/persistence/guideline.schema';
+import { patientProfileSnapshots } from '../../patient/persistence/patient.schema';
 
 export const conversationType = pgEnum('conversation_type', ['GUIDELINE_QA', 'PATIENT_GUIDANCE']);
 export const conversationStatus = pgEnum('conversation_status', ['ACTIVE', 'ARCHIVED']);
@@ -129,11 +130,27 @@ export const messages = pgTable(
      * 만들어진 행」이라는 사실 그대로이고, 그런 행은 DTO에서 키 자체가 빠진다(기준 8).
      */
     abstainReason: abstainReason('abstain_reason'),
+    /**
+     * 검색 **전에** 고정한 환자 기록 (docs/specs/53). **환자 대화의 ASSISTANT 메시지만** 채운다.
+     *
+     * 검색의 진단명·생성 프롬프트의 프로필·참고안이 모두 이 스냅샷 하나를 딛는다 — 검색 결과가
+     * 환자 기록에 좌우되기 시작했으므로, 기권한 턴도 「어느 기록을 봤나」가 남아야 붙인 진단명을
+     * 되짚을 수 있다(§5.7 재현성, `agent_turns.patient_snapshot_id`와 같은 이유).
+     *
+     * **백필하지 않는다** — 이 컬럼은 「검색 전에 고정한 기록」인데 옛 턴의 검색은 환자 기록을
+     * 쓰지 않았다. NULL은 「이 스텝 이전의 턴」이라는 사실 그대로다(`abstain_reason`과 같다).
+     */
+    patientSnapshotId: text('patient_snapshot_id').references(() => patientProfileSnapshots.id),
     ...baseColumns,
   },
   (table) => [
     uniqueIndex('uq_messages_client_request').on(table.clientRequestId),
     index('idx_messages_conversation').on(table.conversationId),
+    // 스냅샷 삭제의 FK 검사가 messages 전수 스캔이 되지 않게 한다 — 스냅샷을 딛는 메시지는
+    // 소수라 NULL 행은 인덱스에 넣지 않는다 (`idx_agent_turns_patient_snapshot`과 같은 이유)
+    index('idx_messages_patient_snapshot')
+      .on(table.patientSnapshotId)
+      .where(sql`${table.patientSnapshotId} IS NOT NULL`),
   ],
 );
 
