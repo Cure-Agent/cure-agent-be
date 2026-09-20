@@ -197,6 +197,13 @@
       "when": 1789288739799,
       "tag": "0027_agent_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789906030366,
+      "tag": "0028_message_patient_snapshot",
+      "breakpoints": true
     }
   ]
 }

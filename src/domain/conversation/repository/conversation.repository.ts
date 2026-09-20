@@ -344,6 +344,19 @@ export class ConversationRepository {
   }
 
   /**
+   * 검색 전에 고정한 환자 기록을 답변 메시지에 건다 (docs/specs/53).
+   *
+   * 복합 경로의 `agent_turns.pinPatientSnapshot`과 같은 자리·같은 참조 방식이다 — 환자 대화의
+   * 턴은 `agent_turns` 행이 없으므로(§5.7) 답변 메시지가 그 참조를 진다.
+   */
+  async pinPatientSnapshot(messageId: string, patientSnapshotId: string): Promise<void> {
+    await this.txManager.conn
+      .update(messages)
+      .set({ patientSnapshotId })
+      .where(eq(messages.id, messageId));
+  }
+
+  /**
    * 답변 종류를 정한다 — 에이전트 턴은 경로가 정해지기 전이라 NULL로 수락되고, 지침 경로로 정해지면
    * 채팅의 지침 답변과 같은 `GUIDELINE_ANSWER`가 된다 (docs/specs/51 기준 80).
    */
