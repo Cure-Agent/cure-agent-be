@@ -6,7 +6,6 @@ import { TraceContext } from '../../../global/context/trace-context.service';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
-import { MessageResponseDto } from '../../conversation/dto/response/message.response.dto';
 import { ConversationRepository } from '../../conversation/repository/conversation.repository';
 import {
   ConversationStreamService,
@@ -21,6 +20,7 @@ import { GuidelineEvidenceRequestDto } from '../dto/request/guideline-evidence.r
 import { ResolveAgentPatientRequestDto } from '../dto/request/resolve-agent-patient.request.dto';
 import { AgentPatientResolutionResponseDto } from '../dto/response/agent-patient-resolution.response.dto';
 import { AgentTurnAcceptedResponseDto } from '../dto/response/agent-turn-accepted.response.dto';
+import { AgentTurnFinishResponseDto } from '../dto/response/agent-turn-finish.response.dto';
 import { AgentTurnRepository, LoadedAgentTurn } from '../repository/agent-turn.repository';
 
 /** 전역 ValidationPipe와 같은 모양으로 422 상세를 싣는다 (§10.2) */
@@ -204,7 +204,7 @@ export class AgentTurnService {
     principal: ClinicianPrincipal,
     assistantMessageId: string,
     dto: FinishAgentTurnRequestDto,
-  ): Promise<MessageResponseDto> {
+  ): Promise<AgentTurnFinishResponseDto> {
     const loaded = await this.openTurn(principal, assistantMessageId);
 
     const answered = dto.status === 'COMPLETED';
