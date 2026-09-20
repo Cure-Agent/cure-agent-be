@@ -375,10 +375,21 @@ export class ConversationStreamService {
         sse.send({ eventType: 'retrieval.progress', ...notice });
       };
 
+      /**
+       * 환자 기록을 **검색 앞에서** 읽어 이 턴에 고정한다 (docs/specs/53).
+       *
+       * 검색의 진단명·생성 프롬프트의 프로필·참고안이 **모두 이 스냅샷 하나**를 딛는다 — 복합
+       * 경로(docs/specs/51)의 환자 도구와 같은 순서·같은 참조 방식이다. 게이트 통과 뒤에 읽으면
+       * 기권한 턴에 「어느 기록을 보고 무엇을 붙였나」가 남지 않고, 따로 두 번 읽으면 그 사이 원본이
+       * 바뀌었을 때 검색과 생성이 다른 기록을 본다. 일반 대화는 null이라 아래 전부가 오늘 그대로다.
+       */
+      const guidanceContext = await this.pinPatientRecord(conversation, principal, assistantMessageId);
+
       const { searchQuestion, evidenceRows, abstainReason, retrievalPolicyVersion } =
         await this.retrieveEvidence({
           question: args.question,
-          diagnoses: [],
+          // 진단명만 붙인다 — 투약·알레르기·임상 메모는 생성 프롬프트에만 간다 (docs/specs/53)
+          diagnoses: guidanceContext?.profile.diagnoses ?? [],
           filters: args.filters,
           sendProgress,
           traceId,
@@ -436,23 +447,14 @@ export class ConversationStreamService {
         return;
       }
 
-      // PATIENT_GUIDANCE: 생성 직전 프로필을 immutable 스냅샷으로 고정하고 (§4.5, §9)
-      // 복호화 프로필을 LLM 질문 컨텍스트에 합성한다. abstain 경로는 위에서 이미 이탈했다
-      let guidanceContext: GuidanceContext | null = null;
-      let question = args.question;
-      if (conversation.type === 'PATIENT_GUIDANCE') {
-        if (!conversation.patientId) throw new ServiceException('INTERNAL_ERROR');
-        const captured = await this.patientSnapshotService.captureWithProfile(
-          { clinicId: principal.clinicId },
-          conversation.patientId,
-        );
-        guidanceContext = {
-          patientId: conversation.patientId,
-          snapshotId: captured.snapshotId,
-          profile: captured.payload,
-        };
-        question = composeGuidanceQuestion(captured.payload, args.question);
-      }
+      /**
+       * 복호화 프로필을 LLM 질문 컨텍스트에 합성한다 (§4.5, §9). **검색 입력과 갈린다** —
+       * 부착은 검색·리랭크에만 있고, 생성이 받는 문자열은 오늘 그대로다 (docs/specs/53).
+       * 스냅샷은 위에서 이미 고정했으므로 여기서 기록을 다시 읽지 않는다.
+       */
+      const question = guidanceContext
+        ? composeGuidanceQuestion(guidanceContext.profile, args.question)
+        : args.question;
 
       // 게이트 ④ 생성 (docs/specs/40) — 발화하면 답변이 아니라 기권으로 끝난다
       ragOutcome = await this.generateAnswer({
@@ -480,6 +482,36 @@ export class ConversationStreamService {
       this.metrics.sseStreamEnded(sseOutcome);
       if (ragOutcome !== null) this.metrics.recordAnswerOutcome(ragOutcome);
     }
+  }
+
+  /**
+   * 환자 대화의 기록을 고정한다 — 스냅샷 생성과 턴 고정이 **한 tx**다 (docs/specs/53).
+   *
+   * 한 tx인 이유는 참조 없는 암호화 사본을 남기지 않기 위해서다: 고정이 실패하면 스냅샷도
+   * 함께 되돌아간다. 일반 대화(GUIDELINE_QA)는 null을 돌려주고, 그 경로의 검색·생성은
+   * 오늘과 바이트 단위로 같다.
+   *
+   * 복합 경로(docs/specs/51)의 환자 도구가 `agent_turns.patient_snapshot_id`에 거는 것과 같은
+   * 참조다 — 환자 대화의 턴은 `agent_turns` 행이 없으므로 답변 메시지가 그 참조를 진다.
+   */
+  private async pinPatientRecord(
+    conversation: ConversationRow,
+    principal: ClinicianPrincipal,
+    assistantMessageId: string,
+  ): Promise<GuidanceContext | null> {
+    if (conversation.type !== 'PATIENT_GUIDANCE') return null;
+    const patientId = conversation.patientId;
+    // PATIENT_GUIDANCE는 생성 시 patientId를 강제한다(§5.6) — 비어 있으면 우리 쪽 결함이다
+    if (!patientId) throw new ServiceException('INTERNAL_ERROR');
+
+    return this.txManager.run(async (): Promise<GuidanceContext> => {
+      const captured = await this.patientSnapshotService.captureWithProfile(
+        { clinicId: principal.clinicId },
+        patientId,
+      );
+      await this.repository.pinPatientSnapshot(assistantMessageId, captured.snapshotId);
+      return { patientId, snapshotId: captured.snapshotId, profile: captured.payload };
+    });
   }
 
   /**
