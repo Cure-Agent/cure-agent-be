@@ -45,12 +45,21 @@ export class DataPurgeRepository {
   /**
    * 유예가 지난 환자 id — 컷오프는 앱 계층이 계산해 넘긴다 (기준 14).
    *
-   * **그 환자를 가리키는 대화 행이 하나라도 남아 있으면 제외한다** (이슈 #473). 대화·환자 후보는
-   * 축마다 상한(batchSize)까지 따로 뽑히므로, 대화 후보가 상한을 넘으면 「환자는 뽑혔는데 그 환자의
-   * 대화는 밀린」 조합이 나온다. 그 상태로 `purgePatients`를 부르면 남은 대화의 가이던스가
+   * **그 환자의 대화 행이 하나라도 남아 있으면 제외한다** (이슈 #473). 대화·환자 후보는 축마다
+   * 상한(batchSize)까지 따로 뽑히므로, 대화 후보가 상한을 넘으면 「환자는 뽑혔는데 그 환자의
+   * 대화는 밀린」 조합이 나온다. 그 상태로 `purgePatients`를 부르면 남은 대화의 가이던스·턴이
    * 스냅샷·환자를 FK로 붙들어 트랜잭션 전체가 롤백되고, 다음 틱도 같은 후보를 뽑아 같은 자리에서
    * 실패한다 — 파기 전체가 영구 정지한다. 대화는 환자보다 먼저(같거나 이른 deletedAt) 삭제되므로
    * 대화가 먼저 빠져나간 뒤의 배치에서 이 환자가 자연히 잡힌다. 건너뛴 수는 호출자가 deferred로 센다.
+   *
+   * **「그 환자의 대화」는 두 갈래이고, 보류도 두 갈래여야 한다** (이슈 #497). 삭제 연쇄
+   * (`PatientRepository.softDeleteConversationsByPatient`)가 ⑴ `patient_id`가 그 환자인 대화와
+   * ⑵ 그 환자의 스냅샷을 고정한 **에이전트 턴이 있는** 대화를 함께 예약하는데(docs/specs/51
+   * 기준 118), ⑴만 보류하면 ⑵가 밀렸을 때 환자가 「대화 없음」으로 읽혀 #473이 없앴던 영구 정지가
+   * 그대로 돌아온다 — ⑵의 대화는 `patient_id`가 NULL이라 첫 갈래에 걸리지 않기 때문이다.
+   *
+   * ⑵의 단위는 **살아 있는 턴**이지 「스냅샷이 존재하는가」가 아니다. 스냅샷은 `purgePatients`가
+   * 직접 지우는 행이라, 그것으로 보류하면 아무도 풀어줄 수 없는 조건이 되어 환자가 영원히 남는다.
    */
   async findPurgeablePatientIds(cutoff: Date, limit: number): Promise<string[]> {
     const conn = this.txManager.conn;
@@ -66,6 +75,16 @@ export class DataPurgeRepository {
               .select({ id: conversations.id })
               .from(conversations)
               .where(eq(conversations.patientId, patients.id)),
+          ),
+          notExists(
+            conn
+              .select({ id: agentTurns.messageId })
+              .from(agentTurns)
+              .innerJoin(
+                patientProfileSnapshots,
+                eq(patientProfileSnapshots.id, agentTurns.patientSnapshotId),
+              )
+              .where(eq(patientProfileSnapshots.patientId, patients.id)),
           ),
         ),
       )

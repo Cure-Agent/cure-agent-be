@@ -647,6 +647,8 @@ describe('docs/specs/51: 환자 도구·근거 도구·환자 삭제 연쇄', ()
     }
     // await가 예외 없이 끝나야 아래 물리 삭제 단언에 도달한다.
     await app.get(DataPurgeService).purge();
+    // 첫 틱에 대화가 삭제되면 환자 보류가 풀리므로 두 번째 틱에 환자까지 파기한다.
+    await app.get(DataPurgeService).purge();
     const conversations = await pool.query('SELECT id FROM conversations WHERE id = $1', [
       turn.conversationId,
     ]);
