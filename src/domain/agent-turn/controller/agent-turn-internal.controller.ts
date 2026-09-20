@@ -4,7 +4,6 @@ import type { Response } from 'express';
 import { ApiResponseDto } from '../../../global/common/response/api-response.dto';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
 import { CurrentClinician } from '../../../global/security/current-clinician.decorator';
-import { MessageResponseDto } from '../../conversation/dto/response/message.response.dto';
 import { AcceptAgentTurnRequestDto } from '../dto/request/accept-agent-turn.request.dto';
 import { FinishAgentTurnRequestDto } from '../dto/request/finish-agent-turn.request.dto';
 import { GuidelineAnswerRequestDto } from '../dto/request/guideline-answer.request.dto';
@@ -12,6 +11,7 @@ import { GuidelineEvidenceRequestDto } from '../dto/request/guideline-evidence.r
 import { ResolveAgentPatientRequestDto } from '../dto/request/resolve-agent-patient.request.dto';
 import { AgentPatientResolutionResponseDto } from '../dto/response/agent-patient-resolution.response.dto';
 import { AgentTurnAcceptedResponseDto } from '../dto/response/agent-turn-accepted.response.dto';
+import { AgentTurnFinishResponseDto } from '../dto/response/agent-turn-finish.response.dto';
 import { AgentTurnService } from '../service/agent-turn.service';
 
 /**
@@ -85,7 +85,7 @@ export class AgentTurnInternalController {
     @CurrentClinician() principal: ClinicianPrincipal,
     @Param('assistantMessageId') assistantMessageId: string,
     @Body() dto: FinishAgentTurnRequestDto,
-  ): Promise<MessageResponseDto> {
+  ): Promise<AgentTurnFinishResponseDto> {
     return this.service.finish(principal, assistantMessageId, dto);
   }
 }

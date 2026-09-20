@@ -5,15 +5,24 @@ import { ServiceException } from '../../../global/common/exception/service.excep
 import { TraceContext } from '../../../global/context/trace-context.service';
 import { TransactionManager } from '../../../global/database/transaction-manager';
 import { ClinicianPrincipal } from '../../../global/security/clinician-principal';
+import { GuidanceEvidenceContext } from '../../../infrastructure/llm/guidance/guidance-structurer.port';
 import { SupportedLang } from '../../../infrastructure/llm/translation/translator.port';
-import { MessageResponseDto } from '../../conversation/dto/response/message.response.dto';
-import { ConversationRepository } from '../../conversation/repository/conversation.repository';
+import { ClinicalGuidanceResponseDto } from '../../clinical-guidance/dto/response/clinical-guidance.response.dto';
+import { ClinicalGuidanceComposer } from '../../clinical-guidance/service/clinical-guidance-composer.service';
+import { toCitationDto } from '../../conversation/mapper/conversation.mapper';
+import {
+  ConversationRepository,
+  EvidenceChunkContext,
+} from '../../conversation/repository/conversation.repository';
 import {
   ConversationStreamService,
   truncateQuote,
 } from '../../conversation/service/conversation-stream.service';
 import { toPatientDetailFromSnapshot } from '../../patient/mapper/patient.mapper';
-import { PatientSnapshotService } from '../../patient/service/patient-snapshot.service';
+import {
+  PatientSnapshotPayload,
+  PatientSnapshotService,
+} from '../../patient/service/patient-snapshot.service';
 import { AcceptAgentTurnRequestDto } from '../dto/request/accept-agent-turn.request.dto';
 import { FinishAgentTurnRequestDto } from '../dto/request/finish-agent-turn.request.dto';
 import { GuidelineAnswerRequestDto } from '../dto/request/guideline-answer.request.dto';
@@ -21,6 +30,7 @@ import { GuidelineEvidenceRequestDto } from '../dto/request/guideline-evidence.r
 import { ResolveAgentPatientRequestDto } from '../dto/request/resolve-agent-patient.request.dto';
 import { AgentPatientResolutionResponseDto } from '../dto/response/agent-patient-resolution.response.dto';
 import { AgentTurnAcceptedResponseDto } from '../dto/response/agent-turn-accepted.response.dto';
+import { AgentTurnFinishResponseDto } from '../dto/response/agent-turn-finish.response.dto';
 import { AgentTurnRepository, LoadedAgentTurn } from '../repository/agent-turn.repository';
 
 /** 전역 ValidationPipe와 같은 모양으로 422 상세를 싣는다 (§10.2) */
@@ -44,6 +54,7 @@ export class AgentTurnService {
     private readonly conversationRepository: ConversationRepository,
     private readonly streamService: ConversationStreamService,
     private readonly patientSnapshotService: PatientSnapshotService,
+    private readonly guidanceComposer: ClinicalGuidanceComposer,
     private readonly txManager: TransactionManager,
     private readonly traceContext: TraceContext,
   ) {}
@@ -199,12 +210,17 @@ export class AgentTurnService {
    * **닫힌 턴 판정이 본문 검증보다 먼저다** — 이미 끝난 턴에 온 요청은 내용과 무관하게 무의미하고,
    * 에이전트가 원인을 가를 수 있게 409로 답한다(기준 114). 종결은 조건부 UPDATE라 동시에 온 두 완결 중
    * 하나만 선다.
+   *
+   * **복합 완료는 참고안을 답변과 함께 세운다** (docs/specs/54). 순서가 계약이다 — 닫힌 턴 판정 ·
+   * 본문 검증 · 인용 존재 검증을 **먼저** 통과한 뒤에야 구조화를 부르고(비용보다 검증이 먼저다),
+   * 구조화는 영속화 tx **밖**에서 돌며(외부 호출이 커넥션을 상한만큼 붙잡지 않게), 조립만 종결·인용·
+   * run과 **같은 tx**에 든다(부분 커밋으로 답변만 남는 상태를 막는 채팅의 방식 그대로).
    */
   async finish(
     principal: ClinicianPrincipal,
     assistantMessageId: string,
     dto: FinishAgentTurnRequestDto,
-  ): Promise<MessageResponseDto> {
+  ): Promise<AgentTurnFinishResponseDto> {
     const loaded = await this.openTurn(principal, assistantMessageId);
 
     const answered = dto.status === 'COMPLETED';
@@ -215,14 +231,40 @@ export class AgentTurnService {
     const chunks = await this.conversationRepository.findEvidenceChunks([
       ...new Set(citations.map((citation) => citation.evidenceId)),
     ]);
-    const contentById = new Map(chunks.map((chunk) => [chunk.id, chunk.content]));
+    const chunkById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
     const missing: FieldError[] = citations.flatMap((citation, index) =>
-      contentById.has(citation.evidenceId)
+      chunkById.has(citation.evidenceId)
         ? []
         : [{ field: `citations.${index}.evidenceId`, constraints: ['존재하지 않는 근거입니다'] }],
     );
     if (missing.length > 0) throw new ServiceException('VALIDATION_FAILED', { errors: missing });
 
+    const responseLang = langOf(loaded);
+    /**
+     * 참고안을 만드는 조건은 셋 다다 — `COMPLETED` · `COMPLETED`의 경로가 `COMPOSITE` · 턴에 고정된
+     * 스냅샷. 환자 경로는 기록 조회라 근거 다리가 없고(§33 「두 다리」), 기권·실패·끊김은 답변이 없다.
+     * **스냅샷 없는 복합 완결은 422가 아니라 참고안 없이 완결한다** — 「누구의 기록인가」 없이는
+     * 참고안이 성립하지 않을 뿐, 답변까지 버릴 이유는 없다(docs/specs/51 기준 110·111이 그 모양이다).
+     */
+    const snapshotId = loaded.turn.patientSnapshotId;
+    const profile =
+      answered && dto.route === 'COMPOSITE' && snapshotId
+        ? await this.readPinnedProfile(principal, snapshotId)
+        : null;
+
+    // 구조화는 tx 밖 — 실패·상한·킬스위치는 결정적 조립으로 접히고 완결은 그대로 선다 (docs/specs/33)
+    const structuring = profile
+      ? await this.streamService.structureGuidance({
+          evidence: toGuidanceEvidence(citations, chunkById),
+          profile,
+          answerText: dto.content ?? '',
+          traceId: this.traceContext.traceId,
+          responseLang,
+        })
+      : null;
+
+    let guidance: ClinicalGuidanceResponseDto | null = null;
+    let composerVersion: string | null = null;
     await this.txManager.run(async () => {
       const closed = await this.conversationRepository.closeStreamingMessage(assistantMessageId, {
         status: dto.status,
@@ -244,7 +286,7 @@ export class AgentTurnService {
           evidenceChunkId: citation.evidenceId,
           marker: citation.marker,
           // 채팅과 같은 규칙의 발췌 — quote를 에이전트가 짓게 하면 원문과 어긋난 발췌가 인용이 된다
-          quote: truncateQuote(contentById.get(citation.evidenceId) ?? ''),
+          quote: truncateQuote(chunkById.get(citation.evidenceId)?.content ?? ''),
         })),
       );
 
@@ -268,9 +310,50 @@ export class AgentTurnService {
           traceId: this.traceContext.traceId,
         });
       }
+
+      if (profile && snapshotId) {
+        // 재조회가 카드를 복원하는 축이다 — 메시지 목록은 이 값을 보고 guidanceId를 싣는다
+        await this.conversationRepository.setAnswerKind(assistantMessageId, 'CLINICAL_GUIDANCE');
+        const citationDetails = await this.conversationRepository.listCitationDetails(
+          [assistantMessageId],
+          responseLang,
+        );
+        const composed = await this.guidanceComposer.compose({
+          messageId: assistantMessageId,
+          patientId: profile.patientId,
+          patientSnapshotId: snapshotId,
+          clinicId: principal.clinicId,
+          answerText: dto.content ?? '',
+          citations: citationDetails.map((row) => toCitationDto(row, responseLang)),
+          profile,
+          structured: structuring?.structured ?? null,
+          responseLang,
+        });
+        guidance = composed.guidance;
+        composerVersion = composed.composerVersion;
+      }
     });
 
-    return this.streamService.loadMessageDto(assistantMessageId, principal);
+    if (structuring) {
+      this.streamService.recordGuidanceCompose(structuring, composerVersion, responseLang);
+    }
+
+    const message = await this.streamService.loadMessageDto(assistantMessageId, principal);
+    // 참고안을 만들지 않은 완결에는 `guidance` 속성 자체가 없어야 한다 (기준 30·32·34)
+    return guidance ? { ...message, guidance } : message;
+  }
+
+  /** 턴이 고정한 기록 — 스코프 밖·유실은 계약 위반이라 완결을 세우지 않는다 (docs/specs/51 환자 도구) */
+  private async readPinnedProfile(
+    principal: ClinicianPrincipal,
+    snapshotId: string,
+  ): Promise<PatientSnapshotPayload> {
+    const pinned = await this.patientSnapshotService.readPayload(
+      { clinicId: principal.clinicId },
+      snapshotId,
+    );
+    if (!pinned) throw new ServiceException('INTERNAL_ERROR');
+    return pinned;
   }
 
   /** 수락한 턴만 — 그 밖의 메시지(채팅이 만든 답변 포함)는 404, 이미 닫힌 턴은 409 */
@@ -297,6 +380,32 @@ export class AgentTurnService {
 /** 재조회와 같은 축 — 그 턴이 수락될 때의 언어다 (docs/specs/42 기준 11) */
 function langOf(loaded: LoadedAgentTurn): SupportedLang {
   return (loaded.assistant.responseLang ?? 'ko') as SupportedLang;
+}
+
+/**
+ * 완결의 인용 → 구조화 근거 (docs/specs/54). 채팅이 검색 행에서 만드는 것과 **같은 모양**이고,
+ * 마커만 출처가 다르다 — 채팅은 검색 순위이고 완결은 에이전트가 답변에 쓴 마커다.
+ * 원문·제목·경로는 어느 쪽도 에이전트에게 받지 않는다: 인용 id로 BE가 읽는다.
+ */
+function toGuidanceEvidence(
+  citations: { marker: number; evidenceId: string }[],
+  chunkById: Map<string, EvidenceChunkContext>,
+): GuidanceEvidenceContext[] {
+  return [...citations]
+    .sort((left, right) => left.marker - right.marker)
+    .flatMap((citation) => {
+      const chunk = chunkById.get(citation.evidenceId);
+      // 실재하지 않는 근거는 위에서 이미 422다 — 여기 도달하면 존재가 보장된다
+      if (!chunk) return [];
+      return [
+        {
+          marker: citation.marker,
+          content: chunk.content,
+          guidelineTitle: chunk.guidelineTitle,
+          sectionPath: chunk.sectionPath,
+        },
+      ];
+    });
 }
 
 /**
