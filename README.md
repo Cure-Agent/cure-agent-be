@@ -12,7 +12,7 @@ routing, production observability, and failure recovery.
 
 [Live Demo](https://cure.demo01.xyz/assistant) ·
 [Frontend](https://github.com/Cure-Agent/cure-agent-fe) ·
-[OpenAPI Contract](openapi/cure-agent.v1.json)
+[API Docs](https://api.cure.demo01.xyz/api/docs)
 
 ## Key Features
 
