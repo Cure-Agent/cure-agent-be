@@ -441,6 +441,14 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 "처방 추천"을 확정 처방으로 표현하지 않는다. 결과 상태: `DRAFT → ACCEPTED | MODIFIED | REJECTED`
 
+**복합 답변도 참고안이다 (docs/specs/54)**: 참고안이 서는 자리는 이 화면만이 아니다 — 일반 대화에서
+라벨로 물은 **에이전트 복합 경로의 완료 답변**(「CASE-001에게 침 치료해도 돼?」)도 같은 `DRAFT` 참고안과
+같은 검토 API를 갖는다. 환자 기록과 지침 근거를 함께 딛은 조언이 한쪽에서만 검토 대상인 비대칭을
+없앤 것이다. 만드는 조건은 셋이다 — **`COMPLETED` · 경로가 `COMPOSITE` · 턴에 고정된 스냅샷**. 환자
+경로는 기록 조회라 근거 다리가 없어 만들지 않고(§33 「두 다리」), 스냅샷 없는 복합 완결은 422가 아니라
+**참고안 없이 완결한다**(「누구의 기록인가」 없이는 참고안이 성립하지 않을 뿐 답변까지 버릴 이유는 없다).
+구조화기·검증기·조립기는 채팅의 것을 그대로 쓴다 — 프롬프트·검증 규칙·킬스위치·폴백이 한 벌로 남는다.
+
 ### 5.7 대화 관리 (`/assistant` 통합)
 
 전용 `/history` 화면은 2026-08-02 폐지 — 대화 검색·이름 변경·보관은 `/assistant` 좌측 대화 목록에
@@ -461,7 +469,9 @@ PC 기준 핵심 화면. 레이아웃: 대화/세션 목록 | 질문과 스트�
 
 **공유 규약 (docs/specs/35)**: 대화는 **작성자 개인 소유가 아니라 클리닉 공유 자산**이다. 같은 클리닉의 구성원은 서로의 대화를 읽고, 이어 질문하고, 이름을 바꾸고, 삭제한다 — 조회·변경 스코프가 §4.4대로 `clinicId`이기 때문이다. 작성자(`conversations.clinicianId`)는 계속 기록되지만 접근 판정에는 쓰이지 않는다. 클리닉 경계는 그대로여서 타 클리닉 대화는 여전히 404다. 피드백만은 구성원별로 남는다(`uq_answer_feedbacks_message_clinician` — 한 메시지에 구성원 각자 1건).
 
-**에이전트 턴 (docs/specs/51)**: 에이전트 답변은 **GUIDELINE_QA 대화에 얹힌 턴**이다 — 대화 타입을 늘리지 않아 공개 계약이 그대로이고, 경로(`GUIDELINE`·`PATIENT`·`COMPOSITE`·`OTHER`)·분류기 버전·환자 스냅샷은 `agent_turns`에만 있다. 저장 계약은 **수락 → 경로 도구 → 완결**이다: 수락이 질문과 `STREAMING` 답변 행을 LLM보다 먼저 만들어 인증·스코프·CSRF·`clientRequestId` 중복이 분류 비용 전에 판정되고 §8 복구 기준점이 채팅과 같이 선다. **턴을 닫는 주체는 경로마다 하나다** — 지침은 지침 도구가 채팅 파이프라인으로(`GUIDELINE_ANSWER`·자동 제목까지 채팅과 같다), 환자·복합·기타는 에이전트의 완결이 닫는다. 그래서 환자·근거 도구는 턴 상태를 바꾸지 않고, `STREAMING`이 아닌 턴에 온 도구·완결은 `AGENT_TURN_CLOSED`(409)다. 도구·완결 API는 사용자 쿠키로 인증하므로 **공개하면 구성원이 공유 대화에 「AI 답변」과 인용을 지어낼 수 있다** — 운영 nginx가 `/api/v1/internal/`을 404로 막고(에이전트는 `app:3000`으로 nginx를 거치지 않는다) OpenAPI에서 뺀다. 이 차단은 nginx 한 곳의 보증이라 로컬 개발에서는 열려 있다. PATIENT_GUIDANCE 대화는 받지 않는다 — 환자 고정·참고안 검토 흐름은 BE 채팅의 몫이다.
+**에이전트 턴 (docs/specs/51)**: 에이전트 답변은 **GUIDELINE_QA 대화에 얹힌 턴**이다 — 대화 타입을 늘리지 않아 공개 계약이 그대로이고, 경로(`GUIDELINE`·`PATIENT`·`COMPOSITE`·`OTHER`)·분류기 버전·환자 스냅샷은 `agent_turns`에만 있다. 저장 계약은 **수락 → 경로 도구 → 완결**이다: 수락이 질문과 `STREAMING` 답변 행을 LLM보다 먼저 만들어 인증·스코프·CSRF·`clientRequestId` 중복이 분류 비용 전에 판정되고 §8 복구 기준점이 채팅과 같이 선다. **턴을 닫는 주체는 경로마다 하나다** — 지침은 지침 도구가 채팅 파이프라인으로(`GUIDELINE_ANSWER`·자동 제목까지 채팅과 같다), 환자·복합·기타는 에이전트의 완결이 닫는다. 그래서 환자·근거 도구는 턴 상태를 바꾸지 않고, `STREAMING`이 아닌 턴에 온 도구·완결은 `AGENT_TURN_CLOSED`(409)다. 도구·완결 API는 사용자 쿠키로 인증하므로 **공개하면 구성원이 공유 대화에 「AI 답변」과 인용을 지어낼 수 있다** — 운영 nginx가 `/api/v1/internal/`을 404로 막고(에이전트는 `app:3000`으로 nginx를 거치지 않는다) OpenAPI에서 뺀다. 이 차단은 nginx 한 곳의 보증이라 로컬 개발에서는 열려 있다. PATIENT_GUIDANCE 대화는 받지 않는다 — 그 대화의 환자 고정은 BE 채팅의 몫이다.
+
+**복합 완결이 참고안을 세운다 (docs/specs/54)**: 참고안은 더 이상 환자 고정 대화만의 것이 아니다 — 조건(§5.6)이 서면 **완결이 답변과 같은 tx에서** 참고안을 만들고, 그 완결의 `answerKind`가 `CLINICAL_GUIDANCE`가 되어 재조회가 `guidanceId`로 카드를 복원한다. **만드는 주체는 BE이고 에이전트는 오늘처럼 답변과 인용만 보낸다** — 구조화 입력의 원문·지침 제목·절 경로·프로필은 에이전트가 싣는 것이 아니라 BE가 인용 id와 턴 스냅샷에서 꺼낸다(복합 검색 입력의 진단명을 BE가 꺼내는 것과 같은 이유, §8). 순서가 계약이다: 닫힌 턴 판정·본문 검증·인용 존재 검증 **뒤에** 구조화가 돌고(비용보다 검증이 먼저다), 구조화는 영속화 tx **밖**이며 조립만 종결·인용·run과 같은 tx에 든다. 구조화 실패·상한·킬스위치·인용 0건은 결정적 조립으로 접히고 **완결은 구조화 때문에 실패하지 않는다**. 참고안은 언제나 그 턴의 메시지에 달리고 그 턴 스냅샷의 환자를 가리키므로 삭제 연쇄·파기 순서에 **새 축이 없다**.
 
 **에이전트 턴의 삭제 연쇄 (docs/specs/51)**: 환자 삭제는 그 환자의 스냅샷을 고정한 **에이전트 턴이 있는 대화도** 같은 tx에서 파기 예약한다. 에이전트 턴은 `patient_id` 없는 대화에 얹혀 위 연쇄를 타지 못하는데, 스냅샷을 FK로 가리키는 턴을 살아 있는 대화에 남기면 기록을 옮긴 답변이 남고 유예 뒤 환자 파기가 실패한다 — 가이던스에 연쇄를 택한 이유와 같다. **대가로 같은 대화의 지침 턴도 함께 지워진다**(턴 단위 삭제는 메시지 소프트 삭제가 모든 조회로 번져 택하지 않았다). 환자 도구는 스냅샷을 고정하는 동안 환자 행을 공유 잠금하고 환자 삭제는 행 갱신이 연쇄보다 먼저라, 고정과 삭제가 겹쳐도 연쇄가 방금 고정된 턴을 놓치지 않는다. 파기는 `agent_turns` → 메시지 → 스냅샷 순이다.
 
@@ -631,7 +641,9 @@ type ConversationStreamEventDto =
 지침  ◀ 지침 도구 그대로: retrieval.started → … → answer.completed | answer.abstained | error
 환자  agent.progress{stage:patient_loaded} → answer.delta*(에이전트 LLM) → [완결] → answer.completed
 복합  agent.progress{stage:patient_loaded} → ◀ 근거 도구: retrieval.* (evidence.gated 통과 → answer.started)
-      → retrieval.evidence×N → retrieval.completed → answer.delta*(판정 뒤) → [완결] → answer.completed | answer.abstained
+      → retrieval.evidence×N → retrieval.completed → answer.delta*(판정 뒤)
+      → [완결: 검증 → 구조화(tx 밖) → 종결·인용·run·참고안(한 tx)]
+      → answer.completed{message, guidance} | answer.abstained
 기타  [완결] → answer.abstained                (환자·복합의 라벨 해석 실패도 같다)
 ```
 
@@ -640,6 +652,7 @@ BE 내부 SSE는 둘이고 **종결 의미가 달라** 엔드포인트를 나눈
 - **지침 도구**(`…/turns/{id}/guideline-answer`)는 채팅 파이프라인에서 `message.accepted`만 뺀 것이다 — 결과·실패·끊김을 채팅과 같은 규칙으로 **그 턴에 저장**한다(끊김은 위 복구 계약 4의 `CANCELLED`).
 - **근거 도구**(`…/turns/{id}/guideline-evidence`)는 게이트 ③에서 멈추고 **저장하지 않는다.** ④ 「답할 수 있나」는 답을 쓰는 쪽만 판정할 수 있어(§40) 생성·④는 에이전트가 원문 근거 + 환자 기록으로 한 번에 한다. 게이트 결과는 `evidence.gated`(`abstainReason`·`evidenceCount`·`retrievalPolicyVersion`·`searchQuestion`)로 근거 프레임보다 **앞에** 오고 에이전트가 이를 `answer.started`로 바꿔 §47 순서를 세운다. 실패하거나 끊겨도 **턴을 바꾸지 않고** `error` 이벤트로만 알린다 — 그 턴을 닫는 것은 에이전트의 완결이다.
 - **복합 검색 입력은 BE가 조립한다** — 라벨을 지운 질문을 §42대로 한국어로 정규화한 **뒤에** 턴 스냅샷의 진단명을 덧붙인다. 규칙 전체는 위 「환자 기록을 딛는 검색 입력」이고, 복합 경로가 다른 것은 **기록의 출처**뿐이다: 진단명은 에이전트가 싣는 것이 아니라 BE가 `agent_turns`의 스냅샷에서 꺼낸다(에이전트가 싣게 하면 검색 입력이 턴의 고정 기록과 어긋날 수 있다).
+- **복합 완결의 참고안은 완결 응답에 실린다** (docs/specs/54) — 응답 `data`는 `MessageResponseDto`에 **선택 필드 `guidance`가 더해진 모양**이고, 참고안을 만든 완결에만 그 키가 있다. 에이전트는 이를 떼어 `answer.completed{message, guidance}`로 갈라 보내 채팅 스트림과 같은 모양을 만든다 — 메시지에 `guidanceId`를 싣지 않는 것도 채팅과 같다(그 축은 재조회만이 싣는다). 봉투(`{message, guidance}`)로 감싸지 않는 이유는 §51의 완결 계약 전부가 `data`를 메시지로 읽기 때문이고, 에이전트가 참고안을 다시 읽지 않는 이유는 턴이 닫힌 뒤의 실패 경로를 하나 더 만들지 않기 위해서다. 완결 호출의 대기 상한만 read 30초로 늘어난다(BE 구조화 상한 20초 + 저장) — 환자 도구·수락은 5초 그대로다. **배포는 에이전트가 먼저다**: 옛 5초 상한이 구조화를 끊으면 답이 다 흐른 턴이 `FAILED`로 닫힌다.
 
 ### 잡 진행 스트림 (docs/specs/22)
 
@@ -680,9 +693,9 @@ type GuidelineJobStreamEventDto =
 | PipelineRunEntity | 문서 1건의 수집→파싱→임베딩→적재 실행 기록. **`jobId`가 없으면 잡 밖의 단건 실행**이다 (docs/specs/22) |
 | GuidelineJobEntity | PipelineRun N건의 부모. `triggeredBy`(MANUAL/SCHEDULE)로 주체를 구분하며 **크론이 만든 잡은 `requestedBy`가 NULL**이다 (docs/specs/26) |
 | ConversationEntity | **접근 스코프는 `clinicId`**(클리닉 공유)이고, `clinicianId`는 작성자 기록일 뿐 접근 판정에 쓰지 않는다 (§5.7, docs/specs/35) |
-| MessageEntity | `status`에 **`CANCELLED`**를 포함한다 — 좀비 STREAMING 메시지를 남기지 않기 위함이다 (§7). `patientSnapshotId`는 **환자 대화의 ASSISTANT 메시지**가 검색 **전에** 고정한 기록이며(docs/specs/53), 그 턴의 검색 입력·생성 프롬프트·참고안이 전부 이 한 건을 딛는다 — 기권한 턴에도 남는다. 복합 경로의 `agent_turns.patientSnapshotId`와 같은 참조이고, 환자 대화의 턴은 `agent_turns` 행이 없어 메시지가 그 참조를 진다. **백필하지 않는다** — 옛 턴의 검색은 환자 기록을 쓰지 않았으므로 NULL이 「이 스텝 이전의 턴」이라는 사실 그대로다 |
+| MessageEntity | `status`에 **`CANCELLED`**를 포함한다 — 좀비 STREAMING 메시지를 남기지 않기 위함이다 (§7). `patientSnapshotId`는 **환자 대화의 ASSISTANT 메시지**가 검색 **전에** 고정한 기록이며(docs/specs/53), 그 턴의 검색 입력·생성 프롬프트·참고안이 전부 이 한 건을 딛는다 — 기권한 턴에도 남는다. 복합 경로의 `agent_turns.patientSnapshotId`와 같은 참조이고, 환자 대화의 턴은 `agent_turns` 행이 없어 메시지가 그 참조를 진다. **백필하지 않는다** — 옛 턴의 검색은 환자 기록을 쓰지 않았으므로 NULL이 「이 스텝 이전의 턴」이라는 사실 그대로다. `answerKind`는 **참고안의 유무를 말한다**: `CLINICAL_GUIDANCE`는 환자 대화의 답변이자 **참고안을 만든 복합 완결**이고(docs/specs/54), 메시지 목록이 이 값을 보고 `guidanceId`를 싣는다 — 값이 NULL인 에이전트 메시지는 경로가 정해지기 전이거나 참고안이 없는 완결이다 |
 | GenerationRunEntity | 실사용 프로바이더·프롬프트 버전·retrieval 정책 버전·모델 설정을 **LLM 호출마다 고정 기록**한다. §5.7 재현성 계약의 저장 측 표현이다. 「답변마다」가 아닌 이유는 생성 게이트 기권(§8-④, docs/specs/40)도 LLM을 부르고 토큰을 쓰기 때문이다 — 과잉 기권을 문항 단위로 조사하려면 그 호출의 프롬프트·정책 버전이 남아야 한다. **`retrievalPolicyVersion`이 NULL이면 「검색하지 않은 생성」**(에이전트 환자 경로)이다 — 에이전트 합성의 run은 에이전트가 완결로 싣는다 (docs/specs/51) |
-| AgentTurnEntity | 에이전트가 수락한 턴 (docs/specs/51). **이 행이 있는 ASSISTANT 메시지만** 내부 도구·완결이 다룬다 — 채팅이 만든 답변과 가르는 유일한 표지다. `route`는 분류기 판정 원문이 아니라 실행 경로 표를 거친 경로이고 경로가 정해지기 전(수락 직후)에는 NULL이다. `patientSnapshotId`는 환자 도구가 고정한 스냅샷이며 **환자 삭제 연쇄가 대화를 찾는 축**이다(§5.7). 한 턴은 스냅샷 하나만 고정한다 — 재시도는 같은 스냅샷을 돌려준다 |
+| AgentTurnEntity | 에이전트가 수락한 턴 (docs/specs/51). **이 행이 있는 ASSISTANT 메시지만** 내부 도구·완결이 다룬다 — 채팅이 만든 답변과 가르는 유일한 표지다. `route`는 분류기 판정 원문이 아니라 실행 경로 표를 거친 경로이고 경로가 정해지기 전(수락 직후)에는 NULL이다. `patientSnapshotId`는 환자 도구가 고정한 스냅샷이며 **환자 삭제 연쇄가 대화를 찾는 축**이다(§5.7). 한 턴은 스냅샷 하나만 고정한다 — 재시도는 같은 스냅샷을 돌려준다. 복합 완결의 참고안도 **이 스냅샷 하나**를 딛는다(docs/specs/54) — 검색 입력·합성 프롬프트·참고안이 같은 기록 위에 서고, 그래서 참고안이 새 삭제 축을 만들지 않는다 |
 
 전 테이블에 `base-columns` 공통 적용. 다음 참조 체인은 반드시 보존한다 — **단, 사용자 요청 삭제(docs/specs/34)는 이 보존의 명시적 예외다.** 대화·환자를 지우면 그 아래 체인 전체가 유예 후 함께 파기된다. 보존이 지키려는 것은 「살아 있는 답변의 재현 가능성」이지 「사용자가 지운 것의 영속」이 아니다:
 

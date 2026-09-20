@@ -62,6 +62,18 @@ export interface CitationDetailRow {
 }
 
 /**
+ * 인용 대상 청크와 그것이 선 자리 (docs/specs/54) — 구조화 근거(`GuidanceEvidenceContext`)가
+ * 마커를 뺀 나머지로 요구하는 것과 같은 집합이다.
+ */
+export interface EvidenceChunkContext {
+  id: string;
+  /** 발췌가 아니라 원문 — 조건·금기는 quote 밖에 있는 경우가 많다 (docs/specs/33) */
+  content: string;
+  guidelineTitle: string;
+  sectionPath: string[];
+}
+
+/**
  * 커서에 실을 정렬 키 원본. Date로 받으면 pg 드라이버가 마이크로초를 버려서,
  * 같은 밀리초 안에 있는 대화가 페이지 경계에서 통째로 건너뛰어진다 — 문자열로 그대로 실어 나른다.
  */
@@ -364,12 +376,26 @@ export class ConversationRepository {
     await this.txManager.conn.update(messages).set({ answerKind }).where(eq(messages.id, id));
   }
 
-  /** 인용 대상 청크 — 에이전트 완결이 근거 id의 실재를 확인하고 quote를 만든다 (docs/specs/51) */
-  async findEvidenceChunks(ids: string[]): Promise<Pick<EvidenceChunkRow, 'id' | 'content'>[]> {
+  /**
+   * 인용 대상 청크 — 에이전트 완결이 근거 id의 실재를 확인하고 quote를 만든다 (docs/specs/51).
+   *
+   * **제목·절 경로까지 함께 읽는다** (docs/specs/54) — 복합 완결의 구조화 입력이 채팅의 검색 행과
+   * 같은 모양(마커·원문·제목·경로)이어야 두 경로가 한 함수를 쓴다. 조인 없이 id·원문만 읽으면
+   * 완결이 그 둘을 에이전트에게 받아야 하고, 그러면 인용의 출처가 BE 밖에서 정해진다.
+   */
+  async findEvidenceChunks(ids: string[]): Promise<EvidenceChunkContext[]> {
     if (ids.length === 0) return [];
     return this.txManager.conn
-      .select({ id: evidenceChunks.id, content: evidenceChunks.content })
+      .select({
+        id: evidenceChunks.id,
+        content: evidenceChunks.content,
+        guidelineTitle: guidelines.title,
+        sectionPath: guidelineSections.path,
+      })
       .from(evidenceChunks)
+      .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .innerJoin(guidelines, eq(guidelineVersions.guidelineId, guidelines.id))
       .where(inArray(evidenceChunks.id, ids));
   }
 
