@@ -11,7 +11,7 @@ CureAgent는 임상지침 PDF 63개를 검색 가능한 근거 청크 7,154개�
 
 [라이브 데모](https://cure.demo01.xyz/assistant) ·
 [프론트엔드](https://github.com/Cure-Agent/cure-agent-fe) ·
-[OpenAPI 계약](openapi/cure-agent.v1.json)
+[API 문서](https://api.cure.demo01.xyz/api/docs)
 
 ## 핵심 기능
 
