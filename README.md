@@ -1,6 +1,6 @@
 # CureAgent Backend
 
-English | [한국어](README.ko.md)
+**English** · [한국어](README.ko.md)
 
 > A production-oriented clinical RAG backend for evidence-grounded Korean medicine decision support.
 

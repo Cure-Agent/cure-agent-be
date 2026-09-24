@@ -1,6 +1,6 @@
 # SDD — Specification-Driven Development and the Automation Harness
 
-English | [한국어](sdd.ko.md)
+**English** · [한국어](sdd.ko.md)
 
 <img src="assets/sdd-harness-architecture.png" alt="Two-layer harness architecture showing the spec → freeze → implement → ship → pipeline flow and the agent responsible for each stage" width="640">
 
