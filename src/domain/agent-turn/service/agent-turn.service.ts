@@ -83,7 +83,7 @@ export class AgentTurnService {
       responseLang: dto.responseLang ?? 'ko',
       // 경로가 정해지기 전이다 — 지침으로 정해져야 GUIDELINE_ANSWER가 된다 (기준 71·80)
       answerKind: null,
-      // 질문에 환자 기록이 섞였는지 아직 모른다 (기준 77)
+      // 제목은 경로가 정해진 쪽이 붙인다 — 지침 도구, 또는 경로를 싣고 온 완결 (기준 77, docs/specs/55)
       autoTitle: false,
       withinTransaction: (accepted) =>
         this.repository.insert({
@@ -278,6 +278,16 @@ export class AgentTurnService {
         route: dto.route,
         classifierVersion: dto.classifierVersion,
       });
+
+      /**
+       * 경로가 정해진 완결은 채팅과 같은 규칙으로 첫 질문을 제목으로 붙인다 (docs/specs/55) — 상태와
+       * 무관하다: 채팅이 실패·기권 대화에도 제목을 두는 것과 같은 이유다. 종결과 같은 tx라 종결이 지면
+       * (409) 제목도 서지 않고, FE가 종결 뒤 목록을 재조회할 때 이미 커밋돼 있다. 조건부 UPDATE라 둘째
+       * 턴부터는 0행 갱신이다. `route` 없는 완결(분류 전 실패)은 붙이지 않는다 — 기본 제목으로 남는다.
+       */
+      if (dto.route) {
+        await this.streamService.applyAutoTitle(loaded.conversation, loaded.user.content);
+      }
 
       await this.conversationRepository.insertCitations(
         citations.map((citation) => ({
