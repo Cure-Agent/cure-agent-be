@@ -1,6 +1,6 @@
 # CureAgent Backend
 
-[English](README.md) | 한국어
+[English](README.md) · **한국어**
 
 > 근거 기반 한의 임상 의사결정을 지원하는 프로덕션 지향 임상 RAG 백엔드.
 

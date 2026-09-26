@@ -1,6 +1,6 @@
 # SDD — 스펙 주도 개발과 자동화 하네스
 
-[English](sdd.md) | 한국어
+[English](sdd.md) · **한국어**
 
 <img src="assets/sdd-harness-architecture.png" alt="2단계 하네스 아키텍처 — spec → freeze → implement → ship → pipeline 흐름과 각 단계의 담당 에이전트" width="640">
 

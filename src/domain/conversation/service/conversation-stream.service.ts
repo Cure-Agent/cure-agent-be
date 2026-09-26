@@ -324,8 +324,11 @@ export class ConversationStreamService {
          * ILIKE 검색 대상이라, 그대로 옮기면 암호화 경계를 제목 컬럼으로 우회하는 셈이 된다.
          * (환자 이름·차트번호는 애초에 저장하지 않는다 — 식별자는 비식별 caseLabel뿐이다.)
          *
-         * **에이전트 수락도 제외한다** (docs/specs/51 기준 77) — 경로가 정해지기 전이라 같은 이유로
-         * 질문에 환자 기록이 섞였는지 모른다. 지침 경로로 정해지면 지침 도구가 같은 규칙으로 붙인다.
+         * **에이전트 수락도 제외한다** (docs/specs/51 기준 77) — 제목은 경로가 정해진 쪽이 붙인다:
+         * 지침은 지침 도구가, 환자·복합·기타는 경로를 싣고 온 완결이 같은 규칙으로 붙인다(docs/specs/55).
+         * 그 완결의 제목은 위 §4.5 경계를 **알고 수용한 것**이다 — 환자·복합 질문의 첫 문장에 진단명·
+         * 투약 값이 실릴 수 있지만, 같은 값이 이미 `messages.content`·`generation_runs.search_question`에
+         * 평문으로 있어 제목이 새 노출 축이 아니다.
          */
         if (input.autoTitle) await this.applyAutoTitle(conversation, input.content);
 
