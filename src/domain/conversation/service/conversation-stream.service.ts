@@ -50,6 +50,7 @@ import { ClinicalGuidanceComposer } from '../../clinical-guidance/service/clinic
 import { presentGuidanceProfileFields } from '../../clinical-guidance/service/guidance-profile-fields';
 import { composeGuidanceQuestion } from '../../clinical-guidance/service/guidance-question';
 import { toEvidenceDetail } from '../../guideline/mapper/guideline.mapper';
+import { PatientRepository } from '../../patient/repository/patient.repository';
 import {
   PatientSnapshotPayload,
   PatientSnapshotService,
@@ -63,7 +64,7 @@ import {
 import { ConversationRow, MessageRow } from '../persistence/conversation.schema';
 import { ConversationRepository } from '../repository/conversation.repository';
 import { SseStream } from '../../../global/common/sse/sse-stream';
-import { deriveConversationTitle } from './conversation-title.util';
+import { deriveConversationTitle, derivePatientConversationTitle } from './conversation-title.util';
 
 /** 프로바이더가 모델을 보고하지 않는 경우(fake·테스트 프로바이더)의 기록값 */
 const MODEL_LABEL = 'gateway-routed';
@@ -150,6 +151,8 @@ export interface TurnAcceptance {
   answerKind: MessageRow['answerKind'];
   /** 첫 질문으로 자동 제목을 붙이는가 — `applyAutoTitle` 참조 */
   autoTitle: boolean;
+  /** 자동 제목 앞에 남길 케이스 라벨 — 환자 대화만 싣는다 (docs/specs/56) */
+  caseLabel?: string;
   /** 두 메시지와 같은 tx에 얹을 행 (에이전트 턴) */
   withinTransaction?: (accepted: AcceptedTurn) => Promise<void>;
 }
@@ -214,6 +217,7 @@ export class ConversationStreamService {
     private readonly txManager: TransactionManager,
     private readonly traceContext: TraceContext,
     private readonly patientSnapshotService: PatientSnapshotService,
+    private readonly patientRepository: PatientRepository,
     private readonly guidanceComposer: ClinicalGuidanceComposer,
     @Inject(GUIDANCE_STRUCTURER) private readonly guidanceStructurer: GuidanceStructurer,
     // 질의 번역 (docs/specs/42) — 답변 생성용 LlmGateway와 별도 포트다(§29·§33 선례)
@@ -244,7 +248,8 @@ export class ConversationStreamService {
       responseLang,
       answerKind:
         conversation.type === 'PATIENT_GUIDANCE' ? 'CLINICAL_GUIDANCE' : 'GUIDELINE_ANSWER',
-      autoTitle: conversation.type === 'GUIDELINE_QA',
+      autoTitle: true,
+      caseLabel: await this.caseLabelOf(principal, conversation),
     });
 
     await this.streamAnswer({
@@ -319,18 +324,20 @@ export class ConversationStreamService {
          * (3) FE가 스트림 종결 후 대화 목록을 재조회할 때(chat-panel의 CONVERSATIONS_KEY
          * invalidate) 이미 커밋돼 있어 전용 SSE 이벤트나 폴링이 필요 없다.
          *
-         * PATIENT_GUIDANCE는 제외한다 — 환자 맞춤 질문의 첫 문장에는 진단명·투약처럼 §4.5가
-         * AES-GCM으로 암호화 저장하는 항목이 자연어로 섞인다. title은 평문 text 컬럼이자
-         * ILIKE 검색 대상이라, 그대로 옮기면 암호화 경계를 제목 컬럼으로 우회하는 셈이 된다.
-         * (환자 이름·차트번호는 애초에 저장하지 않는다 — 식별자는 비식별 caseLabel뿐이다.)
+         * **환자 대화(PATIENT_GUIDANCE)는 §4.5를 수용하고 케이스 라벨을 접두로 둔다** (docs/specs/56).
+         * 환자 맞춤 질문의 첫 문장에는 진단명·투약처럼 §4.5가 AES-GCM으로 암호화 저장하는 값이 자연어로
+         * 섞일 수 있고 title은 평문이자 ILIKE 검색 대상이지만, **알고 수용한 것이다** — 같은 질문이 이미
+         * `messages.content`에 평문이고, 이 대화의 검색 입력에 합성되는 프로필은 title이 아니라
+         * `generation_runs.search_question`에 있다. 라벨이 앞에 남는 이유는 목록에서 환자를 알아보는
+         * 축이자 검색 축이기 때문이다. (환자 이름·차트번호는 애초에 저장하지 않는다 — 라벨은 비식별이다.)
          *
-         * **에이전트 수락도 제외한다** (docs/specs/51 기준 77) — 제목은 경로가 정해진 쪽이 붙인다:
+         * **에이전트 수락은 제외한다** (docs/specs/51 기준 77) — 제목은 경로가 정해진 쪽이 붙인다:
          * 지침은 지침 도구가, 환자·복합·기타는 경로를 싣고 온 완결이 같은 규칙으로 붙인다(docs/specs/55).
-         * 그 완결의 제목은 위 §4.5 경계를 **알고 수용한 것**이다 — 환자·복합 질문의 첫 문장에 진단명·
-         * 투약 값이 실릴 수 있지만, 같은 값이 이미 `messages.content`·`generation_runs.search_question`에
-         * 평문으로 있어 제목이 새 노출 축이 아니다.
+         * 그 완결의 제목도 위와 같은 근거로 §4.5 경계를 수용한 것이다.
          */
-        if (input.autoTitle) await this.applyAutoTitle(conversation, input.content);
+        if (input.autoTitle) {
+          await this.applyAutoTitle(conversation, input.content, input.caseLabel);
+        }
 
         await input.withinTransaction?.(accepted);
       });
@@ -345,13 +352,48 @@ export class ConversationStreamService {
   }
 
   /**
-   * 첫 질문으로 자동 제목을 붙인다 — 기본 제목인 GUIDELINE_QA 대화에만 적중한다.
+   * 첫 질문으로 자동 제목을 붙인다 — 기본 제목인 대화에만 적중한다.
    * 판정이 조건부 UPDATE에 있어 매 턴 불려도 첫 한 번만 성립한다(`repository.applyAutoTitle`).
+   *
+   * 환자 대화는 `<케이스 라벨> · <질문>`이고 라벨은 호출자가 수락 전에 읽어 넘긴다 (docs/specs/56).
+   * 일반 대화(채팅·에이전트 경로)는 질문 그대로다.
    */
-  async applyAutoTitle(conversation: ConversationRow, question: string): Promise<void> {
-    if (conversation.type !== 'GUIDELINE_QA') return;
-    const autoTitle = deriveConversationTitle(question);
+  async applyAutoTitle(
+    conversation: ConversationRow,
+    question: string,
+    caseLabel?: string,
+  ): Promise<void> {
+    let autoTitle: string | null;
+    if (conversation.type === 'PATIENT_GUIDANCE') {
+      // 라벨 없이 붙이면 환자를 알아보는 축과 검색 축이 함께 사라진다 — 넘기지 않은 호출자의 결함이다
+      if (caseLabel === undefined) throw new ServiceException('INTERNAL_ERROR');
+      autoTitle = derivePatientConversationTitle(caseLabel, question);
+    } else {
+      autoTitle = deriveConversationTitle(question);
+    }
     if (autoTitle) await this.repository.applyAutoTitle(conversation.id, autoTitle);
+  }
+
+  /**
+   * 환자 대화 자동 제목의 케이스 라벨 (docs/specs/56) — 수락 tx **전에** 읽는다. 일반 대화는 undefined다.
+   *
+   * 클리닉 스코프·파기 제외로 읽는다(§4.4). 환자가 파기 예약되면 그 대화도 같은 tx에서 예약돼 앞선
+   * 대화 조회가 먼저 404이고, 그 사이에 겹친 삭제만 여기서 null을 본다 — 그때도 대화는 이미 예약됐으므로
+   * 같은 404로 답한다.
+   */
+  private async caseLabelOf(
+    principal: ClinicianPrincipal,
+    conversation: ConversationRow,
+  ): Promise<string | undefined> {
+    if (conversation.type !== 'PATIENT_GUIDANCE') return undefined;
+    // PATIENT_GUIDANCE는 생성 시 patientId를 강제한다(§5.6) — 비어 있으면 우리 쪽 결함이다
+    if (!conversation.patientId) throw new ServiceException('INTERNAL_ERROR');
+    const patient = await this.patientRepository.findById(
+      { clinicId: principal.clinicId },
+      conversation.patientId,
+    );
+    if (!patient) throw new ServiceException('NOT_FOUND');
+    return patient.caseLabel;
   }
 
   /**

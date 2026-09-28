@@ -1,4 +1,8 @@
-import { AUTO_TITLE_MAX_LENGTH, deriveConversationTitle } from './conversation-title.util';
+import {
+  AUTO_TITLE_MAX_LENGTH,
+  deriveConversationTitle,
+  derivePatientConversationTitle,
+} from './conversation-title.util';
 
 describe('conversation-title.util', () => {
   it('짧은 질문은 그대로 제목이 된다', () => {
@@ -32,5 +36,22 @@ describe('conversation-title.util', () => {
   it('공백뿐인 내용은 null — 기본 제목을 그대로 둔다', () => {
     expect(deriveConversationTitle('   \n\t ')).toBeNull();
     expect(deriveConversationTitle('')).toBeNull();
+  });
+
+  it('환자 대화 제목은 케이스 라벨 뒤에 가운뎃점으로 다듬은 질문을 잇는다', () => {
+    expect(derivePatientConversationTitle('CASE-001', '  만성 요통\n\n침 치료   효과 ')).toBe(
+      'CASE-001 · 만성 요통 침 치료 효과',
+    );
+  });
+
+  it('환자 대화도 질문 부분만 상한에서 자르고 라벨은 그대로 둔다', () => {
+    const long = '가'.repeat(AUTO_TITLE_MAX_LENGTH + 10);
+    expect(derivePatientConversationTitle('CASE-001', long)).toBe(
+      `CASE-001 · ${'가'.repeat(AUTO_TITLE_MAX_LENGTH)}…`,
+    );
+  });
+
+  it('환자 대화도 공백뿐인 질문은 null — 라벨만인 기본 제목을 그대로 둔다', () => {
+    expect(derivePatientConversationTitle('CASE-001', ' \n\t ')).toBeNull();
   });
 });
