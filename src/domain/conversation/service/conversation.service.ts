@@ -61,13 +61,23 @@ export class ConversationService {
     dto: CreateConversationRequestDto,
   ): Promise<ConversationSummaryResponseDto> {
     let patientId: string | null = null;
+    let defaultTitle = DEFAULT_TITLE;
     if (dto.type === 'PATIENT_GUIDANCE') {
       if (!dto.patientId) {
         throw new ServiceException('BAD_REQUEST', { reason: 'PATIENT_ID_REQUIRED' });
       }
       // 미존재·타 클리닉 환자는 NOT_FOUND (§4.4 — 클리닉 스코프)
-      await this.patientService.detail({ clinicId: principal.clinicId }, dto.patientId);
+      const patient = await this.patientService.detail(
+        { clinicId: principal.clinicId },
+        dto.patientId,
+      );
       patientId = dto.patientId;
+      /**
+       * 환자 대화의 질문 전 기본 제목은 케이스 라벨이다 (docs/specs/56) — 첫 질문이 그 뒤에 질문을
+       * 이어 제목을 완성한다(`ConversationStreamService.applyAutoTitle`). 「새 대화」면 환자 대화가
+       * 목록에서 익명이 되고, 화면 문구로 조립하면 i18n이 BE로 들어온다 — 언어 중립인 라벨만 둘 다 피한다.
+       */
+      defaultTitle = patient.caseLabel;
     }
 
     const id = ulid();
@@ -77,7 +87,7 @@ export class ConversationService {
       clinicId: principal.clinicId,
       type: dto.type,
       patientId,
-      title: dto.title ?? DEFAULT_TITLE,
+      title: dto.title ?? defaultTitle,
       // 생성 시 제목을 지정했다면 그건 이미 사용자 의도다 — 첫 질문 자동 제목이 덮지 않는다
       titleSource: dto.title ? 'USER' : 'DEFAULT',
     });
