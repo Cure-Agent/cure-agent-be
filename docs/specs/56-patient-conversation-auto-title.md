@@ -60,11 +60,15 @@
 
 | 진입점 (FE — cure-agent-fe) | 변경 |
 |---|---|
-| `src/features/request-clinical-guidance/api/request-clinical-guidance.ts` | 생성 요청에서 `title`을 뺀다. `caseLabel` 입력이 필요 없어지면 인자에서도 뺀다(`patient-detail-panel.tsx` 호출부 함께) |
+| `src/features/request-clinical-guidance/api/request-clinical-guidance.ts` | 생성 요청에서 `title`을 뺀다. `caseLabel` 입력이 필요 없어지면 인자에서도 뺀다(`request-guidance-button.tsx`의 prop·`patient-detail-panel.tsx` 호출부 함께) |
 | `src/features/request-clinical-guidance/lib/guidance-title.ts` (+ test) | 삭제 |
 | `src/features/manage-conversation/lib/conversation-title.ts` (+ test) | `retranslateGuidanceTitle`·`ConversationKind` 인자 제거 — `새 대화` 치환만 남는다. `conversation-list.tsx`의 `displayTitle`이 `type`을 넘기지 않아도 된다 |
 | `src/shared/i18n/messages.ts` | `guidanceTitleTemplate`(ko·en)와 그 양방향 주석 삭제 |
-| `src/features/request-clinical-guidance/ui/request-guidance-button.test.tsx` | fixture 제목을 라벨만으로 |
+| `src/features/request-clinical-guidance/ui/request-guidance-button.test.tsx` | body 단언에서 `title`을 뺀다(기준 24가 여기 선다) · fixture 제목을 라벨만으로 · `caseLabel` 없이 렌더 |
+| `src/features/request-clinical-guidance/ui/request-guidance-title-lang.test.tsx` | 삭제 — 3건 전부 생성 body에 화면 언어의 제목을 싣는지 단언한다(cure-agent-fe#98). 기준 24가 뒤집는다 |
+| `src/features/manage-conversation/ui/conversation-list-guidance-title.test.tsx` | 라벨 되읽기 단언 4건 삭제(cure-agent-fe#100 — 기준 26이 뒤집는다). 사람이 지은 이름·일반 대화 제목을 그대로 그리는 2건은 새 규칙에서도 참이라 남긴다. 기준 26 ⑵(양성 대조)가 이 파일에 선다 |
+
+> **정정 기록 (2026-09-28).** 이 표와 아래 fixture 규약은 기준 24·26과 정면으로 어긋나는 FE 테스트 2파일(`request-guidance-title-lang.test.tsx`·`conversation-list-guidance-title.test.tsx`)을 빠뜨렸고, `request-guidance-button.test.tsx`는 fixture만 적어 그 파일의 body 단언(`title`)이 바뀐다는 것을 빠뜨렸다. 기준 26의 괄호는 두 인자 호출을 양성 대조로 적었으나, 오늘 코드도 `kind` 없이 부르면 되읽지 않아 대조가 되지 못한다 — 오늘 되읽는 곳은 `type`을 넘기는 목록이다(FE `/implement` Phase 1 발견). **기준의 결론은 바뀌지 않는다.** 누락된 파일을 표에 올리고 기준 26에 목록 수준 단언을 더한다. 기준 26은 FE 전용이고 아직 동결되지 않아 문구를 고쳐도 동결 계약이 흔들리지 않는다.
 
 **배포 후 확인 (동결 밖)**
 - ① BE 배포 뒤 `SELECT count(*) FROM conversations WHERE type='PATIENT_GUIDANCE' AND title_source='USER' AND title ~ '<FE 틀>'` — 0 (작성 시점 대상 40건 = U1 38 + U2 2. 건수가 아니라 불변식으로 본다).
@@ -123,14 +127,15 @@
 
 24. 환자 맞춤 대화 시작 요청의 body에 `title`이 없다 (FE 유닛 — `useRequestClinicalGuidance`의 POST body 단언)
 25. `resolveConversationTitle('CASE-001 · 합성 질문…', 'en')`과 `('CASE-001', 'en')`은 입력 그대로다 (FE 유닛)
-26. `resolveConversationTitle('CASE-001 임상 참고 (8/4 14:30)', 'en', 'PATIENT_GUIDANCE')`은 **더 이상 되읽지 않고 그대로다** (FE 유닛 — 오늘은 `Clinical guidance`로 바뀌므로 양성 대조가 된다. 시그니처에서 `kind`를 뺐다면 두 인자로 단언)
+26. FE 틀 제목(`CASE-001 임상 참고 (8/4 14:30)`)은 **더 이상 되읽지 않고 그대로다** — ⑴ `resolveConversationTitle(<그 제목>, 'en')`(`kind` 인자를 뺀 두 인자) ⑵ 영문 화면의 대화 목록이 그 제목의 PATIENT_GUIDANCE 행을 저장값 그대로 그린다 (FE 유닛 — **양성 대조는 ⑵다**: 오늘 목록은 `type`을 넘겨 `Clinical guidance`로 바꾼다. ⑴은 오늘도 통과한다 — `kind` 없는 호출은 원래 되읽지 않는다)
 27. `새 대화`의 화면 언어 치환은 그대로다 (FE 유닛 — 기존 테스트를 바꾸지 않는다)
 
 fixture 규약:
 - **BE e2e는 §13대로 Testcontainers**, 환자·대화·스트림은 `clinical-guidance.e2e-spec.ts`의 방식(fake LLM·리랭커·임베딩). 라벨은 `CASE-<ulid 끝 6자>`처럼 합성이고, 질문·답변은 **구조를 모방한 합성 텍스트**다 — 운영 질문·추천 질의문 원문을 쓰지 않는다. 기준 7·15의 긴 질문은 UTF-16 서로게이트 문자를 하나 이상 포함한다.
 - **백필 시드는 `PATCH /conversations/{id} {title: <FE 틀 문자열>}`로 만든다** — 그것이 `USER` + 틀 제목을 만드는 유일한 공개 경로이고, 그 뒤 스트림 API로 질문을 넣어도 런타임 규칙은 `USER`라 붙지 않는다(§55 fixture 「백필 시드는 완결 API로 만들지 않는다」와 같은 이유로 실행 직전 `USER`를 먼저 단언). 파일은 `--> statement-breakpoint`로 나눠 `pool.query`로 실행한다 — `migrate`는 적용된 파일을 다시 돌리지 않는다.
 - **대체되는 단언**: `test/clinical-guidance.e2e-spec.ts:371` 「PATIENT_GUIDANCE 대화는 첫 질문으로 제목을 자동 생성하지 않는다」는 번호 없는 회귀 가드이고 이 스펙의 기준 5·6이 그 반대를 단언한다. **Phase 2에서 그 테스트를 삭제하고 사유를 커밋 메시지에 남긴다**(§55 회귀 가드 규약의 예외 — 스펙이 결정을 뒤집었다). `conversation.e2e-spec.ts`의 GUIDELINE_QA 자동 제목 단언과 §55 스위트는 바꾸지 않는다.
-- **FE 유닛은 vitest**, `conversation-title.test.ts`·`request-guidance-button.test.tsx`를 고치고 `guidance-title.test.ts`는 파일과 함께 지운다. FE에는 새 표시 로직이 없다 — 저장된 제목을 그대로 그린다.
+- **FE 유닛은 vitest**, `conversation-title.test.ts`·`request-guidance-button.test.tsx`·`conversation-list-guidance-title.test.tsx`를 고치고, `guidance-title.test.ts`는 파일과 함께, `request-guidance-title-lang.test.tsx`는 통째로 지운다. FE에는 새 표시 로직이 없다 — 저장된 제목을 그대로 그린다.
+- **FE의 대체되는 단언**: `request-guidance-title-lang.test.tsx` 3건(cure-agent-fe#98)은 생성 body의 언어별 제목을, `conversation-list-guidance-title.test.tsx`의 4건(cure-agent-fe#100)은 목록의 라벨 되읽기를, `request-guidance-button.test.tsx`의 body 단언은 생성 요청의 제목을 단언한다 — 기준 24·26이 그 반대를 단언한다. **FE Phase 2에서 지우거나 바꾸고 사유를 동결 커밋에 남긴다**(위 BE `clinical-guidance.e2e-spec.ts:371`과 같은 예외 — 스펙이 결정을 뒤집었다). 두 번째 파일의 나머지 2건은 새 규칙에서도 참이라 남긴다.
 - **이 문서의 수치는 단언 대상이 아니다** — 40건·38+2행·3묶음은 운영의 상태다. 동결하는 것은 규칙(라벨 · 40자)·자리(수락 tx)·기본 제목(라벨)·백필의 경계다.
 
 ## Out of scope

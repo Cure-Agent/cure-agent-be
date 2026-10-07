@@ -1,0 +1,120 @@
+name: CD - GCP US Deploy
+
+# 무료 등급 미국 서버(terraform/gcp-us) 배포 — cd-gcp.yml의 사본이다(terraform/gcp-us/README.md).
+# **전환 전까지 workflow_dispatch 전용이다.** push 트리거를 두면 VM이 생기기 전엔 main 머지마다 실패하고,
+# 생긴 뒤엔 두 서버에 동시 배포되며, ship은 cd-gcp.yml만 기다린다(automation/pipeline.md).
+# 전환할 때 push 트리거를 cd-gcp.yml에서 이리로 옮긴다.
+#
+# cd-gcp.yml과 다른 점:
+#   - 호스트는 SERVER_HOST_US다. 계정·키(SERVER_USER·GCP_SSH_PRIVATE_KEY)는 서울과 같다 — 같은 공개키로 만든다
+#   - docker/gcp-us/·deploy-gcp-us.sh를 보낸다
+#   - 모니터링 시크릿(GRAFANA_*·DISCORD_WEBHOOK_URL)을 싣지 않는다 — 쓰는 서비스가 없다
+#   - SSH 명령 제한 시간이 30분이다 — 무료 디스크(pd-standard 30GB ≈3.6MiB/s)에서 첫 배포의 이미지
+#     압축 해제가 기본 10분을 넘을 수 있고, 끊기면 deploy-gcp-us.sh가 중간에 죽는다
+# 병행 기간에 cd-gcp.yml의 env·envs를 고치면(새 환경 변수 등) 여기에도 옮긴다.
+#
+# 실행: gh workflow run cd-gcp-us.yml — dispatch 워크플로는 기본 브랜치(dev)에 머지돼 있어야 실행된다.
+# --ref를 생략하면 dev를 체크아웃하므로 dev의 compose·nginx 설정이 나간다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '배포할 이미지 태그 (롤백 시 CI 실행 번호 입력, 기본값: latest)'
+        required: false
+        default: 'latest'
+      # 에이전트 이미지 (docs/specs/49) — medical-agentic-rag CI가 main 머지마다 latest·실행 번호로 올린다.
+      # 에이전트 단독 배포·롤백은 이 dispatch로 한다. 교차 레포 자동 트리거는 두지 않는다 —
+      # 기능이 없는 서비스라 자동화가 지킬 것이 없다.
+      agent_image_tag:
+        description: '배포할 에이전트 이미지 태그 (medical-agentic-rag CI 실행 번호 입력, 기본값: latest)'
+        required: false
+        default: 'latest'
+
+jobs:
+  deploy-us:
+    runs-on: ubuntu-22.04
+    env:
+      POSTGRES_USERNAME: ${{ secrets.POSTGRES_USERNAME }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      AUTH_JWT_SECRET: ${{ secrets.AUTH_JWT_SECRET }}
+      COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+      # 소셜 로그인 (docs/specs/17)
+      OAUTH_WEB_BASE_URL: ${{ secrets.OAUTH_WEB_BASE_URL }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      KAKAO_CLIENT_ID: ${{ secrets.KAKAO_CLIENT_ID }}
+      KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      CRYPTO_ENC_KEYS: ${{ secrets.CRYPTO_ENC_KEYS }}
+      CRYPTO_ENC_ACTIVE_VERSION: ${{ secrets.CRYPTO_ENC_ACTIVE_VERSION }}
+      CRYPTO_HMAC_INDEX_KEY: ${{ secrets.CRYPTO_HMAC_INDEX_KEY }}
+      ALERT_WEBHOOK_URLS: ${{ secrets.ALERT_WEBHOOK_URLS }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # 참고안 구조화 킬스위치 (docs/specs/33). 시크릿이 아니라 저장소 변수다 —
+      # 미설정이면 빈 값이라 켜진 상태이고, 끄려면 vars에 'false'를 넣는다(재배포로 반영).
+      GUIDANCE_STRUCTURE_ENABLED: ${{ vars.GUIDANCE_STRUCTURE_ENABLED }}
+      # 답변가능성 게이트 킬스위치 (docs/specs/40). 위와 같은 이유로 저장소 변수다 —
+      # 미설정이면 빈 값이라 켜진 상태이고, 끄려면 vars에 'false'를 넣는다(재배포로 반영).
+      LLM_ANSWERABILITY_GATE_ENABLED: ${{ vars.LLM_ANSWERABILITY_GATE_ENABLED }}
+      # 키워드 arm 후보 프리필터 킬스위치 (docs/specs/45·48). 위 둘과 같은 이유로 저장소 변수다 —
+      # 미설정이면 빈 값이라 켜진 상태이고, 끄려면 vars에 'false'를 넣는다(재배포로 반영).
+      #
+      # **후보 예산(RETRIEVAL_KEYWORD_CANDIDATE_BUDGET)은 여기 두지 않는다.** 그쪽은 긴급
+      # 손잡이가 아니라 품질 축이고 재조정에 `pnpm eval:rag`가 지시해야 하므로, 다른
+      # RETRIEVAL_* 값들과 같이 compose 통로로만 남긴다. 이 스위치만 올리는 이유는 존재 이유가
+      # 「품질 문제가 늦게 드러나면 재배포를 기다리지 않는다」인데, compose 통로만으로는
+      # GitHub에서 끌 수 없기 때문이다 — envs 목록에 없는 변수는 원격 셸에 생기지 않아
+      # ${VAR:-}가 빈 값이 되고, 박스에서 손으로 심어도 다음 CD가 되돌린다.
+      RETRIEVAL_VOCAB_PREFILTER_ENABLED: ${{ vars.RETRIEVAL_VOCAB_PREFILTER_ENABLED }}
+      # 데모 환자 시딩. 위 셋과 방향이 반대라 vars에 'true'를 넣어야 켜진다 —
+      # 미설정이면 빈 값이라 꺼진 상태다(라이브 데모에서만 켠다).
+      DEMO_SEED_ENABLED: ${{ vars.DEMO_SEED_ENABLED }}
+      GHCR_USER: ${{ secrets.GHCR_USER }}
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+      APP_IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+      # 에이전트 이미지 태그 (docs/specs/49)
+      AGENT_IMAGE_TAG: ${{ github.event.inputs.agent_image_tag || 'latest' }}
+      # 에이전트 운영 추적 (docs/specs/51). 스위치는 킬스위치 선례(§33·§40·§45)대로 저장소 변수라
+      # GitHub에서 끄고 켠다 — 미설정이면 빈 값이라 꺼진 상태다. 켜려면 LANGSMITH_API_KEY 시크릿을
+      # 등록하고 vars에 'true'를 넣은 뒤 재배포한다. SDK 스위치(LANGSMITH_TRACING 등)는 싣지 않는다.
+      AGENT_TRACING_ENABLED: ${{ vars.AGENT_TRACING_ENABLED }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose files & deploy-gcp-us.sh to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST_US }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          source: "docker/gcp-us/,deploy-gcp-us.sh,nginx/"
+          target: "~/deploy/"
+
+      - name: SSH 접속 및 배포
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST_US }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          command_timeout: 30m
+          envs: POSTGRES_USERNAME, POSTGRES_PASSWORD, REDIS_PASSWORD, AUTH_JWT_SECRET, COOKIE_DOMAIN, OAUTH_WEB_BASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, CRYPTO_ENC_KEYS, CRYPTO_ENC_ACTIVE_VERSION, CRYPTO_HMAC_INDEX_KEY, ALERT_WEBHOOK_URLS, OPENAI_API_KEY, ANTHROPIC_API_KEY, GUIDANCE_STRUCTURE_ENABLED, LLM_ANSWERABILITY_GATE_ENABLED, RETRIEVAL_VOCAB_PREFILTER_ENABLED, DEMO_SEED_ENABLED, GHCR_PAT, GHCR_USER, CERTBOT_EMAIL, APP_IMAGE_TAG, AGENT_IMAGE_TAG, AGENT_TRACING_ENABLED, LANGSMITH_API_KEY
+          script: |
+            set -e
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            cd ~/deploy
+            chmod +x deploy-gcp-us.sh
+            export APP_IMAGE_TAG="${APP_IMAGE_TAG:-latest}"
+            export AGENT_IMAGE_TAG="${AGENT_IMAGE_TAG:-latest}"
+            # 배포 후 디스크 정리는 deploy-gcp-us.sh 말미가 담당한다(별도 단계 없음):
+            #   ① dangling 이미지 prune ② 미사용 앱·에이전트 이미지 rmi
+            #   ③ containerd 고아 blob prune ④ 디스크·containerd 용량 로깅
+            # 배포 로그 끝의 "disk usage" 블록에서 잔재 누적을 확인할 수 있다.
+            COMPOSE_FILE=docker/gcp-us/compose.yml ./deploy-gcp-us.sh
