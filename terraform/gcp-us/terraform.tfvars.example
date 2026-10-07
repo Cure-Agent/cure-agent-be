@@ -1,0 +1,17 @@
+# terraform.tfvars로 복사해 값을 채운다 (*.tfvars는 gitignore — 커밋 금지).
+# credentials(서비스 계정 JSON 키)는 여기 넣지 말고 Terraform Cloud 워크스페이스(cure-agent-gcp-us)에
+# Sensitive Variable로 등록한다 — 서울 워크스페이스(cure-agent-gcp)의 변수는 따라오지 않는다.
+
+prefix     = "cure-us"           # 서울(cure)과 달라야 한다 — 같은 프로젝트라 VPC·방화벽 이름이 충돌한다
+project_id = "cure-agent-xxxxxx" # 서울과 같은 프로젝트
+region     = "us-west1"
+zone       = "us-west1-a"
+
+ssh_user = "deploy" # CD의 SERVER_USER Secret과 동일해야 한다
+ssh_public_keys = [ # 서울과 같은 키 — CD가 GCP_SSH_PRIVATE_KEY를 함께 쓴다
+  "ssh-ed25519 AAAA... local-machine",
+  "ssh-ed25519 AAAA... github-actions",
+]
+
+machine_type         = "e2-micro" # 무료 등급 — 2 vCPU 공유 / 1 GB
+boot_disk_size_in_gb = 30         # 무료 등급 상한 (pd-standard)
