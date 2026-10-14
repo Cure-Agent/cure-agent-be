@@ -26,7 +26,6 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
 | 컨테이너 | 13개 | 6개 + certbot-init — 모니터링 7종이 없다 |
 | 배포 대기 | 헬스 3분 · SSH 10분(기본값) | 헬스 10분 · SSH 45분 — 콜드 스타트가 분 단위다(첫 배포 실측 app 3분 14초·agent 4분 8초) |
 | 헬스체크 | 5~10초 간격 | 평상시 60초 · 기동 중 2~5초(`start_interval`), app 프로브는 node 대신 busybox `wget` — 아래 「CPU」 |
-| 배포 순서 | `up -d --remove-orphans` → `--force-recreate app` | app을 먼저 강제 재생성 — 옛 순서는 매 배포 app을 두 번 만든다 |
 | OS | Ubuntu 기본 | `os-tune.sh` — 업데이트 타이머를 한국 새벽으로, man-db 끔, 상주 데몬 4종 mask, snapd 제거 — 아래 「OS 정리」 |
 | 그 밖 | — | `allow_stopping_for_update`, docker 로그 회전(20MB × 5) |
 
