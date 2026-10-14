@@ -24,6 +24,7 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
 | 스왑 | 4GB | 없음 — 느린 디스크에서는 메모리를 늘려 주지 못한다 |
 | 리소스 이름 | `cure-*` | `cure-us-*` — 같은 프로젝트라 달라야 한다 |
 | 컨테이너 | 13개 | 6개 + certbot-init — 모니터링 7종이 없다 |
+| 배포 대기 | 헬스 3분 · SSH 10분(기본값) | 헬스 10분 · SSH 45분 — 콜드 스타트가 분 단위다(첫 배포 실측 app 3분 14초·agent 4분 8초) |
 | 그 밖 | — | `allow_stopping_for_update`, docker 로그 회전(20MB × 5) |
 
 모니터링이 없으니 **알림도 없다.** 장애는 배포 로그·`docker logs`·외부 헬스 확인으로만 보인다.
@@ -35,7 +36,9 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
 이 기간에 쌓인 미국 DB는 전환 때 덮어쓴다.
 
 1. TFC organization `cure-agent`에 워크스페이스 **`cure-agent-gcp-us`**(CLI-driven)를 만들고 `credentials`
-   (서비스 계정 JSON 키 전체 내용)를 **Sensitive Variable**로 등록한다 — 서울 워크스페이스의 변수는 따라오지 않는다.
+   (서비스 계정 JSON 키 전체 내용)를 **Terraform variable**로, Sensitive를 체크해 등록한다 — 서울 워크스페이스의
+   변수는 따라오지 않는다. Environment variable(`GOOGLE_CREDENTIALS` 등)로 넣으면 plan이
+   `No value for required variable "credentials"`로 실패한다(2026-10-14에 실제로 났다).
 2. apply:
    ```bash
    cd terraform/gcp-us

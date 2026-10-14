@@ -8,12 +8,13 @@ set -euo pipefail
 # (cd-gcp.yml → deploy.sh)를 건드리지 않으려고 고치지 않고 복사했다 — 병행 기간에 deploy.sh를
 # 고치면 여기에도 옮긴다(`diff deploy.sh deploy-gcp-us.sh`).
 #
-# deploy.sh와의 차이는 모니터링 스택이 없다는 것 하나다(docker/gcp-us/compose.yml). 아래 단계를
-# **일부러** 뺐으니 diff에 보여도 되살리지 않는다 — grafana 재시작은 서비스가 없으면 실패해
-# set -e가 배포를 멈춘다:
+# deploy.sh와의 차이는 두 가지다. 하나는 모니터링 스택이 없다는 것이다(docker/gcp-us/compose.yml).
+# 아래 단계를 **일부러** 뺐으니 diff에 보여도 되살리지 않는다 — grafana 재시작은 서비스가 없으면
+# 실패해 set -e가 배포를 멈춘다:
 #   - grafana 재시작(프로비저닝 재적용)
 #   - 설정 재적재 ⑴의 grafana.conf·prometheus·alertmanager·alloy·loki 항목과 그 검증기
 #   - 설정 재적재 ⑵ Prometheus 알림 규칙 SIGHUP
+# 다른 하나는 헬스 대기 한도다(3분 → 10분, wait_healthy 위 주석).
 #
 # 레포 루트에 있어야 한다 — 자기 디렉토리로 cd한 뒤 docker/·nginx/를 상대 경로로 찾는다.
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,10 +60,21 @@ fi
 # -----------------------------
 # 헬스 대기 헬퍼 — compose healthcheck 상태를 본다.
 # app은 readiness(DB·Redis 포함), agent는 liveness(프로세스 생존 — BE를 부르지 않는다)다.
+#
+# 한도가 서울(deploy.sh — 3초 × 60회 ≈ 3분)보다 길다. 무료 디스크(pd-standard 30GB)에서는 콜드 스타트가
+# 코드를 디스크에서 읽느라 분 단위로 걸린다 — 2026-10-14 첫 배포 실측으로 컨테이너 시작부터 첫 로그까지
+# app 3분 14초(Nest 초기화 자체는 14초)·agent 4분 8초였다. app은 대기 196초 만에 healthy가 됐는데,
+# 부하로 docker inspect가 느려져 회당 3초를 넘긴 덕에 60회가 끝나기 전이었을 뿐이다.
+# 그래서 횟수가 아니라 경과 시간으로 센다 — 실패 메시지의 초가 실제로 기다린 시간과 같아진다.
+# 한도를 바꾸면 cd-gcp-us.yml의 command_timeout도 본다 — 최악 경로(app 대기 + agent 대기 + agent 롤백
+# 대기)가 SSH 세션 안에 끝나야 롤백이 중간에 끊기지 않는다.
 # -----------------------------
+HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-600}"
+
 wait_healthy() {
   local container="$1"
-  for _ in $(seq 1 60); do
+  local deadline=$((SECONDS + HEALTH_WAIT_SECONDS))
+  while ((SECONDS < deadline)); do
     STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "missing")
     if [[ "$STATUS" == "healthy" ]]; then
       return 0
@@ -176,7 +188,7 @@ echo "[deploy] waiting for health check..."
 if wait_healthy "$APP_CONTAINER"; then
   echo "[deploy] app is healthy"
 else
-  echo "[deploy] ERROR: app failed to become healthy within 180s" >&2
+  echo "[deploy] ERROR: app failed to become healthy within ${HEALTH_WAIT_SECONDS}s" >&2
   echo "[deploy] app logs:"
   docker logs --tail 50 "$APP_CONTAINER" || true
 
@@ -316,7 +328,7 @@ echo "[deploy] waiting for agent health check..."
 if wait_healthy "$AGENT_CONTAINER"; then
   echo "[deploy] agent is healthy"
 else
-  echo "[deploy] ERROR: agent failed to become healthy within 180s" >&2
+  echo "[deploy] ERROR: agent failed to become healthy within ${HEALTH_WAIT_SECONDS}s" >&2
   echo "[deploy] agent logs:"
   docker logs --tail 50 "$AGENT_CONTAINER" || true
 
