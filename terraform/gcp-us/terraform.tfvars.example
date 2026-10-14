@@ -1,6 +1,7 @@
 # terraform.tfvars로 복사해 값을 채운다 (*.tfvars는 gitignore — 커밋 금지).
 # credentials(서비스 계정 JSON 키)는 여기 넣지 말고 Terraform Cloud 워크스페이스(cure-agent-gcp-us)에
-# Sensitive Variable로 등록한다 — 서울 워크스페이스(cure-agent-gcp)의 변수는 따라오지 않는다.
+# Terraform variable(Sensitive)로 등록한다 — Environment variable이 아니다. 서울 워크스페이스(cure-agent-gcp)의
+# 변수는 따라오지 않는다.
 
 prefix     = "cure-us"           # 서울(cure)과 달라야 한다 — 같은 프로젝트라 VPC·방화벽 이름이 충돌한다
 project_id = "cure-agent-xxxxxx" # 서울과 같은 프로젝트

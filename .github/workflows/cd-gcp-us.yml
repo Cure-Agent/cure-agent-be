@@ -9,8 +9,10 @@ name: CD - GCP US Deploy
 #   - 호스트는 SERVER_HOST_US다. 계정·키(SERVER_USER·GCP_SSH_PRIVATE_KEY)는 서울과 같다 — 같은 공개키로 만든다
 #   - docker/gcp-us/·deploy-gcp-us.sh를 보낸다
 #   - 모니터링 시크릿(GRAFANA_*·DISCORD_WEBHOOK_URL)을 싣지 않는다 — 쓰는 서비스가 없다
-#   - SSH 명령 제한 시간이 30분이다 — 무료 디스크(pd-standard 30GB ≈3.6MiB/s)에서 첫 배포의 이미지
-#     압축 해제가 기본 10분을 넘을 수 있고, 끊기면 deploy-gcp-us.sh가 중간에 죽는다
+#   - SSH 명령 제한 시간이 45분이다(기본 10분) — 무료 디스크(pd-standard 30GB ≈3.6MiB/s)에서는 이미지 압축
+#     해제와 콜드 스타트가 분 단위이고(2026-10-14 첫 배포 12분 17초 — 풀 5분 19초·app 대기 3분 16초), 끊기면
+#     deploy-gcp-us.sh가 중간에 죽는다. 최악 경로는 풀·migrate ≈6분에 헬스 대기(한도 10분)가 세 번
+#     — app·agent·agent 롤백 — 이어지는 것이라 30분이면 롤백 도중에 끊긴다
 # 병행 기간에 cd-gcp.yml의 env·envs를 고치면(새 환경 변수 등) 여기에도 옮긴다.
 #
 # 실행: gh workflow run cd-gcp-us.yml — dispatch 워크플로는 기본 브랜치(dev)에 머지돼 있어야 실행된다.
@@ -104,7 +106,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST_US }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
-          command_timeout: 30m
+          command_timeout: 45m
           envs: POSTGRES_USERNAME, POSTGRES_PASSWORD, REDIS_PASSWORD, AUTH_JWT_SECRET, COOKIE_DOMAIN, OAUTH_WEB_BASE_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, CRYPTO_ENC_KEYS, CRYPTO_ENC_ACTIVE_VERSION, CRYPTO_HMAC_INDEX_KEY, ALERT_WEBHOOK_URLS, OPENAI_API_KEY, ANTHROPIC_API_KEY, GUIDANCE_STRUCTURE_ENABLED, LLM_ANSWERABILITY_GATE_ENABLED, RETRIEVAL_VOCAB_PREFILTER_ENABLED, DEMO_SEED_ENABLED, GHCR_PAT, GHCR_USER, CERTBOT_EMAIL, APP_IMAGE_TAG, AGENT_IMAGE_TAG, AGENT_TRACING_ENABLED, LANGSMITH_API_KEY
           script: |
             set -e
