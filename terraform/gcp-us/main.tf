@@ -59,6 +59,11 @@ systemctl enable docker
 systemctl start docker
 
 usermod -aG docker ${var.ssh_user}
+
+# OS 정리 — 쓰지 않는 상주 데몬과 한국 낮에 도는 유지보수 작업을 걷어낸다 (os-tune.sh 머리말).
+# 파일 내용을 그대로 붙인다. 보간 결과는 다시 해석되지 않으므로 그 안의 셸 변수 치환은 bash 몫으로 남는다.
+# cloud-init은 첫 부팅에만 돈다 — 이미 떠 있는 VM에는 README대로 같은 파일을 SSH로 실행한다.
+${file("${path.module}/os-tune.sh")}
 END_OF_USERDATA
 }
 

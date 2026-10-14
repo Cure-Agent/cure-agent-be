@@ -9,6 +9,15 @@
 # 메모리: mem_limit은 폭주한 컨테이너 하나를 가두는 상한이지 배분이 아니다 — 합(≈1.2G)이 물리 메모리를 넘는다.
 # 서울 실측(2026-10-06)으로 이 구성의 실사용은 ≈340MiB, 기동 이후 최대치는 app 220·agent 137·postgres 269MiB
 # (페이지 캐시 포함)라 상한을 그 위에 둔다. 1GB에 들어가는지는 이 서버에서 다시 잰다.
+#
+# 헬스체크: 평상시에는 60초마다 보고, 기동 중에만 start_interval(Docker 25+)로 촘촘히 본다.
+# e2-micro의 지속 CPU는 0.25개분인데, 2026-10-14 유휴 실측에서 그 약 3/4를 배경 작업이 썼고 대부분이
+# 헬스체크 프로세스 생성이었다(app cgroup의 68%가 `node -e fetch` 프로브, agent의 83%가 python 프로브,
+# 그 밖에 5초 간격의 pg_isready·redis-cli와 프로브마다의 runc exec). 평상시 healthy를 읽는 곳은 docker ps뿐이고
+# (autoheal 없음), 기동 중 상태를 읽는 depends_on과 deploy-gcp-us.sh의 wait_healthy는 start_interval이 받친다.
+# start_interval은 start_period 안에서 아직 healthy가 아닐 때만 쓰인다 — start_period가 지나면 60초 간격으로
+# 떨어져 늦게 뜬 컨테이너의 healthy를 최대 60초 늦게 보므로, start_period를 기동 최악값 위로 둔다
+# (app·agent는 wait_healthy 한도 10분과 같게 — 첫 배포 실측 app 3분 14초·agent 4분 8초).
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -24,9 +33,12 @@ services:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d cure_agent']
-      interval: 5s
+      # 평상시 60초·기동 중 2초 (머리말 「헬스체크」)
+      interval: 60s
       timeout: 3s
-      retries: 10
+      retries: 3
+      start_period: 300s
+      start_interval: 2s
     networks:
       - cure-backend
 
@@ -46,10 +58,12 @@ services:
                    --requirepass ${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
-      interval: 5s
+      # 평상시 60초·기동 중 2초 (머리말 「헬스체크」)
+      interval: 60s
       timeout: 3s
-      retries: 5
-      start_period: 3s
+      retries: 3
+      start_period: 120s
+      start_interval: 2s
     networks:
       - cure-backend
 
@@ -132,16 +146,15 @@ services:
         condition: service_healthy
     healthcheck:
       # readiness — DB·Redis 준비까지 확인한다 (docs/specs/16)
-      test:
-        [
-          'CMD',
-          'node',
-          '-e',
-          "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 10s
+      # node 대신 busybox wget(node:22-alpine 내장)으로 본다 — 프로브마다 node를 띄우는 비용이 app 유휴 CPU의
+      # 68%였다. wget은 HTTP 4xx·5xx(미준비는 503)와 연결 실패에 exit 1이다(2026-10-14 컨테이너 실측).
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:3000/api/v1/health/ready']
+      # 평상시 60초·기동 중 5초 (머리말 「헬스체크」) — start_period는 wait_healthy 한도(10분)와 같다
+      interval: 60s
       timeout: 5s
-      retries: 12
+      retries: 3
+      start_period: 600s
+      start_interval: 5s
     networks:
       - cure-backend
       - cure-proxy
@@ -177,10 +190,13 @@ services:
           '-c',
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/agent/healthz', timeout=3)",
         ]
-      interval: 10s
+      # 평상시 60초·기동 중 5초 (머리말 「헬스체크」) — 이 프로브가 agent 유휴 CPU의 83%였다.
+      # start_period는 wait_healthy 한도(10분)와 같다
+      interval: 60s
       timeout: 5s
-      retries: 6
-      start_period: 5s
+      retries: 3
+      start_period: 600s
+      start_interval: 5s
     networks:
       - cure-proxy
 
