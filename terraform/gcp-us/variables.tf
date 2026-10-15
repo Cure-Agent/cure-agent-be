@@ -22,7 +22,7 @@ variable "zone" {
 }
 
 variable "credentials" {
-  description = "Terraform용 서비스 계정 JSON 키 전체 내용 — TFC 워크스페이스(cure-agent-gcp-us)에 Sensitive Variable로 등록 (파일 커밋 금지)"
+  description = "Terraform용 서비스 계정 JSON 키 전체 내용 — TFC 워크스페이스(cure-agent-gcp-us)에 Terraform variable(Sensitive)로 등록, Environment variable 아님 (파일 커밋 금지)"
   type        = string
   sensitive   = true
 }

@@ -24,6 +24,9 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
 | 스왑 | 4GB | 없음 — 느린 디스크에서는 메모리를 늘려 주지 못한다 |
 | 리소스 이름 | `cure-*` | `cure-us-*` — 같은 프로젝트라 달라야 한다 |
 | 컨테이너 | 13개 | 6개 + certbot-init — 모니터링 7종이 없다 |
+| 배포 대기 | 헬스 3분 · SSH 10분(기본값) | 헬스 10분 · SSH 45분 — 콜드 스타트가 분 단위다(첫 배포 실측 app 3분 14초·agent 4분 8초) |
+| 헬스체크 | 5~10초 간격 | 평상시 60초 · 기동 중 2~5초(`start_interval`), app 프로브는 node 대신 busybox `wget` — 아래 「CPU」 |
+| OS | Ubuntu 기본 | `os-tune.sh` — 업데이트 타이머를 한국 새벽으로, man-db 끔, 상주 데몬 4종 mask, snapd 제거 — 아래 「OS 정리」 |
 | 그 밖 | — | `allow_stopping_for_update`, docker 로그 회전(20MB × 5) |
 
 모니터링이 없으니 **알림도 없다.** 장애는 배포 로그·`docker logs`·외부 헬스 확인으로만 보인다.
@@ -35,7 +38,9 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
 이 기간에 쌓인 미국 DB는 전환 때 덮어쓴다.
 
 1. TFC organization `cure-agent`에 워크스페이스 **`cure-agent-gcp-us`**(CLI-driven)를 만들고 `credentials`
-   (서비스 계정 JSON 키 전체 내용)를 **Sensitive Variable**로 등록한다 — 서울 워크스페이스의 변수는 따라오지 않는다.
+   (서비스 계정 JSON 키 전체 내용)를 **Terraform variable**로, Sensitive를 체크해 등록한다 — 서울 워크스페이스의
+   변수는 따라오지 않는다. Environment variable(`GOOGLE_CREDENTIALS` 등)로 넣으면 plan이
+   `No value for required variable "credentials"`로 실패한다(2026-10-14에 실제로 났다).
 2. apply:
    ```bash
    cd terraform/gcp-us
@@ -58,8 +63,43 @@ GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 �
    ```
    이때 DB는 마이그레이션만 적용된 빈 DB라 postgres 수치가 실제보다 낮다.
 
-1GB가 모자라면 snapd 제거(서울 실측 44MiB)부터 검토한다. 그래도 모자라면 `machine_type`을 올린다(유료) —
-`allow_stopping_for_update`가 있어 apply가 정지 → 변경 → 기동으로 처리한다.
+1GB가 모자라면 `machine_type`을 올린다(유료) — `allow_stopping_for_update`가 있어 apply가 정지 → 변경 → 기동으로
+처리한다. 그 전에 할 수 있는 OS 정리는 이미 `os-tune.sh`가 한다(아래).
+
+## CPU — 지속 몫은 0.25개분이고, 스로틀링은 steal로 보이지 않는다
+
+e2-micro는 vCPU 2개가 각각 12.5%씩, 합 0.25개분을 지속으로 받는다. 그 위로는 토큰 버킷만큼 버스트한다.
+2026-10-14 고정 작업 처리율 실측(서울 e2-standard-2 단일 ≈7.2M/s 기준)은 다음과 같다:
+
+- 5.5분 쉰 뒤 단일 워커가 **약 22초 풀 속도**(85~89%)였다. 그 뒤로는 **5~10%**(평균 6%)로 떨어졌다.
+- 같은 구간에 top·vmstat·sar의 steal은 0%였고, 게스트는 2 vCPU 100%로 보고했다. **게스트 지표로는 스로틀을 볼 수 없다**
+  — CPU 여유는 짧은 고정 작업의 처리율로 판단한다.
+- 아무 요청이 없을 때도 배경 작업이 지속 몫의 약 3/4(≈0.19개분)를 썼다. 대부분 헬스체크 프로세스 생성이었다.
+  그래서 헬스체크를 평상시 60초로 늘렸다(`docker/gcp-us/compose.yml` 머리말).
+
+배포·업데이트·적재처럼 연속으로 일하는 구간은 버스트가 바닥나면 풀 속도의 수 %로 돈다. 배포 중단 시간(로그 기준
+≈2분 40초)도 대부분 이 구간의 app 기동이다.
+
+## OS 정리 (`os-tune.sh`)
+
+2026-10-14 실측에서 OS 기본 설정이 1GB·0.25개분을 크게 잠식했다.
+
+- `apt-daily-upgrade`가 한국 15:53에 돌아 패키지 4개에 **12분**이 걸렸다. 그동안 가용 메모리 212MiB, 10초에 87MiB 재읽기,
+  외부 헬스 응답 **15.7초**였다. 뒤이어 man-db 트리거가 디스크를 채웠다.
+- 쓰지 않는 상주 데몬이 RSS 합 ≈90MiB였다: multipathd 27(mlock)·packagekitd 20·snapd 16·networkd-dispatcher 15·
+  google_osconfig_agent 14MiB.
+
+`os-tune.sh`가 하는 일은 다음과 같다. 업데이트 타이머는 끄지 않고 02:00·02:30 KST로 옮긴다(앱 크론 03:00·04:00 KST와
+겹치지 않게). man-db의 타이머와 dpkg 트리거를 끈다. 위 데몬 4종을 mask한다. snapd를 지운다(gcloud snap도 함께 지워진다).
+google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
+
+- **새 VM**: `main.tf`의 user_data(cloud-init)가 첫 부팅에 실행한다.
+- **이미 떠 있는 VM**: cloud-init은 다시 돌지 않으니 한 번 실행한다(여러 번 실행해도 결과가 같다).
+  ```bash
+  ssh deploy@<미국 IP> 'sudo bash -s' < terraform/gcp-us/os-tune.sh
+  ```
+- user_data를 바꾼 뒤의 `terraform plan`은 인스턴스 metadata의 제자리 변경으로 나온다. VM은 교체되지 않고,
+  apply해도 이미 떠 있는 VM의 cloud-init은 다시 돌지 않는다.
 
 ## 전환
 
