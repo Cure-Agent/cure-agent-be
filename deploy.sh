@@ -146,12 +146,18 @@ echo "[deploy] running db migration..."
 $DC -f "$COMPOSE_FILE" run --rm app node scripts/migrate.mjs
 
 echo "[deploy] starting/updating containers..."
-# --remove-orphans: compose 파일에서 사라진 컨테이너 정리
+# app은 항상 재생성하여 환경변수/이미지 변경사항 반영 보장 — **나머지보다 먼저** 한다.
+# 순서가 반대면 app이 두 번 재생성된다: `up -d --remove-orphans`가 새로 받은 이미지 digest를 보고 app을
+# 이미 재생성하는데, 곧바로 `--force-recreate`가 기동 중인 그 컨테이너를 멈추고 또 만든다(2026-10-07
+# run 37591077160: 08:02:55 Recreate → 08:02:58 다시 Recreate). 기동 중인 node(PID 1)는 아직 SIGTERM
+# 핸들러가 없어(enableShutdownHooks 전) 신호를 무시하므로, 그 정지는 stop 대기 10초를 채우고 SIGKILL로
+# 끝난다(위 run 11초) — 그만큼 API 중단이 길어진다.
+# 의존 서비스(postgres·redis)는 강제 재생성되지 않고 수렴만 한다(`--always-recreate-deps`가 아니다).
+$DC -f "$COMPOSE_FILE" up -d --force-recreate app
+# --remove-orphans: compose 파일에서 사라진 컨테이너 정리. app은 방금 만든 설정과 같아 다시 만들지 않는다.
 # agent는 강제 재생성하지 않는다 — compose가 설정이나 이미지 digest가 바뀔 때만 재생성한다.
 # 매 배포 재생성은 nginx 해석 캐시(valid=10s) 동안 에이전트 경로 502 창을 만든다(docs/specs/49 위험 ⑶).
 $DC -f "$COMPOSE_FILE" up -d --remove-orphans
-# app은 항상 재생성하여 환경변수/이미지 변경사항 반영 보장
-$DC -f "$COMPOSE_FILE" up -d --force-recreate app
 
 # grafana provisioning(datasources.yml)은 bind mount라 파일만 바뀌면
 # compose가 컨테이너 재생성 트리거를 잡지 못한다. 게다가 데이터소스 프로비저닝은

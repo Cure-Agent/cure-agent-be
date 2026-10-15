@@ -8,14 +8,13 @@ set -euo pipefail
 # (cd-gcp.yml → deploy.sh)를 건드리지 않으려고 고치지 않고 복사했다 — 병행 기간에 deploy.sh를
 # 고치면 여기에도 옮긴다(`diff deploy.sh deploy-gcp-us.sh`).
 #
-# deploy.sh와의 차이는 세 가지다. 첫째는 모니터링 스택이 없다는 것이다(docker/gcp-us/compose.yml).
+# deploy.sh와의 차이는 두 가지다. 첫째는 모니터링 스택이 없다는 것이다(docker/gcp-us/compose.yml).
 # 아래 단계를 **일부러** 뺐으니 diff에 보여도 되살리지 않는다 — grafana 재시작은 서비스가 없으면
 # 실패해 set -e가 배포를 멈춘다:
 #   - grafana 재시작(프로비저닝 재적용)
 #   - 설정 재적재 ⑴의 grafana.conf·prometheus·alertmanager·alloy·loki 항목과 그 검증기
 #   - 설정 재적재 ⑵ Prometheus 알림 규칙 SIGHUP
 # 둘째는 헬스 대기 한도다(3분 → 10분, wait_healthy 위 주석).
-# 셋째는 컨테이너 기동 순서다 — app을 먼저 강제 재생성해 한 번만 만든다(「starting/updating containers」 주석).
 #
 # 레포 루트에 있어야 한다 — 자기 디렉토리로 cd한 뒤 docker/·nginx/를 상대 경로로 찾는다.
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -175,7 +174,7 @@ echo "[deploy] starting/updating containers..."
 # 순서가 반대면 app이 두 번 재생성된다: `up -d --remove-orphans`가 새로 받은 이미지 digest를 보고 app을
 # 이미 재생성하는데, 곧바로 `--force-recreate`가 기동 중인 그 컨테이너를 멈추고 또 만든다(2026-10-14
 # run 38522610724: 06:31:19 Recreate → 06:31:23 다시 Recreate, 첫 컨테이너 정지에 13초). e2-micro에서는
-# 버려지는 첫 기동이 버스트 CPU를 태워 두 번째 기동까지 느려진다. deploy.sh(서울)는 옛 순서 그대로다.
+# 버려지는 첫 기동이 버스트 CPU를 태워 두 번째 기동까지 느려진다.
 # 의존 서비스(postgres·redis)는 강제 재생성되지 않고 수렴만 한다(`--always-recreate-deps`가 아니다).
 $DC -f "$COMPOSE_FILE" up -d --force-recreate app
 # --remove-orphans: compose 파일에서 사라진 컨테이너 정리. app은 방금 만든 설정과 같아 다시 만들지 않는다.
