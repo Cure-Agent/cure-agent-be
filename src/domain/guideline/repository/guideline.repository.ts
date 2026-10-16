@@ -52,6 +52,27 @@ export interface ListAdminGuidelinesFilter {
   limit: number;
 }
 
+/** 번역 재사용 원본을 찾는 범위 — 같은 지침의 같은 판본 문자열 (#535) */
+export interface TranslationReuseScope {
+  guidelineId: string;
+  version: string;
+}
+
+/** 대상 언어의 최신 번역을 가진 청크 한 건 — 번역 재사용의 원본 후보 (#535) */
+export interface ReusableChunkTranslation {
+  chunkId: string;
+  guidelineId: string;
+  version: string;
+  /** 원본 청크의 한국어 본문 — 공백 제거 비교의 입력이다 */
+  chunkContent: string;
+  /** 원본 청크의 섹션 원문 경로 — 번역 경로를 그대로 옮겨도 되는지 가른다 */
+  sectionPath: string[];
+  content: string;
+  sectionPathTranslated: string[] | null;
+  translatorModel: string;
+  translatedAt: Date;
+}
+
 @Injectable()
 export class GuidelineRepository {
   constructor(private readonly txManager: TransactionManager) {}
@@ -462,6 +483,9 @@ export class GuidelineRepository {
     {
       chunk: EvidenceChunkRow;
       guidelineTitle: string;
+      /** 재사용 원본을 같은 지침·같은 판본 안에서만 찾기 위한 축 (#535) */
+      guidelineId: string;
+      version: string;
       sectionPath: string[];
       /** 번역이 없거나 원문이 개정됐다 — 본문을 다시 써야 한다 */
       bodyStale: boolean;
@@ -478,6 +502,8 @@ export class GuidelineRepository {
       .select({
         chunk: evidenceChunks,
         guidelineTitle: guidelines.title,
+        guidelineId: guidelineVersions.guidelineId,
+        version: guidelineVersions.version,
         sectionPath: guidelineSections.path,
         translationHash: evidenceChunkTranslations.sourceContentHash,
         translatedPath: evidenceChunkTranslations.sectionPathTranslated,
@@ -508,11 +534,74 @@ export class GuidelineRepository {
       return {
         chunk: row.chunk,
         guidelineTitle: row.guidelineTitle,
+        guidelineId: row.guidelineId,
+        version: row.version,
         sectionPath: row.sectionPath,
         bodyStale,
         pathMissing: !bodyStale && row.translatedPath === null,
       };
     });
+  }
+
+  /**
+   * 번역 재사용의 원본 후보 (#535) — 주어진 (지침, 판본) 안에서 **대상 언어의 최신 번역**을
+   * 가진 청크 전부.
+   *
+   * **판본 행 상태(ACTIVE·SUPERSEDED)를 묻지 않는다.** 재적재는 같은 판본에 새 revision을
+   * 만들고 이전 revision을 SUPERSEDED로 내리는데, 번역은 그 내려간 revision의 청크에 붙어
+   * 있다 — ACTIVE로 거르면 재적재 직후에는 원본이 하나도 없다.
+   *
+   * 「최신」은 그 행의 `source_content_hash`가 **그 청크의** `content_hash`와 같다는 뜻이다.
+   * stale한 번역은 이미 자기 원문과 어긋났으므로 남의 원문에 옮겨 쓸 근거가 없다.
+   *
+   * 공백 제거 비교는 여기서 하지 않고 본문을 그대로 돌려준다 — PostgreSQL 정규식의 `\s`는
+   * DB 로캘의 `[[:space:]]`라 JS의 `\s`와 같은 문자 집합이라는 보장이 없다. 판정 축은
+   * 서비스(JS) 하나에만 둔다.
+   *
+   * **`translated_at` 내림차순으로 낸다** — 원본이 여럿이면 가장 늦은 번역을 쓰는데(기준 13),
+   * 소비 쪽이 키마다 처음 본 행을 고르면 그것이 된다(`mapExistingTitleTranslations`와 같은
+   * 규율). 정렬을 DB에 두는 이유는 정밀도다: 컬럼은 마이크로초인데 JS `Date`는 밀리초라,
+   * JS에서 비교하면 같은 밀리초 안의 두 행이 동률로 뭉개진다.
+   */
+  async listReusableTranslations(
+    lang: string,
+    scopes: readonly TranslationReuseScope[],
+  ): Promise<ReusableChunkTranslation[]> {
+    // `or()`에 빈 배열을 주면 `undefined`가 되어 범위 조건이 통째로 빠지고, 코퍼스 전체의
+    // 번역을 읽는다 — 범위가 없으면 읽지 않는다
+    if (scopes.length === 0) return [];
+
+    return this.txManager.conn
+      .select({
+        chunkId: evidenceChunks.id,
+        guidelineId: guidelineVersions.guidelineId,
+        version: guidelineVersions.version,
+        chunkContent: evidenceChunks.content,
+        sectionPath: guidelineSections.path,
+        content: evidenceChunkTranslations.content,
+        sectionPathTranslated: evidenceChunkTranslations.sectionPathTranslated,
+        translatorModel: evidenceChunkTranslations.translatorModel,
+        translatedAt: evidenceChunkTranslations.translatedAt,
+      })
+      .from(evidenceChunkTranslations)
+      .innerJoin(evidenceChunks, eq(evidenceChunkTranslations.chunkId, evidenceChunks.id))
+      .innerJoin(guidelineSections, eq(evidenceChunks.sectionId, guidelineSections.id))
+      .innerJoin(guidelineVersions, eq(evidenceChunks.guidelineVersionId, guidelineVersions.id))
+      .where(
+        and(
+          eq(evidenceChunkTranslations.lang, lang),
+          eq(evidenceChunkTranslations.sourceContentHash, evidenceChunks.contentHash),
+          or(
+            ...scopes.map((scope) =>
+              and(
+                eq(guidelineVersions.guidelineId, scope.guidelineId),
+                eq(guidelineVersions.version, scope.version),
+              ),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(evidenceChunkTranslations.translatedAt), desc(evidenceChunks.id));
   }
 
   /**
