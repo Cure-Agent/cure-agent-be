@@ -99,6 +99,9 @@
       "js-yaml@^3": "^3.15.1",
       "js-yaml@^4": "^4.3.1",
       "undici": "^8.9.0"
+    },
+    "patchedDependencies": {
+      "unpdf@1.8.0": "patches/unpdf@1.8.0.patch"
     }
   }
 }

@@ -12,6 +12,11 @@ overrides:
   js-yaml@^4: ^4.3.1
   undici: ^8.9.0
 
+patchedDependencies:
+  unpdf@1.8.0:
+    hash: 725f2b90156030b2e7c0626516be17aaec20f0ae0b7b36bddfde81ccf610c7ef
+    path: patches/unpdf@1.8.0.patch
+
 importers:
 
   .:
@@ -78,7 +83,7 @@ importers:
         version: 3.0.2
       unpdf:
         specifier: ^1.8.0
-        version: 1.8.0
+        version: 1.8.0(patch_hash=725f2b90156030b2e7c0626516be17aaec20f0ae0b7b36bddfde81ccf610c7ef)
     devDependencies:
       '@nestjs/cli':
         specifier: ^11.0.24
@@ -8275,7 +8280,7 @@ snapshots:
 
   universalify@2.0.1: {}
 
-  unpdf@1.8.0: {}
+  unpdf@1.8.0(patch_hash=725f2b90156030b2e7c0626516be17aaec20f0ae0b7b36bddfde81ccf610c7ef): {}
 
   unpipe@1.0.0: {}
 
