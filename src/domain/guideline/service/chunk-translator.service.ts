@@ -37,6 +37,13 @@ export interface ChunkTranslationJobResult {
   /** 이번 실행이 **본문까지** 새로 쓴 번역 행 수 */
   translated: number;
   /**
+   * 번역기를 부르지 않고 **공백만 다른 청크의 기존 번역 본문을 옮겨 쓴** 행 수 (#535).
+   *
+   * `translated`와 나눠 세는 이유는 `pathFilled`와 같다 — 재적재 뒤 실행이 외부 호출 없이
+   * 끝났는지를 출력 한 줄에서 구분할 수 있어야 한다.
+   */
+  reused: number;
+  /**
    * 본문은 그대로 두고 **섹션 경로만** 채운 행 수 (#394).
    *
    * `translated`와 나눠 세는 이유는 관측이다 — 재실행이 싼 길로 갔는지(경로만) 비싼 길로
@@ -184,6 +191,7 @@ export class ChunkTranslatorService {
     return {
       targeted: candidates.length,
       translated,
+      reused: 0,
       pathFilled,
       skipped: candidates.length - translated - pathFilled,
     };
