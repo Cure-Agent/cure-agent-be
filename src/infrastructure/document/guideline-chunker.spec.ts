@@ -232,3 +232,109 @@ describe('spec 19: 지침 PDF 파싱·청킹', () => {
     expect(() => validate(parsed)).not.toThrow();
   });
 });
+
+/**
+ * docs/specs/19 「어절 경계 줄바꿈」 개정 (#535) — 줄 끝 공백 글리프로 어절 경계를 판정한다.
+ *
+ * 추출기가 공백 글리프를 지우지 않으므로(pdf-text.extractor) 페이지 텍스트의 줄 끝·줄 첫머리 공백이
+ * 판정 근거다. 아래 fixture의 줄 끝 공백(`'…있는 '`)과 줄 안 연속 공백·탭은 의도한 것이다.
+ */
+describe('spec 19 개정(#535): 줄 끝 공백 글리프로 어절 경계를 판정한다', () => {
+  const wordBoundaryPages: string[] = [
+    [
+      '56',
+      'IV 권고사항',
+      '1  한의 단독  치료',
+      '1) 별빛탕',
+      '【 R1 】',
+      '권고안 권고등급/근거수준 참고문헌',
+      '기저질환이 있는 ',
+      '환자에게 별빛탕을 쓰고 식이 조절을 통해 ',
+      '대사량을 늘릴 것을 권고한다. A/High 5-12)',
+      '임상적 고려사항',
+      '복용 중 이',
+      '상반응이 나타나면\t\t용량을  줄인다.',
+      '(1) 배경',
+      '별빛탕의 효과는 두 차례 평가',
+      '되었다.',
+      'Visual Analogue',
+      'Scale 점수는 anti-obe-',
+      'sity 군에서 낮았다.',
+      'moxi- ',
+      'bustion 병행군은 meta ',
+      '-analysis에서 우세했다.',
+      '수축기 혈압은 감소하였으나1-3)',
+      ' 이완기 혈압은 차이가 없었다.',
+      '침 치료와 운동을 병행하고',
+      ' ',
+      '경과를 관찰했다.',
+    ].join('\n'),
+  ];
+
+  let located: LocatedChunk[];
+
+  beforeEach(() => {
+    located = flattenChunks(chunkNckmGuideline(wordBoundaryPages, meta).input);
+  });
+
+  it('개정 a: 줄 끝 공백이 있는 한글 어절 경계는 공백으로 잇는다 — 격조사 끝과 비격조사 끝 모두', () => {
+    expect(findRecommendation(located, 'R1')?.chunk.content).toMatch(
+      /^기저질환이 있는 환자에게 별빛탕을 쓰고 식이 조절을 통해 대사량을 늘릴 것을 권고한다\.\n/,
+    );
+  });
+
+  it('개정 b: 줄 끝 공백이 없는 어중 분리는 격조사 음절로 끝나도 붙인다', () => {
+    const recommendation = findRecommendation(located, 'R1')?.chunk.content;
+    const explanation = findExplanation(located, 'R1')?.chunk.content;
+
+    expect(recommendation).toContain('복용 중 이상반응이 나타나면');
+    expect(explanation).toContain('별빛탕의 효과는 두 차례 평가되었다.');
+  });
+
+  it('개정 c: 라틴 문자·숫자 규칙과 하이픈 규칙은 공백 글리프와 무관하게 그대로다', () => {
+    const explanation = findExplanation(located, 'R1')?.chunk.content;
+
+    expect(explanation).toContain('Visual Analogue Scale 점수는 anti-obesity 군에서 낮았다.');
+    // 하이픈 뒤·앞에 글리프가 있어도 공백을 넣지 않는다 — `moxi- bustion`·`meta -analysis`가 되지 않는다
+    expect(explanation).toContain('moxibustion 병행군은 meta-analysis에서 우세했다.');
+  });
+
+  it('개정 d: 줄 안의 연속 공백·탭은 한 칸이 된다 — 본문과 페이지 헤더 모두', () => {
+    const recommendation = findRecommendation(located, 'R1');
+
+    expect(recommendation?.chunk.content).toContain('나타나면 용량을 줄인다.');
+    expect(recommendation?.sectionPath).toEqual(['Ⅳ. 권고사항', '1. 한의 단독 치료', '1) 별빛탕']);
+  });
+
+  it('개정 e: 공백 글리프가 다음 줄 첫머리에 붙어 와도 어절 경계로 본다 (위첨자 참고문헌 번호 뒤)', () => {
+    expect(findExplanation(located, 'R1')?.chunk.content).toContain(
+      '수축기 혈압은 감소하였으나1-3) 이완기 혈압은 차이가 없었다.',
+    );
+  });
+
+  it('개정 f: 공백 글리프만 있는 줄은 버리되 위아래 줄 사이의 어절 경계로 본다', () => {
+    expect(findExplanation(located, 'R1')?.chunk.content).toContain(
+      '침 치료와 운동을 병행하고 경과를 관찰했다.',
+    );
+  });
+
+  it('개정 전체: 권고문과 해설 청크가 위 규칙대로 정확히 이어진다', () => {
+    expect(findRecommendation(located, 'R1')?.chunk.content).toBe(
+      [
+        '기저질환이 있는 환자에게 별빛탕을 쓰고 식이 조절을 통해 대사량을 늘릴 것을 권고한다.',
+        '임상적 고려사항',
+        '복용 중 이상반응이 나타나면 용량을 줄인다.',
+      ].join('\n'),
+    );
+    expect(findExplanation(located, 'R1')?.chunk.content).toBe(
+      [
+        '(1) 배경',
+        '별빛탕의 효과는 두 차례 평가되었다.',
+        'Visual Analogue Scale 점수는 anti-obesity 군에서 낮았다.',
+        'moxibustion 병행군은 meta-analysis에서 우세했다.',
+        '수축기 혈압은 감소하였으나1-3) 이완기 혈압은 차이가 없었다.',
+        '침 치료와 운동을 병행하고 경과를 관찰했다.',
+      ].join('\n'),
+    );
+  });
+});
