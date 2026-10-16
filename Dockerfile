@@ -5,6 +5,9 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
+# package.json의 pnpm.patchedDependencies가 가리키는 패치(unpdf 번들 pdfjs — docs/specs/19)다.
+# 설치 전에 있어야 한다 — 없으면 frozen 설치가 패치 파일 ENOENT로 실패한다.
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 FROM node:22-alpine AS build

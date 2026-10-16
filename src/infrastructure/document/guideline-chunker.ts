@@ -113,9 +113,9 @@ const REFERENCES_SECTION = /^(?:\[?\s*참고문헌\s*\]?|\(\d+\)\s*참고문헌)
  * 표도 등급 토큰도 없이 `【 R20 】 … 전문가그룹의 공식적 합의를 통해 권고한다.`처럼 문장 안에서만
  * 등급을 밝히는 판본이 있다(324). 이 문구가 곧 `GPP`의 증거다.
  *
- * **공백을 모두 지운 문자열에 대고 본다.** 지면 줄바꿈이 어절 한가운데를 자르는데
- * (`공식적 합`/`의를 통해` — R22, `공식적 합의`/`를 통해` — R26) 그 경계 공백은 PDF에 없어
- * 복원이 격조사 기반 추정이다. 공백을 지우면 어디서 잘렸든 같은 문자열이 되어 추정에 기대지 않는다.
+ * **공백을 모두 지운 문자열에 대고 본다.** 지면 줄바꿈이 어절 한가운데를 자르고
+ * (`공식적 합`/`의를 통해` — R22, `공식적 합의`/`를 통해` — R26) 경계 공백의 복원은 줄 끝 공백 글리프에
+ * 기대는데, 글리프가 없는 자리도 있다(`appendWrapped`). 공백을 지우면 어디서 잘렸든 같은 문자열이 된다.
  */
 const CONSENSUS_STATEMENT = /합의를통해권고한다/;
 /**
@@ -124,7 +124,7 @@ const CONSENSUS_STATEMENT = /합의를통해권고한다/;
  * 145의 `R(Ⅲa-D-11)`은 표 헤더도 등급도 권고문도 없고, 그 블록의 「권고안 도출에 대한 설명」이
  * 사유를 밝힌다 — "통계적 유의성이 없어서 **권고안 도출에 반영하지 않았다**". 원문 결함이 아니라
  * 원문의 의도이므로 면제(§23)가 아니라 배제로 다룬다. `CONSENSUS_STATEMENT`와 같게 **공백을 지운
- * 문자열**에 대고 본다 — 지면 줄바꿈이 문구 중간을 자르는데 그 경계 공백은 PDF에 없다.
+ * 문자열**에 대고 본다 — 지면 줄바꿈이 문구 중간을 자르므로 경계 공백의 유무에 흔들리지 않게 한다.
  */
 const NOT_DERIVED_STATEMENT = /권고안도출에반영하지않/;
 /**
@@ -223,12 +223,55 @@ const EVIDENCE_LABELS: Record<string, string> = {
   Insufficient: '근거 불충분',
 };
 
-/** 섹션 경로가 확정된 본문 한 줄 */
-interface SourceLine {
+/** 페이지 텍스트의 한 줄 — 공백을 정규화한 본문과, 줄 경계에 공백 글리프가 있었는지 */
+interface PageLine {
   text: string;
+  /** 원문 줄 끝에 공백 글리프가 있었다 — 다음 줄과의 경계가 어절 경계라는 증거다 (`appendWrapped`) */
+  endsWithSpace: boolean;
+  /** 원문 줄 첫머리에 공백 글리프가 있었다 — 앞 줄과의 경계에 대해 같은 증거다 */
+  startsWithSpace: boolean;
+}
+
+/** 섹션 경로가 확정된 본문 한 줄 */
+interface SourceLine extends PageLine {
   /** 인쇄 페이지 번호 (물리 인덱스가 아니다) */
   page: number;
   sectionPath: string[];
+}
+
+/**
+ * 페이지를 줄로 나눈다 — 페이지 텍스트를 줄로 보는 모든 곳이 이 함수를 거친다.
+ *
+ * 추출기는 공백 글리프를 지우지 않으므로(pdf-text.extractor) 줄 안에 공백이 두 칸 이상 붙어 오기도
+ * 한다(325에서 1,121곳). 연속 공백(탭 포함)을 한 칸으로 합친 뒤 trim해야 헤더·마커 판정과 섹션
+ * 경로가 공백 수에 흔들리지 않는다. 줄 경계의 공백 글리프는 지우기 전에 플래그로 남긴다.
+ *
+ * 공백 글리프가 혼자 한 줄로 떨어져 오기도 한다(163에서 78줄). 그 줄은 text가 비어 건너뛰어지지만
+ * 그 자체가 위아래 줄 사이의 공백 글리프이므로 바로 앞 줄(없으면 뒤 줄)의 플래그로 넘긴다 — 대개
+ * 문단 끝이지만 문단 중간인 곳도 있다(`이`⏎` `⏎`병행한` — 인제스트 대상 36문서 페이지에서 134곳).
+ */
+function splitPageLines(page: string): PageLine[] {
+  const lines: PageLine[] = [];
+  let previous: PageLine | undefined;
+  let pendingSpace = false;
+  for (const raw of page.split('\n')) {
+    const text = raw.replace(/\s+/g, ' ').trim();
+    const line: PageLine = { text, endsWithSpace: false, startsWithSpace: false };
+    lines.push(line);
+    if (text.length === 0) {
+      // 공백만 있는 줄 — 그 자체가 위아래 줄 사이의 공백 글리프다
+      if (raw.length > 0) {
+        if (previous) previous.endsWithSpace = true;
+        else pendingSpace = true;
+      }
+      continue;
+    }
+    line.endsWithSpace = /\s$/.test(raw);
+    line.startsWithSpace = pendingSpace || /^\s/.test(raw);
+    pendingSpace = false;
+    previous = line;
+  }
+  return lines;
 }
 
 /** 하드 랩을 복원해 만든 문단 */
@@ -358,7 +401,7 @@ export function containsRecommendationMarker(pages: string[]): boolean {
   // 괄호를 아예 쓰지 않는 판본(219) — 줄머리 마커 뒤에 표 헤더나 등급이 따라오는 줄이 있어야
   // 「이 문서는 권고 체계를 쓴다」의 증거다. 줄머리 `R1`만으로 받으면 서지·수식이 오탐된다.
   return pages.some((page) => {
-    const lines = page.split('\n').map((line) => line.trim());
+    const lines = splitPageLines(page).map((line) => line.text);
     return lines.some((line, index) => {
       if (!BARE_MARKER.test(line)) return false;
       const window = lines.slice(Math.max(0, index - 1), index + 1 + BLOCK_EVIDENCE_WINDOW);
@@ -549,7 +592,7 @@ function parsePageHeader(lines: string[]): PageHeader | null {
  */
 function findRecommendationChapter(pages: string[]): string | null {
   for (const page of pages) {
-    const header = parsePageHeader(page.split('\n').map((line) => line.trim()));
+    const header = parsePageHeader(splitPageLines(page).map((line) => line.text));
     if (header?.chapter && header.chapter.title.includes('권고')) return header.chapter.numeral;
   }
   return null;
@@ -570,8 +613,8 @@ function collectTargetChapterLines(pages: string[]): SourceLine[] {
   let level2: string | undefined;
 
   for (const page of pages) {
-    const lines = page.split('\n').map((line) => line.trim());
-    const header = parsePageHeader(lines);
+    const lines = splitPageLines(page);
+    const header = parsePageHeader(lines.map((line) => line.text));
     if (!header) continue;
 
     if (header.chapter) {
@@ -597,8 +640,8 @@ function collectTargetChapterLines(pages: string[]): SourceLine[] {
       ...(level1 ? [level1] : []),
       ...(level2 ? [level2] : []),
     ];
-    for (const text of lines.slice(header.bodyStart)) {
-      if (text.length > 0) collected.push({ text, page: header.printedPage, sectionPath });
+    for (const line of lines.slice(header.bodyStart)) {
+      if (line.text.length > 0) collected.push({ ...line, page: header.printedPage, sectionPath });
     }
   }
   return collected;
@@ -851,6 +894,8 @@ function rating(code: string, label: string): IngestRating {
 function toParagraphs(lines: SourceLine[], marker: RegExp): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   let current: Paragraph | null = null;
+  // 직전에 이어 붙인 줄의 끝에 공백 글리프가 있었는가 — 다음 줄과의 경계 판정에 쓴다
+  let previousEndsWithSpace = false;
 
   const flush = (): void => {
     if (current && current.text.length > 0) paragraphs.push(current);
@@ -867,9 +912,14 @@ function toParagraphs(lines: SourceLine[], marker: RegExp): Paragraph[] {
     if (current === null) {
       current = { text: line.text, pageStart: line.page, pageEnd: line.page };
     } else {
-      current.text = appendWrapped(current.text, line.text);
+      current.text = appendWrapped(
+        current.text,
+        line.text,
+        previousEndsWithSpace || line.startsWithSpace,
+      );
       current.pageEnd = line.page;
     }
+    previousEndsWithSpace = line.endsWithSpace;
     if (SENTENCE_END.test(line.text)) flush();
   }
   flush();
@@ -886,41 +936,45 @@ function isStructuralLine(text: string, marker: RegExp): boolean {
   );
 }
 
-/** 하이픈 랩은 하이픈을 지우고, 라틴 문자·숫자끼리는 공백 하나로, 그 외(한글·한자)는 공백 없이 잇는다 */
-function appendWrapped(accumulated: string, next: string): string {
-  if (/-$/.test(accumulated) && /^[A-Za-z]/.test(next)) {
-    return `${accumulated.slice(0, -1)}${next}`;
+/**
+ * 하드 랩된 두 줄을 잇는다 (docs/specs/19 「어절 경계 줄바꿈」).
+ *
+ * 1. 앞 줄이 하이픈으로 끝나면 공백을 넣지 않는다 — 다음 줄이 라틴 문자로 시작하면 하이픈을 지우고 붙인다
+ *    (`anti-obe-`⏎`sity` → `anti-obesity`). 현행 규칙 그대로이고 공백 글리프와 무관하다: 하이픈 뒤에
+ *    글리프가 있는 줄바꿈(대상 문서 청크 본문 21곳)은 낱말 안 줄바꿈(`interven-`⏎`tion`)과 복합어
+ *    (`IVA-`⏎`CPT`)가 반반이라 글리프가 둘을 가르지 못하고, 글리프를 따르면 둘 다 `X- Y`가 된다.
+ * 2. 다음 줄이 하이픈+라틴 문자로 시작하고 앞 줄이 라틴 문자·숫자로 끝나면 공백 없이 붙인다
+ *    (`meta`⏎`-analysis`, `methyl`⏎`-phenidate`) — 하이픈 앞 글리프를 따르면 52곳이 `meta -analysis`가 된다.
+ * 3. 양쪽이 라틴 문자·숫자면 공백 하나를 넣는다 — 공백 글리프와 무관하다. 글리프가 없는 라틴·숫자 경계는
+ *    대부분 표 칸·목차·쪽 머리처럼 서로 다른 요소 사이였다(`critical`⏎`471`, `CHAPTER`⏎`03`).
+ * 4. 그 밖의 경계(한글·한자·괄호 등이 낀 경계)는 **경계에 공백 글리프가 있으면 공백 하나, 없으면 붙인다.**
+ *
+ * 양쪽 정렬 지침 PDF(InDesign)는 줄바꿈 자리의 어절 경계에 공백 글리프를 실제로 갖고 있다 — 비만 325
+ * Ⅳ장 한글–한글 줄 경계 2,796곳 중 876곳(31%)이다. 예전에는 pdfjs가 이 글리프를 버려(공개 API의
+ * `getTextContent`가 공백 글리프를 넣지 않고 글자 간격으로 공백을 다시 만든다) 「PDF에 인코딩되지
+ * 않는다」고 오판했고, 격조사로 끝나면 공백을 넣는 추정으로 메웠다. 그 추정은 무작위 100건(판정 95)에서
+ * 58/95였고 글리프 기반 판정은 94/95다 — 판본 3종(325·163·314)에서 격조사 추정이 글리프와 일치한
+ * 비율은 66%·74%·57%뿐이었다. 글리프는 unpdf 번들 pdfjs 패치(patches/unpdf@1.8.0.patch,
+ * `keepWhiteSpace`)로 살린다.
+ *
+ * 경계의 공백 글리프는 앞 줄 끝에 붙어 오는 것이 보통이지만, 위첨자 참고문헌 번호 뒤에서는 pdfjs가
+ * 공백에서 줄을 새로 열어 **다음 줄 첫머리**에 붙인다(`…으로1-3)`⏎` 높았고` — 163). 그래서 경계 판정은
+ * 양쪽을 다 본다(`boundarySpace`) — 첫머리 글리프로 생기는 공백은 인제스트 대상 36문서에서 292곳이다.
+ *
+ * **알려진 한계**: 한글 표 칸 경계에는 공백 글리프가 없어 칸끼리 붙는다
+ * (`결과중요도`⏎`총 환자 수` → `결과중요도총 환자 수`, 표본 100건 중 4건).
+ */
+function appendWrapped(accumulated: string, next: string, boundarySpace: boolean): string {
+  if (/-$/.test(accumulated)) {
+    return /^[A-Za-z]/.test(next) ? `${accumulated.slice(0, -1)}${next}` : `${accumulated}${next}`;
+  }
+  if (/[A-Za-z0-9]$/.test(accumulated) && /^-[A-Za-z]/.test(next)) {
+    return `${accumulated}${next}`;
   }
   if (/[A-Za-z0-9]$/.test(accumulated) && /^[A-Za-z0-9]/.test(next)) {
     return `${accumulated} ${next}`;
   }
-  if (endsAtWordBoundary(accumulated) && /^[가-힣]/.test(next)) {
-    return `${accumulated} ${next}`;
-  }
-  return `${accumulated}${next}`;
-}
-
-/**
- * 어절 경계에서 끊긴 줄인지 추정한다.
- *
- * 한글 줄바꿈은 어중(`권`/`고한다`)과 어절 경계(`있는`/`환자에게`) 양쪽에서 일어나는데, 후자의 공백은
- * 양쪽 정렬이 흡수해 **PDF에 아예 인코딩되지 않는다**(pdfjs 항목 단위로도 없다). 복구 불가능한
- * 정보라 형태로 추정한다 — 마지막 음절이 격조사면 어절이 끝난 것으로 본다.
- *
- * **격조사만 넣고 어미(`고`·`해` 등)는 넣지 않는다.** 요약문의 권고 문장 44개를 정답지로 측정하면
- * 격조사만 쓸 때 36/44가 일치하고 어미를 더하면 `고려`가 `고`/`려`로 끊긴 자리에서 오탐이 나
- * 32/44로 떨어진다 (미적용은 24/44). 불일치 8건 중 7건은 정답지인 요약문 쪽이 공백을 잃은 자리라
- * **실제 정확도는 43/44**이고, 유일한 오류는 의존명사 `수` 앞에서 끊긴 R7이다.
- * 권고 문장은 임상의에게 그대로 인용되는 텍스트라 정확도를 우선한다 (docs/specs/19 「어절 경계 줄바꿈」).
- */
-const PARTICLE_ENDINGS = new Set([
-  '을', '를', '이', '가', '은', '는', '의', '에', '로', '와', '과', '도', '만',
-]);
-
-function endsAtWordBoundary(text: string): boolean {
-  const last = text.slice(-1);
-  // 단음절 어절 자체는 판단 근거가 없다 — 앞에 다른 글자가 붙어 있을 때만 조사·어미로 본다
-  return text.length > 1 && PARTICLE_ENDINGS.has(last);
+  return boundarySpace ? `${accumulated} ${next}` : `${accumulated}${next}`;
 }
 
 function mergeParagraphs(paragraphs: Paragraph[]): Paragraph | null {
