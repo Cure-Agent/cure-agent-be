@@ -2,17 +2,17 @@
 
 **2026-10-20에 서울(`terraform/gcp`)에서 전환한 운영 서버다**(아래 「전환」). GCP 무료 체험 종료(2026-10)에 대비한
 병행 환경으로 만들었다. 그동안 서울 배포 경로(`cd-gcp.yml` → `deploy.sh` → `docker/gcp`)는 급히 배포할 일에 대비해
-고치지 않았고, 그래서 서울 파일을 고치는 대신 사본을 만들었다. 전환 뒤 main push 배포는 `cd-gcp-us.yml`이 하고,
-`cd-gcp.yml`은 되돌아갈 길로 dispatch만 남겼다.
+고치지 않았고, 그래서 서울 파일을 고치는 대신 사본을 만들었다. 전환 뒤 main push 배포는 `cd-gcp-us.yml`이 한다.
+서울 VM은 같은 날 지웠다 — `cd-gcp.yml`도 지웠고, 나머지 서울 파일은 비활성 원본으로 남겼다(아래 「전환 뒤 정리」).
 
-| 사본 | 서울 원본 |
-|------|-----------|
+| 사본 | 서울 원본 (비활성) |
+|------|--------------------|
 | `terraform/gcp-us/` | `terraform/gcp/` |
 | `docker/gcp-us/compose.yml` | `docker/gcp/compose.yml` |
 | `deploy-gcp-us.sh` | `deploy.sh` |
-| `.github/workflows/cd-gcp-us.yml` (main push · dispatch) | `.github/workflows/cd-gcp.yml` (전환 뒤 dispatch 전용) |
+| `.github/workflows/cd-gcp-us.yml` (main push · dispatch) | `.github/workflows/cd-gcp.yml` — 2026-10-20 삭제 |
 
-`nginx/`는 서울과 함께 쓴다(마운트만 한다). 전환 뒤로는 사본 쪽을 고친다 — 서울 파일은 서울을 지울 때 정리한다.
+`nginx/`는 서울과 함께 쓰던 디렉터리다(마운트만 한다). `conf.d/grafana.conf`는 서울만 썼다. 전환 뒤로는 사본 쪽을 고친다 — 서울 파일은 고치지 않는 원본이다.
 
 ## 서울과 다른 점
 
@@ -104,6 +104,9 @@ google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
 
 ## 전환
 
+2026-10-20에 실행한 절차다(아래 실행 기록). 서울은 같은 날 지웠으니, 다시 옮길 일이 생기면 「서울」을 지금 서버(미국)로,
+「미국」을 옮겨 갈 서버로 바꿔 읽는다.
+
 전환 중에는 main에 머지하지 않는다 — 서울 CD가 멈춰 둔 서울 app을 다시 띄운다.
 
 1. 서울 app을 멈춘다 — 덤프 뒤의 쓰기가 사라지지 않게: `ssh <서울> 'docker stop cure-app'`
@@ -138,11 +141,14 @@ dev에도 머지하지 않는다. `latest` 이미지가 dev push로 빌드되므
 
 ## 전환 뒤 정리
 
-- **서울은 체험 종료일 전에 멈추거나 지운다** — 체험이 끝나면 서울 VM(e2-standard-2·pd-balanced 50GB·고정 IP)에
-  요금이 붙는다. 되돌아갈 길이 필요 없어지면 `terraform/gcp`에서 `terraform destroy`, grafana DNS 레코드도 지운다.
+- **(2026-10-20 완료)** 서울을 지웠다 — 체험이 끝나면 서울 VM(e2-standard-2·pd-balanced 50GB·고정 IP)에 요금이 붙는다.
+  `terraform/gcp`에서 `terraform destroy`로 인스턴스(디스크 포함)·고정 IP·방화벽·서브넷·VPC를 지우고, grafana DNS 레코드도 지웠다.
+  destroy 전에 `cd-gcp.yml`을 GitHub에서 비활성화했다 — 호스트 키를 확인하지 않고 운영 시크릿 전부를 `SERVER_HOST`로
+  보내는 워크플로라, 반납한 IP가 남에게 가면 그쪽으로 시크릿이 간다. 서울의 모니터링 이력(Prometheus·Loki)은 VM과 함께 없어졌다.
 - 첫 달 청구서에서 무료 등급 밖 항목(외부 IP 등)이 없는지 확인한다.
 - **(2026-10-20 완료)** `cd-gcp.yml`의 push 트리거를 `cd-gcp-us.yml`로 옮기고, ship의 CD 대기 대상(`automation/pipeline.md`의
   `run-wait.sh`)과 새 환경 변수 절차를 `cd-gcp-us.yml`·`docker/gcp-us`로 바꿨다. `cd-gcp.yml`은 dispatch만 남겼다.
 - compose 불변식 테스트(`test/agent-service-bootstrap.e2e-spec.ts`)가 `docker/gcp-us`를 보게 한다. 모니터링을 뺐으므로
   `test/agent-liveness-metrics.e2e-spec.ts`(spec 50의 alloy 기준)는 스펙으로 다룬다.
-- 서울 파일(`terraform/gcp`·`docker/gcp`·`deploy.sh`·`cd-gcp.yml`)은 `terraform/oci`처럼 비활성으로 표기해 남기거나 지운다.
+- **(2026-10-20 완료)** 서울 파일 — `cd-gcp.yml`은 지웠다(위 이유). `terraform/gcp`·`docker/gcp`·`deploy.sh`는 `terraform/oci`처럼
+  비활성으로 표기해 남겼다. 모니터링 스택 설정을 쓰는 구성이 `docker/gcp`뿐이고, 위 테스트 둘이 아직 `docker/gcp`를 읽는다.

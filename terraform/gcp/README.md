@@ -1,4 +1,11 @@
-# terraform/gcp — GCP 인프라 (Terraform Cloud)
+# terraform/gcp — GCP 서울 인프라 (Terraform Cloud) — ⚠️ 비활성
+
+> **2026-10-20 미국(`terraform/gcp-us/`, e2-micro 무료 등급)으로 전환했고, 같은 날 이 리소스를 `terraform destroy`로 지웠다.**
+> 체험이 끝나면 이 서버(e2-standard-2·pd-balanced 50GB·고정 IP)에 요금이 붙기 때문이다. 워크스페이스 `cure-agent-gcp`는 빈 상태로 남아 있다.
+> 이 코드는 **기록용 보관**이다 — 서울 배포 경로(`deploy.sh`·`docker/gcp`)와 함께 비활성으로 남겼다.
+> 다시 쓸 때 확인 사항: apply하면 고정 IP를 새로 받는다(34.158.205.77은 반납했다). 배포 워크플로 `cd-gcp.yml`은 지웠으니
+> git 이력에서 되살리고, GitHub Secret `SERVER_HOST`와 api·grafana DNS에 새 IP를 넣는다. DB는 미국에서 덤프해 옮긴다
+> (`terraform/gcp-us/README.md` 「전환」의 역순).
 
 배포 계획 v2 기준 — **e2-standard-2(2 vCPU/8GB) 단일 서버**에 앱 + 모니터링 스택을 통합한다.
 Terraform Cloud organization **`cure-agent`** 의 워크스페이스 **`cure-agent-gcp`** 1개로 관리한다 (CLI-driven, remote execution).
