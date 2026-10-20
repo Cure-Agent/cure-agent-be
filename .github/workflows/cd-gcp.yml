@@ -1,8 +1,11 @@
-name: CD - GCP Deploy (Main)
+name: CD - GCP Seoul Deploy (inactive)
+
+# 서울 서버(terraform/gcp) 배포 — 2026-10-20 미국으로 전환한 뒤로는 운영이 아니다.
+# main push 트리거는 cd-gcp-us.yml로 옮겼고, dispatch만 되돌아갈 길로 남긴다(서울을 지울 때 이 파일도 정리한다).
+# **dispatch하면 서울 app이 옛 서울 DB로 다시 뜬다** — 03:00·04:00 KST 크론과 알림 웹훅도 함께 돈다.
+# 서울로 되돌아가려면 먼저 미국 DB를 덤프해 서울에 복원한다(terraform/gcp-us/README.md 「전환」의 역순).
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -10,7 +13,7 @@ on:
         required: false
         default: 'latest'
       # 에이전트 이미지 (docs/specs/49) — medical-agentic-rag CI가 main 머지마다 latest·실행 번호로 올린다.
-      # 에이전트 단독 배포·롤백은 이 dispatch로 한다. 교차 레포 자동 트리거는 두지 않는다 —
+      # 전환 뒤 에이전트 단독 배포·롤백은 cd-gcp-us.yml의 dispatch로 한다. 교차 레포 자동 트리거는 두지 않는다 —
       # 기능이 없는 서비스라 자동화가 지킬 것이 없다.
       agent_image_tag:
         description: '배포할 에이전트 이미지 태그 (medical-agentic-rag CI 실행 번호 입력, 기본값: latest)'

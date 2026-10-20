@@ -4,9 +4,9 @@ set -euo pipefail
 # -----------------------------
 # Config — GCP 무료 등급(e2-micro) 단일 서버 배포 — deploy.sh(서울)의 사본
 # -----------------------------
-# 체험 종료에 대비한 병행 환경이다(terraform/gcp-us/README.md). 전환 전까지 서울 배포 경로
-# (cd-gcp.yml → deploy.sh)를 건드리지 않으려고 고치지 않고 복사했다 — 병행 기간에 deploy.sh를
-# 고치면 여기에도 옮긴다(`diff deploy.sh deploy-gcp-us.sh`).
+# 운영 배포 스크립트다 — 2026-10-20 서울에서 전환했다(terraform/gcp-us/README.md). 체험 종료에 대비한
+# 병행 기간에 서울 배포 경로(cd-gcp.yml → deploy.sh)를 건드리지 않으려고 고치지 않고 복사해 만들었고,
+# 전환 뒤로는 이 파일을 고친다(deploy.sh는 서울을 지울 때 정리한다).
 #
 # deploy.sh와의 차이는 두 가지다. 첫째는 모니터링 스택이 없다는 것이다(docker/gcp-us/compose.yml).
 # 아래 단계를 **일부러** 뺐으니 diff에 보여도 되살리지 않는다 — grafana 재시작은 서비스가 없으면

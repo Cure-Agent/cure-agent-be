@@ -46,7 +46,7 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
 
 **dev PR에 `--merge`를 쓰면 안 되는 이유**: GitHub Actions는 `push` 이벤트 런의 제목으로 **head 커밋 메시지 첫 줄**을 쓴다(`pull_request` 이벤트만 PR 제목을 쓴다). dev PR을 squash하면 그 커밋 제목이 곧 PR 제목이라 `CI - GHCR Build & Push` 런 제목이 앞선 `CI` 런 제목과 일치한다. merge commit으로 머지하면 런 제목이 `Merge pull request #N from Cure-Agent/<이슈브랜치>`가 되어 **어느 변경의 CI인지 런 목록에서 식별할 수 없고**, dev 히스토리에도 브랜치 커밋이 그대로 섞여 「한 줄 = 한 변경」이 깨진다. `run-name`으로는 이 접두사를 걷어낼 수 없어 워크플로우 파일 쪽에 우회책이 없다 — 머지 시점에만 바로잡을 수 있다.
 
-배포 PR(dev→main)은 반대로 `--merge`가 맞다 — 여러 dev 커밋을 하나의 배포 경계로 묶는 것이 목적이고, `CD - GCP Deploy (Main)` 런 제목이 `Merge pull request #N from Cure-Agent/dev`가 되는 것이 의도된 동작이다.
+배포 PR(dev→main)은 반대로 `--merge`가 맞다 — 여러 dev 커밋을 하나의 배포 경계로 묶는 것이 목적이고, `CD - GCP US Deploy` 런 제목이 `Merge pull request #N from Cure-Agent/dev`가 되는 것이 의도된 동작이다.
 
 저장소는 dev·main 모두 squash/merge/rebase 세 방식을 허용하고 ruleset도 없다 — 이 규범을 지키는 장치는 이 문서뿐이므로 명령을 그대로 따른다.
 
@@ -101,9 +101,9 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
 
 ## Step 4: CD & 정리
 
-1. main push → CD(`CD - GCP Deploy (Main)`, `cd-gcp.yml`) 자동 트리거.
+1. main push → CD(`CD - GCP US Deploy`, `cd-gcp-us.yml`) 자동 트리거. 2026-10-20 서울에서 미국으로 전환하면서 옮겼다 — `cd-gcp.yml`(서울)은 dispatch 전용이다.
 2. `CD_SHA=$(gh pr view <배포PR번호> --json mergeCommit --jq '.mergeCommit.oid')`
-3. CD 폴링: **`automation/bin/run-wait.sh cd-gcp.yml main "<CD_SHA>" 1200`** (60초 간격, 최대 20분) → `RUN_RESULT` 마커. `result=success`가 아니면(`failure` 등 conclusion·`NOT_FOUND`·`TIMEOUT`·`API_ERROR`·`ERROR`) 아래 4의 실패 분기로 처리.
+3. CD 폴링: **`automation/bin/run-wait.sh cd-gcp-us.yml main "<CD_SHA>" 3000`** (60초 간격, 최대 50분 — 무료 디스크라 배포가 길고(전환 재배포 8분 42초), 워크플로 자체의 SSH 명령 한도가 45분이다) → `RUN_RESULT` 마커. `result=success`가 아니면(`failure` 등 conclusion·`NOT_FOUND`·`TIMEOUT`·`API_ERROR`·`ERROR`) 아래 4의 실패 분기로 처리.
 4. CD 결과:
    - 성공 → 아래 cleanup을 순서대로 시도하되 **각 명령이 실패해도 중단하지 않고 계속 진행**(실패 내역만 기록):
      1. `gh issue close <배포이슈번호>` (default branch가 dev라 자동 완료 안 됨)
@@ -151,8 +151,8 @@ CI/CD·PR 체크 대기는 `automation/bin/`의 **폴링 스크립트**(`pr-gate
 2. `.env` — 로컬 값 추가
 
 프로덕션:
-3. `.github/workflows/cd-gcp.yml` — `jobs.deploy-main.env`에 `NEW_VAR: ${{ secrets.NEW_VAR }}` + `steps[SSH].with.envs` 목록에 `NEW_VAR`
-4. `docker/gcp/compose.yml` — app `environment`에 `NEW_VAR: ${NEW_VAR}`
+3. `.github/workflows/cd-gcp-us.yml` — `jobs.deploy-us.env`에 `NEW_VAR: ${{ secrets.NEW_VAR }}` + `steps[SSH].with.envs` 목록에 `NEW_VAR`
+4. `docker/gcp-us/compose.yml` — app `environment`에 `NEW_VAR: ${NEW_VAR}`
 5. `gh secret set NEW_VAR`로 시크릿 등록 — `gh secret list`로 등록 여부를 확인하고 미등록 시 사용자에게 요청한다
 
 ## 민감 파일 커밋 금지
