@@ -1,17 +1,18 @@
 # terraform/gcp-us — GCP 무료 등급 서버 (Terraform Cloud)
 
-GCP 무료 체험 종료(2026-10)에 대비한 **병행 환경**이다. 전환 전까지 운영은 서울(`terraform/gcp`)이고,
-서울 배포 경로(`cd-gcp.yml` → `deploy.sh` → `docker/gcp`)는 이전 전에 급히 배포할 일에 대비해 **고치지 않는다**.
-그래서 서울 파일을 고치는 대신 사본을 만들었다.
+**2026-10-20에 서울(`terraform/gcp`)에서 전환한 운영 서버다**(아래 「전환」). GCP 무료 체험 종료(2026-10)에 대비한
+병행 환경으로 만들었다. 그동안 서울 배포 경로(`cd-gcp.yml` → `deploy.sh` → `docker/gcp`)는 급히 배포할 일에 대비해
+고치지 않았고, 그래서 서울 파일을 고치는 대신 사본을 만들었다. 전환 뒤 main push 배포는 `cd-gcp-us.yml`이 하고,
+`cd-gcp.yml`은 되돌아갈 길로 dispatch만 남겼다.
 
 | 사본 | 서울 원본 |
 |------|-----------|
 | `terraform/gcp-us/` | `terraform/gcp/` |
 | `docker/gcp-us/compose.yml` | `docker/gcp/compose.yml` |
 | `deploy-gcp-us.sh` | `deploy.sh` |
-| `.github/workflows/cd-gcp-us.yml` (dispatch 전용) | `.github/workflows/cd-gcp.yml` |
+| `.github/workflows/cd-gcp-us.yml` (main push · dispatch) | `.github/workflows/cd-gcp.yml` (전환 뒤 dispatch 전용) |
 
-`nginx/`는 서울과 함께 쓴다(마운트만 한다). 병행 기간에 서울 원본을 고치면 사본에도 옮긴다.
+`nginx/`는 서울과 함께 쓴다(마운트만 한다). 전환 뒤로는 사본 쪽을 고친다 — 서울 파일은 서울을 지울 때 정리한다.
 
 ## 서울과 다른 점
 
@@ -129,13 +130,19 @@ google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
 
 Redis는 옮기지 않는다 — 락·로그아웃 거부 목록·OAuth 티켓뿐이고 전부 수십 분 안에 TTL로 만료된다.
 
+**2026-10-20 실행 기록**: API 중단은 약 80분이었다(12:12~13:35 KST). 가장 긴 구간은 덤프(140.6MB)를 로컬에서 미국으로
+올리는 10분이었다(0.23MB/s — 로컬 상향 대역). 복원은 30초, 재배포는 8분 42초였고 나머지는 단계 사이 대기다.
+다시 옮길 일이 있으면(서울로 되돌리기 등) 업로드 경로부터 바꾼다. 위 절차에 없던 주의도 하나 있다 — 전환 중에는
+dev에도 머지하지 않는다. `latest` 이미지가 dev push로 빌드되므로 4단계가 받을 이미지가 바뀐다.
+서울에서 쓰던 로그인 세션은 덤프로 넘어간 refresh 토큰으로 그대로 이어졌다.
+
 ## 전환 뒤 정리
 
 - **서울은 체험 종료일 전에 멈추거나 지운다** — 체험이 끝나면 서울 VM(e2-standard-2·pd-balanced 50GB·고정 IP)에
   요금이 붙는다. 되돌아갈 길이 필요 없어지면 `terraform/gcp`에서 `terraform destroy`, grafana DNS 레코드도 지운다.
 - 첫 달 청구서에서 무료 등급 밖 항목(외부 IP 등)이 없는지 확인한다.
-- `cd-gcp.yml`의 push 트리거를 `cd-gcp-us.yml`로 옮기고, ship의 CD 대기 대상(`automation/pipeline.md`의
-  `run-wait.sh cd-gcp.yml`)과 새 환경 변수 절차를 `cd-gcp-us.yml`·`docker/gcp-us`로 바꾼다.
+- **(2026-10-20 완료)** `cd-gcp.yml`의 push 트리거를 `cd-gcp-us.yml`로 옮기고, ship의 CD 대기 대상(`automation/pipeline.md`의
+  `run-wait.sh`)과 새 환경 변수 절차를 `cd-gcp-us.yml`·`docker/gcp-us`로 바꿨다. `cd-gcp.yml`은 dispatch만 남겼다.
 - compose 불변식 테스트(`test/agent-service-bootstrap.e2e-spec.ts`)가 `docker/gcp-us`를 보게 한다. 모니터링을 뺐으므로
   `test/agent-liveness-metrics.e2e-spec.ts`(spec 50의 alloy 기준)는 스펙으로 다룬다.
 - 서울 파일(`terraform/gcp`·`docker/gcp`·`deploy.sh`·`cd-gcp.yml`)은 `terraform/oci`처럼 비활성으로 표기해 남기거나 지운다.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Actions 워크플로우 run 대기 — 특정 커밋이 트리거한 run의 완료를 폴링한다 (60초 간격).
-# CI(ci-ghcr.yml)·CD(cd-oci-a1-main.yml) 대기에 공용이다.
+# CI(ci-ghcr.yml)·CD(cd-gcp-us.yml) 대기에 공용이다.
 #
 # run이 한 번도 발견되지 않은 채 타임아웃되면 NOT_FOUND로 구분한다 — 워크플로우 미트리거
 # (트리거 조건·파일명 변경 등) 신호이므로, 진행 중일 수 있는 TIMEOUT과 다르게 처리한다.
