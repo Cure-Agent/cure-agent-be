@@ -1,4 +1,5 @@
 // docs/specs/49 수용 기준 23~36·38·39 · docs/specs/50 기준 8 · docs/specs/51 기준 121~126 동결 테스트 — 구현 중 수정 금지
+// docs/specs/58 기준 7 — 배포되는 운영 구성(docker/gcp-us)을 읽는다. 서울 docker/gcp는 2026-10-20 전환 뒤 비활성이다
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request as requestHttps } from 'node:https';
@@ -14,7 +15,7 @@ import {
 import { parse } from 'yaml';
 
 const REPOSITORY_ROOT = join(__dirname, '..');
-const COMPOSE_PATH = join(REPOSITORY_ROOT, 'docker', 'gcp', 'compose.yml');
+const COMPOSE_PATH = join(REPOSITORY_ROOT, 'docker', 'gcp-us', 'compose.yml');
 const NGINX_CONFIG_PATH = join(REPOSITORY_ROOT, 'nginx', 'conf.d', 'api.conf');
 const CERTIFICATE_TARGET = '/etc/letsencrypt/live/api.cure.demo01.xyz/fullchain.pem';
 const PRIVATE_KEY_TARGET = '/etc/letsencrypt/live/api.cure.demo01.xyz/privkey.pem';

@@ -1,8 +1,7 @@
 # ⚠️ 비활성 — 서울 서버(terraform/gcp) 구성이다. 2026-10-20 미국으로 전환하고 같은 날 서울 VM을 지웠다.
 # 운영 구성은 docker/gcp-us/compose.yml이고, 이 파일을 배포하던 cd-gcp.yml은 지웠다.
-# 남겨 두는 이유: 모니터링 스택 설정(monitoring/, nginx/conf.d/grafana.conf)을 쓰는 구성이 이것뿐이고,
-# test/agent-service-bootstrap.e2e-spec.ts·test/agent-liveness-metrics.e2e-spec.ts가 아직 이 파일을 읽는다
-# (terraform/gcp-us/README.md 「전환 뒤 정리」).
+# 남겨 두는 이유: 모니터링 스택 설정(monitoring/, nginx/conf.d/grafana.conf)을 쓰는 구성이 이것뿐이다 —
+# 수집기를 다시 세울 때의 출발점이다. 이 파일을 읽는 테스트는 없다(docs/specs/58에서 docker/gcp-us로 옮겼다).
 #
 # GCP e2-standard-2(2vCPU/8GB) 단일 서버 통합 구성 (배포 계획 v2)
 # 외부 노출은 nginx(80/443)만 — 나머지는 전부 compose 내부 네트워크 통신.

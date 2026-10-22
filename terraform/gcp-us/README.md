@@ -30,7 +30,8 @@
 | OS | Ubuntu 기본 | `os-tune.sh` — 업데이트 타이머를 한국 새벽으로, man-db 끔, 상주 데몬 4종 mask, snapd 제거 — 아래 「OS 정리」 |
 | 그 밖 | — | `allow_stopping_for_update`, docker 로그 회전(20MB × 5) |
 
-모니터링이 없으니 **알림도 없다.** 장애는 배포 로그·`docker logs`·외부 헬스 확인으로만 보인다.
+모니터링 컨테이너는 없다. 생존은 **서버 밖의 UptimeRobot**이 5분마다 두 헬스 경로를 보고 Discord로 알리고, 앱 알림(LLM 소진·5xx·잡 결과)도
+같은 채널로 간다(docs/specs/58, architecture §14). 그 밖의 장애는 배포 로그·`docker logs`로 본다.
 체험이 끝난 뒤에도 무료 등급을 쓰려면 결제 계정을 유료로 전환해 둬야 한다.
 
 ## 생성과 실측 (전환 전)
@@ -148,7 +149,7 @@ dev에도 머지하지 않는다. `latest` 이미지가 dev push로 빌드되므
 - 첫 달 청구서에서 무료 등급 밖 항목(외부 IP 등)이 없는지 확인한다.
 - **(2026-10-20 완료)** `cd-gcp.yml`의 push 트리거를 `cd-gcp-us.yml`로 옮기고, ship의 CD 대기 대상(`automation/pipeline.md`의
   `run-wait.sh`)과 새 환경 변수 절차를 `cd-gcp-us.yml`·`docker/gcp-us`로 바꿨다. `cd-gcp.yml`은 dispatch만 남겼다.
-- compose 불변식 테스트(`test/agent-service-bootstrap.e2e-spec.ts`)가 `docker/gcp-us`를 보게 한다. 모니터링을 뺐으므로
-  `test/agent-liveness-metrics.e2e-spec.ts`(spec 50의 alloy 기준)는 스펙으로 다룬다.
+- **(2026-10-22 완료, docs/specs/58)** compose 불변식 테스트(`test/agent-service-bootstrap.e2e-spec.ts`)가 `docker/gcp-us`를 읽는다.
+  spec 50의 alloy 기준(12~18)은 폐기하고 그 테스트(`test/agent-liveness-metrics.e2e-spec.ts`)를 지웠다 — 생존 감시는 외부 UptimeRobot이 맡는다.
 - **(2026-10-20 완료)** 서울 파일 — `cd-gcp.yml`은 지웠다(위 이유). `terraform/gcp`·`docker/gcp`·`deploy.sh`는 `terraform/oci`처럼
-  비활성으로 표기해 남겼다. 모니터링 스택 설정을 쓰는 구성이 `docker/gcp`뿐이고, 위 테스트 둘이 아직 `docker/gcp`를 읽는다.
+  비활성으로 표기해 남겼다. 모니터링 스택 설정을 쓰는 구성이 `docker/gcp`뿐이다(그 파일을 읽던 테스트는 10-22 docs/specs/58에서 정리했다).
