@@ -1,6 +1,6 @@
 # terraform/oci — OCI 인프라 (Terraform Cloud) — ⚠️ 비활성
 
-> **2026-07-26 GCP로 전환됨 (배포 계획 v2)** — OCI 계정 생성 제한으로 `terraform/gcp/`(e2-standard-2 단일 서버)가 현행 인프라다.
+> **2026-07-26 GCP로 전환됨 (배포 계획 v2)** — OCI 계정 생성 제한으로 `terraform/gcp/`(e2-standard-2 단일 서버)로 옮겼다. 2026-10-20부터는 `terraform/gcp-us/`(e2-micro 무료 등급)가 현행 인프라다.
 > 이 코드는 **출구 전략용 보관**이다: GCP 무료 체험(90일) 종료 전 OCI 가입 제한 해제를 확인하고 복귀할 때 사용한다.
 > 복귀 시 확인 사항: A1 Always Free 한도(반토막 후 2 OCPU/12GB 기준으로 작성됨), TFC 워크스페이스 생성, CI 이미지 arm64 재빌드.
 
