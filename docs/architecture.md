@@ -824,7 +824,7 @@ LLM 장애는 real-time-alert로 즉시 알림 (§14).
 
 - **마이그레이션 불변 원칙**: 한번 적용된 마이그레이션 파일 수정 금지, baseline부터 순번 관리. `CREATE EXTENSION vector`는 초기 마이그레이션에서 관리.
 - **pgvector 인덱스 전략**: MVP 규모(지침 수십 개, chunk 수천~수만)에서는 **인덱스 없이 exact search로 시작**한다 — 더 정확하고 충분히 빠르다. HNSW/IVFFlat은 측정 후 도입.
-- **hybrid search (도입 완료, docs/specs/31)**: 임베딩 단독은 희귀 병명 신호가 일반 임상 어휘에 희석돼 후보군에조차 못 넣는다(실측 Recall@30 0.968). 벡터 검색 + **문자 n-gram**(`pg_trgm`의 `word_similarity`) 키워드 검색을 RRF로 융합해 두 arm의 합집합을 후보로 연다 — 후보 커버리지 1.000. P1 등록 당시 상정한 tsvector가 아닌 이유는 어절 경계 공백이 소실된 코퍼스(docs/specs/19)에서 어절 매칭이 성립하지 않기 때문이다. 두 arm은 병렬 실행한다.
+- **hybrid search (도입 완료, docs/specs/31)**: 임베딩 단독은 희귀 병명 신호가 일반 임상 어휘에 희석돼 후보군에조차 못 넣는다(실측 Recall@30 0.968). 벡터 검색 + **문자 n-gram**(`pg_trgm`의 `word_similarity`) 키워드 검색을 RRF로 융합해 두 arm의 합집합을 후보로 연다 — 후보 커버리지 1.000. P1 등록 당시 상정한 tsvector가 아닌 이유는 한국어 어절 매칭의 한계다 — PG에 한국어 텍스트 검색 설정이 없어 조사·복합어가 붙은 어절은 정확 일치로만 맞고, `ts_rank`에는 IDF가 없다(키워드 단독 R@30: tsvector 0.843 vs `word_similarity` 0.978, docs/specs/31 개정). 도입 때 적은 근거인 「어절 경계 공백이 소실된 코퍼스」는 추출 결함이었고 #535로 고쳤다. 두 arm은 병렬 실행한다.
 - **키워드 arm 후보 프리필터 (도입 완료, docs/specs/45·48)**: trgm 인덱스는 끝내 도입하지 않았다 — 인덱스도 병렬화도 실측에서 탈락했고(전수 스캔 ~1s / GiST KNN 323ms), 대신 **`word_similarity`가 훑을 청크 수 자체를 줄인다.** 별도 어휘 표(`keyword_vocab`: 어절 → 청크 포스팅, ACTIVE 경계로 증분 갱신)를 인메모리에 얹고 질의 토큰의 **부분문자열 DF**를 코퍼스가 아니라 어휘 위에서 세면 `ILIKE` 매칭 청크 수와 항등이며, 그 부산물로 후보 집합이 DB 왕복 없이 나온다(§45, 1,073ms → 132ms).
   - 후보 선택 규칙은 **전 토큰 BM25 점수 상위 N**이다(§48, 기본 75). §45의 DF 하드컷은 토큰별 OR라 증거를 합산하지 못했다 — 후보를 7.4배(558 → 75) 줄이면서 키워드 R@30이 0.973 → 1.000으로 **오른** 것이 그 대가다. **BM25는 후보만 고르고 점수는 버린다**: 순위는 그대로 원문 질의의 `word_similarity`이며, BM25 순서를 융합에 넘기면 RRF가 순위만 보므로 융합 R@30이 0.995 → 0.989로 떨어진다.
   - **요청 필터(`guidelineIds`·`recommendationGrades`·`evidenceLevels`)가 걸리면 프리필터를 건너뛴다.** 필터가 이미 코퍼스를 좁혔고 두 번 좁히면 후보가 무너진다(등급 `A` 실측 평균 1.5건). 필터 자체는 우회하지 않는다.
@@ -953,3 +953,4 @@ FE UI
 | 17 | SDD 테스트 교차 작성: 동결 테스트는 Codex가 스펙에서 독립 파생, Claude는 리뷰·동결·구현 담당 (8단계부터 적용, Codex 불가 시 Claude 폴백) |
 | 18 | 이메일·비밀번호 인증 제거, 소셜 로그인(Google/Kakao/Naver) 전용 전환 — §4 전면 개정, 온보딩 티켓·`/signup?ticket=` 화면 신설 (spec 17) |
 | 19 | hybrid search P1 해소 — 벡터 + 문자 n-gram(pg_trgm) RRF 융합 도입, tsvector 계획은 공백 소실 코퍼스라 폐기 (spec 31) |
+| 20 | §12 hybrid search의 tsvector 폐기 근거 정정 — 「공백 소실 코퍼스」는 pdfjs 추출 결함이었다(#535로 수정·재적재). tsvector가 지는 이유는 조사·복합어와 `ts_rank`의 IDF 부재이고, 결정은 유지한다 (spec 31 개정) |
