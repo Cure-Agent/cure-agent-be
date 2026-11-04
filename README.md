@@ -4,7 +4,7 @@
 
 > A production-oriented clinical RAG backend for evidence-grounded Korean medicine decision support.
 
-CureAgent turns 63 clinical-guideline PDFs into 7,154 searchable evidence chunks, retrieves and
+CureAgent turns 65 clinical-guideline PDFs into 7,345 searchable evidence chunks, retrieves and
 reranks the most relevant passages, and streams answers with source-linked citations. Its safety
 path is evaluated against 229 questions—including 44 deliberately unanswerable cases—and abstains
 when the available evidence cannot support an answer. The system also includes multi-provider LLM
@@ -58,9 +58,9 @@ generation prompt).
 
 | Scope                                  |                Size |
 | -------------------------------------- | ------------------: |
-| Clinical-guideline documents surveyed  |             87 PDFs |
-| Ingested into the searchable corpus    |             63 PDFs |
-| Indexed evidence corpus                | 7,154 active chunks |
+| Clinical-guideline documents surveyed  |             89 PDFs |
+| Ingested into the searchable corpus    |             65 PDFs |
+| Indexed evidence corpus                | 7,345 active chunks |
 | Evaluation questions                   |           229 total |
 | Answerable / expected-abstention split |            185 / 44 |
 
@@ -70,21 +70,21 @@ Representative results:
 | ----------------------------------------- | --------: |
 | Hybrid candidate coverage                 |    100.0% |
 | Keyword-arm Recall@30                     |    100.0% |
-| Reranked Recall@5                         |     98.9% |
-| Reranked MRR@5                            |     0.942 |
+| Reranked Recall@5                         |     98.4% |
+| Reranked MRR@5                            |     0.926 |
 | Out-of-scope questions answered (leakage) |    0 / 44 |
-| Answerable questions answered             | 185 / 185 |
+| Answerable questions answered             | 184 / 185 |
 | Claim-level support rate                  |     91.8% |
 
 Abstention is reported end to end, because the layered gates only compose at the end. At the deployed
-relevance cutoff the retrieval-stage gates abstain on 41 of the 44 out-of-scope questions (93.2%
-abstention recall) and the generation-stage answerability gate catches the remaining 3, so none is
-answered; no answerable question is abstained (0.0% over-abstention). Retrieval-stage abstention
-recall is counted before the generation gate, which makes it an upper bound on leakage rather than
-the safety result itself.
+relevance cutoff the retrieval-stage gates abstain on 39 of the 44 out-of-scope questions (88.6%
+abstention recall) and the generation-stage answerability gate catches the remaining 5, so none is
+answered; one answerable question is abstained at the retrieval stage (0.5% over-abstention).
+Retrieval-stage abstention recall is counted before the generation gate, which makes it an upper
+bound on leakage rather than the safety result itself.
 
 Retrieval and abstention results come from the
-[2026-09-10 policy run](docs/rag-eval/2026-09-10-keyword-candidate-budget-v6.md); claim support comes
+[2026-10-18 policy run](docs/rag-eval/2026-10-18-pdf-whitespace-reingest.md); claim support comes
 from the [qa-v5 groundedness run](docs/rag-eval/2026-08-03-groundedness-qa-v5.md), measured under the
 preceding generation prompt. The 229-question set also informed cutoff selection, so these are
 diagnostic policy metrics—not an independent held-out generalization benchmark, and on the
