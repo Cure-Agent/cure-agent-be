@@ -22,12 +22,12 @@
 | 리전 | asia-northeast3 | us-west1 — 무료 등급은 us-west1·us-central1·us-east1뿐이고 그중 한국과 가장 가깝다 |
 | 머신 | e2-standard-2 (2 vCPU/8GB) | e2-micro (2 vCPU 공유/1GB) |
 | 디스크 | pd-balanced 50GB | pd-standard 30GB — 무료 등급 상한, 바닥 성능 없음(읽기 ≈22 IOPS·3.6MiB/s) |
-| 스왑 | 4GB | 없음 — 느린 디스크에서는 메모리를 늘려 주지 못한다 |
+| 스왑 | 4GB | 없음 — 느린 디스크에서는 메모리를 늘려 주지 못한다. 메모리가 넘치면 커널 스래싱 방지가 프로세스를 끊는다(「OS 정리」 ⑦) |
 | 리소스 이름 | `cure-*` | `cure-us-*` — 같은 프로젝트라 달라야 한다 |
 | 컨테이너 | 13개 | 6개 + certbot-init — 모니터링 7종이 없다 |
 | 배포 대기 | 헬스 3분 · SSH 10분(기본값) | 헬스 10분 · SSH 45분 — 콜드 스타트가 분 단위다(첫 배포 실측 app 3분 14초·agent 4분 8초) |
 | 헬스체크 | 5~10초 간격 | 평상시 60초 · 기동 중 2~5초(`start_interval`), app 프로브는 node 대신 busybox `wget` — 아래 「CPU」 |
-| OS | Ubuntu 기본 | `os-tune.sh` — 업데이트 타이머를 한국 새벽으로, man-db 끔, 상주 데몬 4종 mask, snapd 제거 — 아래 「OS 정리」 |
+| OS | Ubuntu 기본 | `os-tune.sh` — 업데이트 타이머를 한국 새벽으로, man-db 끔, 상주 데몬 4종 mask, snapd 제거, apt-check 훅 끔, 업데이트를 OOM 1순위로, 스래싱 방지, DHCP 설정 유지 — 아래 「OS 정리」 |
 | 그 밖 | — | `allow_stopping_for_update`, docker 로그 회전(20MB × 5) |
 
 모니터링 컨테이너는 없다. 생존은 **서버 밖의 UptimeRobot**이 5분마다 두 헬스 경로를 보고 Discord로 알리고, 앱 알림(LLM 소진·5xx·잡 결과)도
@@ -91,9 +91,13 @@ e2-micro는 vCPU 2개가 각각 12.5%씩, 합 0.25개분을 지속으로 받는�
 - 쓰지 않는 상주 데몬이 RSS 합 ≈90MiB였다: multipathd 27(mlock)·packagekitd 20·snapd 16·networkd-dispatcher 15·
   google_osconfig_agent 14MiB.
 
-`os-tune.sh`가 하는 일은 다음과 같다. 업데이트 타이머는 끄지 않고 02:00·02:30 KST로 옮긴다(앱 크론 03:00·04:00 KST와
-겹치지 않게). man-db의 타이머와 dpkg 트리거를 끈다. 위 데몬 4종을 mask한다. snapd를 지운다(gcloud snap도 함께 지워진다).
-google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
+`os-tune.sh`가 하는 일은 다음과 같다(①~④).
+- 업데이트 타이머는 끄지 않고 02:00·02:30 KST로 옮긴다(앱 크론 03:00·04:00 KST와 겹치지 않게).
+- man-db의 타이머와 dpkg 트리거를 끈다.
+- 위 데몬 4종을 mask한다. google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
+- snapd를 지운다(gcloud snap도 함께 지워진다).
+
+2026-11-06 장애 뒤로는 ⑤~⑧도 한다(아래 「2026-11-06 장애」).
 
 - **새 VM**: `main.tf`의 user_data(cloud-init)가 첫 부팅에 실행한다.
 - **이미 떠 있는 VM**: cloud-init은 다시 돌지 않으니 한 번 실행한다(여러 번 실행해도 결과가 같다).
@@ -102,6 +106,58 @@ google-guest-agent는 메타데이터 ssh-keys를 심는 주체라 남긴다.
   ```
 - user_data를 바꾼 뒤의 `terraform plan`은 인스턴스 metadata의 제자리 변경으로 나온다. VM은 교체되지 않고,
   apply해도 이미 떠 있는 VM의 cloud-init은 다시 돌지 않는다.
+
+### 2026-11-06 장애 — 자동 업데이트가 메모리를 넘쳐 7.5시간 멈췄다 (#561)
+
+02:30 KST 자동 업데이트가 패키지 5개 가운데 4개를 설치하는 동안 메모리를 넘쳤고, 다섯 번째(ca-certificates) 차례에서
+멈췄다. 리셋(10:00 KST)까지 API와 에이전트가 응답하지 않았다(UptimeRobot DOWN 7시간 29분). GCP에서는 VM이 RUNNING이었지만 22·80·443 모두 TCP 연결이 되지 않았다.
+
+**업데이트 하나가 여유를 거의 다 쓴다.**
+- 패키지를 설치한 날 업데이트 cgroup의 최고치는 233~259MB였다(systemd `memory peak`, 10-23·11-04).
+- 평소 가용 메모리는 254MB다(sar 11-03~05 평균, 최저 239MB).
+- 내역(11-06, 각 명령을 일시 유닛으로 돌려 잼):
+
+| 명령 | 익명(회수 불가) | 캐시(회수 가능) | 최고 |
+|---|---|---|---|
+| `unattended-upgrade --dry-run` | 94MB | 87MB | 185MB |
+| `apt-check` — update-notifier의 apt 훅, dpkg를 실행할 때마다 | 41MB | 0 | 42MB |
+| `needrestart` — apt 훅 | 10MB | 3MB | 16MB |
+
+**스왑이 없으면 메모리가 넘쳐도 OOM killer가 돌지 않는다.**
+- 커널은 실행 코드 페이지를 내보내고 다시 읽기를 반복하며, 이를 「진척 중」으로 본다.
+- 17:30~17:43Z 평균으로 가용 44MB, 디스크 %util 93%, majflt 106/s였다. 19:54Z에도 가용 52MB, %util 98.6%였다.
+- OOM kill은 0건이었다.
+
+**그 사이 DHCP 갱신이 실패해 네트워크 설정이 지워졌다.**
+- 03:34 KST에 `ens4: Could not set DHCPv4 address: Connection timed out` → `ens4: Failed`가 기록됐다.
+- networkd는 Failed 링크를 다시 시도하지 않는다. 04:32부터 외부 패킷이 `martian source`로 버려졌다(돌아갈 경로가 없다).
+- 그래서 메모리가 회복됐어도 리셋 없이는 접속이 돌아오지 않았을 것이다.
+
+`os-tune.sh` ⑤~⑧이 이 사슬을 끊는다.
+
+| 단계 | 하는 일 | 부작용 |
+|---|---|---|
+| ⑤ | apt 훅이 부르는 `update-motd-updates-available`를 dpkg-divert로 비켜 두고 빈 스크립트로 바꾼다 — dpkg마다 도는 apt-check(42MB)가 사라진다 | 로그인 MOTD의 「업데이트 N개」가 더 갱신되지 않는다 |
+| ⑥ | apt-daily·apt-daily-upgrade·esm-cache·apt-news에 `OOMScoreAdjust=1000` — 업데이트와 그 자식이 OOM 1순위다 | 업데이트가 중간에 죽으면 다음 실행이 끊긴 dpkg를 `dpkg --configure -a`로 마무리한다(`AutoFixInterruptedDpkg` 기본값) |
+| ⑦ | MGLRU `min_ttl_ms=1000`(tmpfiles.d) — 최근 1초에 쓴 페이지까지 내보내야 하면 커널이 OOM killer를 부른다 | 몇 시간 멈추는 대신 프로세스 하나가 죽는다. 업데이트가 없을 때 1순위는 에이전트(uvicorn)·앱(node)이고 Docker가 다시 띄운다(콜드 스타트 수 분) |
+| ⑧ | netplan `critical: true` → networkd `KeepConfiguration=true` — DHCP 갱신이 실패해도 주소와 경로를 지우지 않는다 | 적용하는 순간 링크를 다시 구성한다(같은 리스를 다시 받는다). GCE 내부 IP는 VM 수명 동안 고정이다 |
+
+검토했지만 하지 않은 것:
+- **업데이트 서비스의 `MemoryHigh`·`MemoryMax`**: 상한 안에 갇혀도 디스크를 계속 다시 읽어 다른 컨테이너의 읽기와 경쟁한다. 상한을 넘으면 매일 업데이트가 죽어 보안 업데이트가 조용히 멈출 수 있다.
+- **earlyoom**: ⑦과 같은 일을 하지만 패키지를 추가하고 임계값을 맞춰야 한다.
+- **zram**: 압축에 CPU를 쓰고 모든 컨테이너의 메모리 동작을 바꾼다.
+- **e2-small**: 요금이 나온다.
+
+적용 확인(차례대로 `1000` · `1000` · diversion 한 줄 · `KeepConfiguration=true`):
+
+```bash
+ssh deploy@<미국 IP> 'cat /sys/kernel/mm/lru_gen/min_ttl_ms; systemctl show -p OOMScoreAdjust --value apt-daily-upgrade.service;
+  dpkg-divert --list /usr/lib/update-notifier/update-motd-updates-available; sudo grep -h KeepConfiguration /run/systemd/network/*-ens4.network'
+```
+
+**VM이 멈췄을 때** — GCP에서는 RUNNING인데 SSH·HTTP가 모두 응답하지 않는 경우다.
+- 복구: 콘솔의 VM 「재설정」이나 Compute API `instances.reset`으로 하드 리셋한다.
+- 원인 조사: 재부팅 뒤 직전 부팅의 저널(`journalctl -b -1`)과 sysstat(`sar -r -B -d -f /var/log/sysstat/saDD`, UTC)을 본다. 시리얼 콘솔은 2026-10-15 이후 기록이 없어 쓸 수 없다.
 
 ## 전환
 
