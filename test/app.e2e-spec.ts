@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -81,6 +81,69 @@ describe('global 기반 (봉투·traceId·예외 필터·검증)', () => {
     expect(alertSender.send).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'INTERNAL_ERROR', traceId: res.body.traceId }),
     );
+  });
+
+  describe('우리 에러 모델 밖의 4xx: BAD_REQUEST(400) 봉투, 알림 없음 (#563)', () => {
+    // 봉투는 공통 코드로 묶이므로 원래 status·사유는 warn 로그에만 남는다.
+    // TestingLogger는 warn 출력을 버리므로 호출 자체를 본다
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn');
+    });
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    // 본문 파서는 라우팅 전에 모든 경로에서 돈다 — 운영에서 스캐너가 보낸 경로(`/`)를 그대로 쓴다
+    const parserRejections: Array<
+      [label: string, encoding: string | undefined, body: string, originalStatus: number]
+    > = [
+      ['지원하지 않는 Content-Encoding(415)', 'x', '{}', 415],
+      ['압축 해제 실패 — br 헤더에 Brotli가 아닌 본문(400)', 'br', '{"not":"brotli"}', 400],
+      ['본문 한도 100KB 초과(413)', undefined, JSON.stringify({ pad: 'a'.repeat(200_000) }), 413],
+    ];
+
+    it.each(parserRejections)('본문 파서: %s', async (_label, encoding, body, originalStatus) => {
+      const req = request(app.getHttpServer()).post('/').set('Content-Type', 'application/json');
+      if (encoding) req.set('Content-Encoding', encoding);
+
+      const res = await req.send(body).expect(400);
+      expect(res.body).toMatchObject({ success: false, code: 'BAD_REQUEST', data: null });
+      expect(alertSender.send).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`요청 거부(${originalStatus})`));
+    });
+
+    // Jest VM 안에서는 zlib(Node 코어)이 만든 Error가 instanceof Error를 통과하지 못해, http-errors가 원본 대신
+    // 새 400 객체를 만든다(메시지 「Bad Request」). 운영에서는 원본 Error에 status·expose가 덧씌워진 채 온다.
+    // 그 모양은 위 경로로 재현되지 않으므로 따로 고정한다
+    it('http-errors가 덧씌운 일반 Error(운영의 「Decompression failed」 모양)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/test-errors/http-error-4xx')
+        .expect(400);
+      expect(res.body).toMatchObject({ success: false, code: 'BAD_REQUEST', data: null });
+      expect(alertSender.send).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('요청 거부(400): Decompression failed'),
+      );
+    });
+
+    it('매핑 없는 4xx HttpException(413)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/test-errors/payload-too-large')
+        .expect(400);
+      expect(res.body).toMatchObject({ success: false, code: 'BAD_REQUEST', data: null });
+      expect(alertSender.send).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('요청 거부(413)'));
+    });
+  });
+
+  it.each([
+    ['upstream-status', 'status·statusCode만 있고 expose가 없는 4xx(상류 응답 모양)'],
+    ['http-error-5xx', 'http-errors 모양의 5xx'],
+  ])('양성 대조 — %s: %s는 INTERNAL_ERROR(500) + 알림 1회', async (path) => {
+    const res = await request(app.getHttpServer()).get(`/api/v1/test-errors/${path}`).expect(500);
+    expect(res.body).toMatchObject({ success: false, code: 'INTERNAL_ERROR', data: null });
+    expect(alertSender.send).toHaveBeenCalledTimes(1);
   });
 
   it('CSRF: 상태 변경 요청에 커스텀 헤더가 없으면 403 CSRF_REJECTED', async () => {
