@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # automation/bin 게이트 스크립트 스모크 테스트 — CI(scripts 잡)와 로컬에서 동일하게 실행한다.
-# 핵심 검증 대상 둘: (1) fail-closed 성질 — git 조회 실패가 통과(PASS)로 새지 않고
+# 핵심 검증 대상 셋: (3) 민감 파일 훅(.claude/hooks) — 하네스 stdin JSON으로 deny가 나오는지. (1) fail-closed 성질 — git 조회 실패가 통과(PASS)로 새지 않고
 # ERROR(비 0 종료)로 끝나는지, (2) pr-gate.jq 판정 로직 — fixture JSON으로 게이트 규칙
 # (전수 검사, 앵커 존재 필수, vacuous pass 방지)을 검증한다.
 # gradle·gh 호출이 필요 없는 경로만 검사한다. 의존성은 git·jq뿐이다(둘 다 ubuntu 러너 기본 설치).
@@ -22,6 +22,25 @@ check() {
   if [ "$rc" -ne "$want_rc" ] || ! grep -q "$want_marker" <<<"$out"; then
     echo "FAIL: $desc (rc=$rc, 기대 rc=$want_rc, 기대 마커 '$want_marker')"
     # 여러 줄 들여쓰기는 sed가 더 명확하다
+    # shellcheck disable=SC2001
+    sed 's/^/  | /' <<<"$out"
+    FAILED=1
+  else
+    echo "ok: $desc"
+  fi
+}
+
+# hook_check <설명> <기대: deny|pass> <command 문자열> — 훅에 하네스(Claude Code·Codex)가 주는 stdin JSON을 흘려 판정한다
+HOOK="$BIN/../../.claude/hooks/validate-git-sensitive.sh"
+hook_check() {
+  local desc=$1 want=$2 cmd=$3
+  local out rc
+  out=$(jq -cn --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}' | "$HOOK" 2>&1)
+  rc=$?
+  local got="pass"
+  grep -q '"permissionDecision": "deny"' <<<"$out" && got="deny"
+  if [ "$rc" -ne 0 ] || [ "$got" != "$want" ]; then
+    echo "FAIL: $desc (rc=$rc, 판정=$got, 기대=$want)"
     # shellcheck disable=SC2001
     sed 's/^/  | /' <<<"$out"
     FAILED=1
@@ -55,6 +74,27 @@ check "sensitive-gate: *.tfstate.backup 스테이징 → BLOCKED" \
 git reset -q -- terraform.tfstate.backup && rm terraform.tfstate.backup
 check "sensitive-gate: git 실패 → ERROR (fail-closed)" \
   1 "SENSITIVE_GATE result=ERROR" env GIT_DIR=/nonexistent "$BIN/sensitive-gate.sh"
+
+# --- 훅 (.claude/hooks/validate-git-sensitive.sh) — 하네스 stdin JSON을 모사해 deny/pass를 판정한다.
+# 핵심은 명시 인자 파싱이 광역 판정으로 새지 않는 것이다 — macOS sed는 \b를 몰라 원본 훅이 그랬고,
+# 그 결과 `git add -f .env`(ignored 민감 파일 강제 추가)가 통과했다. 스크래치는 이 시점에 깨끗하다.
+echo secret > .env
+hook_check "hook: git 외 명령은 통과" pass "pnpm test"
+hook_check "hook: git status는 통과" pass "git status --short"
+hook_check "hook: git add .env → deny" deny "git add .env"
+hook_check "hook: git add -A (광역) → untracked .env 감지 → deny" deny "git add -A && git commit -m x"
+hook_check "hook: git add README.md (명시·비민감) → 통과" pass "git add README.md"
+git add -f .env
+hook_check "hook: .env 스테이징 상태의 git commit → deny" deny "git commit -m 'x'"
+git reset -q -- .env
+hook_check "hook: 스테이징 해제 후 git commit → 통과" pass "git commit -m 'x'"
+printf '.env*\n' > .gitignore
+hook_check "hook: ignored 민감 파일을 git add -f <파일>로 명시 → deny (명시 인자 파싱)" deny "git add -f .env"
+hook_check "hook: ignored 민감 파일 + git add -A -f (광역 강제) → deny" deny "git add -A -f"
+hook_check "hook: git add . (광역, 민감 파일은 ignored) → 통과 (git도 ignored는 add하지 않는다)" pass "git add ."
+hook_check "hook: git add -f README.md (강제지만 명시·비민감) → 통과" pass "git add -f README.md"
+hook_check "hook: git add -- .env (옵션 종료 뒤 명시) → deny" deny "git add -- .env"
+rm -f .gitignore .env
 
 # --- pr-gate.jq 판정 fixture 테스트 (gh 없이 게이트 규칙 자체를 검증)
 GATE_JQ="$BIN/pr-gate.jq"

@@ -238,8 +238,9 @@ export class RetrievalService {
     /**
      * `word_similarity`는 **비대칭**이다 — 1번 인자의 트라이그램 집합이 2번 인자의 연속 구간과
      * 얼마나 맞는지를 보므로, 짧은 질문이 앞이고 긴 본문이 뒤다. 뒤집으면 다른 값이 된다.
-     * 어절 경계 공백이 소실된 코퍼스(docs/specs/19)라 tsvector 어절 매칭이 성립하지 않고,
-     * 문자 n-gram은 조사·붙임에 강건하다.
+     * tsvector가 아닌 이유는 공백이 아니라 한국어 어절 매칭의 한계다 — 조사·복합어가 붙은 어절은
+     * 정확 일치로만 맞고 `ts_rank`에는 IDF가 없다(docs/specs/31 개정). 문자 n-gram은 조사에
+     * 강건하지만, 어절이 붙으면 함께 떨어진다(단어 경계로 trigram을 패딩한다).
      */
     const similarity = sql`word_similarity(${query}, ${evidenceChunks.content})`;
 
